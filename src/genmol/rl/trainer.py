@@ -174,6 +174,21 @@ def _nanreduce(tensor, mode):
     raise ValueError(f'Unsupported nan reduction mode: {mode}')
 
 
+def _aggregate_scalar_list(values, mode='mean'):
+    if not values:
+        return float('nan')
+    tensor = torch.as_tensor(values, dtype=torch.float32)
+    if tensor.numel() == 0 or torch.isnan(tensor).all():
+        return float('nan')
+    if mode == 'mean':
+        return torch.nanmean(tensor).item()
+    if mode == 'min':
+        return _nanreduce(tensor, mode='min')
+    if mode == 'max':
+        return _nanreduce(tensor, mode='max')
+    raise ValueError(f'Unsupported scalar aggregation mode: {mode}')
+
+
 def find_last_checkpoint(output_dir):
     if not os.path.isdir(output_dir):
         return None
@@ -283,6 +298,8 @@ class GenMolCpGRPOTrainer:
         self._buffered_inputs = None
         self._buffer_metadata = None
         self._last_train_metrics = None
+        self._metrics = {'train': defaultdict(list), 'eval': defaultdict(list)}
+        self._textual_logs = {'train': [], 'eval': []}
 
         if config.report_to:
             init_kwargs = {}
@@ -299,6 +316,77 @@ class GenMolCpGRPOTrainer:
             self.global_sample_count,
         )
 
+    def _record_reward_metrics(self, mode, metadata):
+        if mode not in self._metrics:
+            raise ValueError(f'Unsupported mode: {mode}')
+        bucket = self._metrics[mode]
+        bucket['reward'].append(float(metadata['reward_mean']))
+        bucket['reward_std'].append(float(metadata['reward_std']))
+        bucket['advantage_mean'].append(float(metadata['advantage_mean']))
+        bucket['completion_length'].append(float(metadata['completion_length']))
+        bucket['zero_std_ratio'].append(float(metadata['zero_std_ratio']))
+        bucket['valid_fraction'].append(float(metadata['valid_fraction']))
+        bucket['alert_hit_fraction'].append(float(metadata['alert_hit_fraction']))
+        bucket['invalid_fraction'].append(float(metadata['invalid_fraction']))
+        bucket['rewards/qed_mean'].append(float(metadata['rewards/qed_mean']))
+        bucket['rewards/sa_mean'].append(float(metadata['rewards/sa_mean']))
+        bucket['rewards/sa_score_mean'].append(float(metadata['rewards/sa_score_mean']))
+        bucket['rewards/soft_mean'].append(float(metadata['rewards/soft_mean']))
+
+    def _record_loss_metrics(self, mode, step_metrics):
+        if mode not in self._metrics:
+            raise ValueError(f'Unsupported mode: {mode}')
+        bucket = self._metrics[mode]
+
+        gathered_ratio = self.accelerator.gather_for_metrics(step_metrics['ratio_mean'].detach().reshape(1))
+        bucket['ratio_mean'].append(torch.nanmean(gathered_ratio).item())
+
+        gathered_low = self.accelerator.gather_for_metrics(step_metrics['clip_ratio_low_mean'].detach().reshape(1))
+        bucket['clip_ratio/low_mean'].append(torch.nanmean(gathered_low).item())
+        bucket['clip_ratio/low_min'].append(_nanreduce(gathered_low, mode='min'))
+
+        gathered_high = self.accelerator.gather_for_metrics(step_metrics['clip_ratio_high_mean'].detach().reshape(1))
+        bucket['clip_ratio/high_mean'].append(torch.nanmean(gathered_high).item())
+        bucket['clip_ratio/high_max'].append(_nanreduce(gathered_high, mode='max'))
+
+        gathered_region = self.accelerator.gather_for_metrics(step_metrics['clip_ratio_region_mean'].detach().reshape(1))
+        bucket['clip_ratio/region_mean'].append(torch.nanmean(gathered_region).item())
+
+        if 'kl_mean' in step_metrics:
+            gathered_kl = self.accelerator.gather_for_metrics(step_metrics['kl_mean'].detach().reshape(1))
+            bucket['kl'].append(torch.nanmean(gathered_kl).item())
+
+    def _record_optimizer_metrics(self, mode, grad_norm, lr):
+        if mode not in self._metrics:
+            raise ValueError(f'Unsupported mode: {mode}')
+        self._metrics[mode]['grad_norm'].append(float(grad_norm))
+        self._metrics[mode]['lr'].append(float(lr))
+
+    def _record_text_logs(self, mode, rows):
+        if mode not in self._textual_logs:
+            raise ValueError(f'Unsupported mode: {mode}')
+        if not self.config.log_completions:
+            return
+        if not rows:
+            return
+        gathered = self._all_gather_objects(rows)
+        if self.accelerator.is_main_process:
+            self._textual_logs[mode].extend(gathered)
+
+    def _flush_text_logs(self, mode):
+        if not self.config.log_completions:
+            self._textual_logs[mode] = []
+            return
+        if not self.accelerator.is_main_process:
+            self._textual_logs[mode] = []
+            return
+        for row in self._textual_logs[mode]:
+            write_jsonl(self.text_logs_path, row)
+        self._textual_logs[mode] = []
+
+    def _has_pending_metrics(self, mode):
+        return any(self._metrics[mode].values())
+
     def _sample_mask_seeds(self):
         if self.config.random_masking:
             return torch.randint(0, 2**12, (self.config.num_iterations,), device=self.device).tolist()
@@ -314,16 +402,7 @@ class GenMolCpGRPOTrainer:
             merged.extend(shard)
         return merged
 
-    def _save_text_logs(self, rows):
-        if not self.config.log_completions or not rows:
-            return
-        gathered = self._all_gather_objects(rows)
-        if not self.accelerator.is_main_process:
-            return
-        for row in gathered:
-            write_jsonl(self.text_logs_path, row)
-
-    def _generate_and_score_completions(self):
+    def _generate_and_score_completions(self, mode):
         cycle_seed = self.config.seed + self.generation_cycle_idx * 10000
         if self.accelerator.is_main_process:
             group_specs = sample_group_specs(
@@ -419,6 +498,7 @@ class GenMolCpGRPOTrainer:
         for spec, safe_string, record in zip(local_specs, rollout.safe_strings, reward_records):
             log_rows.append(
                 {
+                    'mode': mode,
                     'buffer_cycle': self.generation_cycle_idx,
                     'step': self.global_step,
                     'spec': spec.__dict__,
@@ -448,8 +528,9 @@ class GenMolCpGRPOTrainer:
             'rewards/sa_mean': _nanmean(gathered_sa),
             'rewards/sa_score_mean': _nanmean(gathered_sa_score),
             'rewards/soft_mean': _nanmean(gathered_soft),
-            'log_rows': log_rows,
         }
+        self._record_reward_metrics(mode, metadata)
+        self._record_text_logs(mode, log_rows)
 
         return {
             'prompt_ids': rollout.prompt_ids,
@@ -461,10 +542,10 @@ class GenMolCpGRPOTrainer:
             'mask_seeds': mask_seeds,
         }, metadata
 
-    def _prepare_inputs(self):
+    def _prepare_inputs(self, mode='train'):
         generate_every = self.config.gradient_accumulation_steps * self.config.num_iterations
         if self._step % generate_every == 0 or self._buffered_inputs is None:
-            accumulated_local_batch, metadata = self._generate_and_score_completions()
+            accumulated_local_batch, metadata = self._generate_and_score_completions(mode=mode)
             self._buffered_inputs = split_tensor_dict(accumulated_local_batch, self.config.gradient_accumulation_steps)
             self._buffer_metadata = metadata
             self.generation_cycle_idx += 1
@@ -473,30 +554,31 @@ class GenMolCpGRPOTrainer:
         self._step += 1
         return inputs
 
-    def _compute_loss(self, inputs):
-        this_itr_idx = self._step % self.config.num_iterations
+    def _compute_loss(self, inputs, mode='train', iteration_idx=None, requires_grad=True):
+        if iteration_idx is None:
+            iteration_idx = self._step % self.config.num_iterations
         prompt_completion_ids = torch.cat([inputs['prompt_ids'], inputs['completion_ids']], dim=1).unsqueeze(0)
         logits_to_keep = inputs['completion_ids'].size(1)
-        current_seed = [inputs['mask_seeds'][this_itr_idx]]
+        current_seed = [inputs['mask_seeds'][iteration_idx]]
         per_token_logps = self.policy.per_token_logps(
             input_ids=prompt_completion_ids,
             logits_to_keep=logits_to_keep,
             completion_mask=inputs['completion_mask'],
             mask_seeds=current_seed,
             gradient_accumulation_steps=self.config.gradient_accumulation_steps,
-            requires_grad=True,
+            requires_grad=requires_grad,
         )
         if inputs['old_per_token_logps'] is None:
             old_per_token_logps = per_token_logps.detach()
         else:
-            old_per_token_logps = inputs['old_per_token_logps'][:, this_itr_idx, :].unsqueeze(1)
+            old_per_token_logps = inputs['old_per_token_logps'][:, iteration_idx, :].unsqueeze(1)
 
         if inputs['ref_per_token_logps'] is None:
             ref_per_token_logps = None
         else:
-            ref_per_token_logps = inputs['ref_per_token_logps'][:, this_itr_idx, :].unsqueeze(1)
+            ref_per_token_logps = inputs['ref_per_token_logps'][:, iteration_idx, :].unsqueeze(1)
 
-        return compute_clipped_grpo_loss(
+        loss, step_metrics = compute_clipped_grpo_loss(
             new_log_probs=per_token_logps,
             old_log_probs=old_per_token_logps,
             advantages=inputs['advantages'],
@@ -505,46 +587,40 @@ class GenMolCpGRPOTrainer:
             ref_log_probs=ref_per_token_logps,
             beta=self.config.beta,
         )
+        self._record_loss_metrics(mode, step_metrics)
+        return loss
 
-    def _aggregate_metric(self, values, mode='mean'):
-        local = torch.stack(values).mean().reshape(1).to(self.device)
-        gathered = self.accelerator.gather(local)
-        if mode == 'mean':
-            return gathered.nanmean().item()
-        if mode == 'min':
-            return _nanreduce(gathered, mode='min')
-        if mode == 'max':
-            return _nanreduce(gathered, mode='max')
-        raise ValueError(f'Unsupported aggregation mode: {mode}')
-
-    def _build_log_metrics(self, metric_buckets, grad_norm):
-        metadata = dict(self._buffer_metadata)
+    def _consume_logged_metrics(self, mode, step, buffer_cycle):
+        bucket = self._metrics[mode]
         metrics = {
-            'step': self.global_step,
-            'buffer_cycle': metadata['buffer_cycle'],
-            'reward_mean': metadata['reward_mean'],
-            'reward_std': metadata['reward_std'],
-            'advantage_mean': metadata['advantage_mean'],
-            'zero_std_ratio': metadata['zero_std_ratio'],
-            'completion_length': metadata['completion_length'],
-            'valid_fraction': metadata['valid_fraction'],
-            'alert_hit_fraction': metadata['alert_hit_fraction'],
-            'invalid_fraction': metadata['invalid_fraction'],
-            'rewards/qed_mean': metadata['rewards/qed_mean'],
-            'rewards/sa_mean': metadata['rewards/sa_mean'],
-            'rewards/sa_score_mean': metadata['rewards/sa_score_mean'],
-            'rewards/soft_mean': metadata['rewards/soft_mean'],
-            'ratio_mean': self._aggregate_metric(metric_buckets['ratio_mean']),
-            'clip_ratio/low_mean': self._aggregate_metric(metric_buckets['clip_ratio_low_mean']),
-            'clip_ratio/low_min': self._aggregate_metric(metric_buckets['clip_ratio_low_mean'], mode='min'),
-            'clip_ratio/high_mean': self._aggregate_metric(metric_buckets['clip_ratio_high_mean']),
-            'clip_ratio/high_max': self._aggregate_metric(metric_buckets['clip_ratio_high_mean'], mode='max'),
-            'clip_ratio/region_mean': self._aggregate_metric(metric_buckets['clip_ratio_region_mean']),
-            'grad_norm': self._aggregate_metric([torch.as_tensor(float(grad_norm), device=self.device)]),
-            'lr': self.scheduler.get_last_lr()[0],
+            'step': step,
+            'buffer_cycle': buffer_cycle,
+            'reward': _aggregate_scalar_list(bucket['reward']),
+            'reward_std': _aggregate_scalar_list(bucket['reward_std']),
+            'advantage_mean': _aggregate_scalar_list(bucket['advantage_mean']),
+            'zero_std_ratio': _aggregate_scalar_list(bucket['zero_std_ratio']),
+            'completion_length': _aggregate_scalar_list(bucket['completion_length']),
+            'valid_fraction': _aggregate_scalar_list(bucket['valid_fraction']),
+            'alert_hit_fraction': _aggregate_scalar_list(bucket['alert_hit_fraction']),
+            'invalid_fraction': _aggregate_scalar_list(bucket['invalid_fraction']),
+            'rewards/qed_mean': _aggregate_scalar_list(bucket['rewards/qed_mean']),
+            'rewards/sa_mean': _aggregate_scalar_list(bucket['rewards/sa_mean']),
+            'rewards/sa_score_mean': _aggregate_scalar_list(bucket['rewards/sa_score_mean']),
+            'rewards/soft_mean': _aggregate_scalar_list(bucket['rewards/soft_mean']),
+            'ratio_mean': _aggregate_scalar_list(bucket['ratio_mean']),
+            'clip_ratio/low_mean': _aggregate_scalar_list(bucket['clip_ratio/low_mean']),
+            'clip_ratio/low_min': _aggregate_scalar_list(bucket['clip_ratio/low_min']),
+            'clip_ratio/high_mean': _aggregate_scalar_list(bucket['clip_ratio/high_mean']),
+            'clip_ratio/high_max': _aggregate_scalar_list(bucket['clip_ratio/high_max']),
+            'clip_ratio/region_mean': _aggregate_scalar_list(bucket['clip_ratio/region_mean']),
+            'grad_norm': float(bucket['grad_norm'][-1]) if bucket['grad_norm'] else float('nan'),
+            'lr': float(bucket['lr'][-1]) if bucket['lr'] else float('nan'),
         }
-        if 'kl_mean' in metric_buckets:
-            metrics['kl_mean'] = self._aggregate_metric(metric_buckets['kl_mean'])
+        metrics['reward_mean'] = metrics['reward']
+        if bucket['kl']:
+            metrics['kl'] = _aggregate_scalar_list(bucket['kl'])
+            metrics['kl_mean'] = metrics['kl']
+        self._metrics[mode] = defaultdict(list)
         return metrics
 
     def _log_metrics(self, split, metrics):
@@ -595,6 +671,7 @@ class GenMolCpGRPOTrainer:
                 )
         if self.config.report_to:
             self.accelerator.log(metrics, step=self.global_step)
+        self._flush_text_logs(split)
 
     def _checkpoint_dir(self):
         return os.path.join(self.output_dir, f'checkpoint-{self.global_step:06d}')
@@ -661,14 +738,11 @@ class GenMolCpGRPOTrainer:
 
         while self.global_step < self.config.max_steps:
             self.optimizer.zero_grad(set_to_none=True)
-            metric_buckets = defaultdict(list)
 
             for _ in range(self.config.gradient_accumulation_steps):
-                inputs = self._prepare_inputs()
-                loss, step_metrics = self._compute_loss(inputs)
+                inputs = self._prepare_inputs(mode='train')
+                loss = self._compute_loss(inputs, mode='train', requires_grad=True)
                 self.accelerator.backward(loss / self.config.gradient_accumulation_steps)
-                for key, value in step_metrics.items():
-                    metric_buckets[key].append(value.detach())
 
             grad_norm = self.accelerator.clip_grad_norm_(
                 self.policy.model.backbone.parameters(),
@@ -679,54 +753,51 @@ class GenMolCpGRPOTrainer:
             self.optimizer.zero_grad(set_to_none=True)
             self.policy.update_ema()
             self.global_step += 1
+            self._record_optimizer_metrics('train', grad_norm=float(grad_norm), lr=self.scheduler.get_last_lr()[0])
 
             if self.config.sync_ref_model and self.global_step % self.config.ref_model_sync_steps == 0:
                 self.reference.sync_from(self.policy, alpha=self.config.ref_model_mixup_alpha)
 
-            self._last_train_metrics = self._build_log_metrics(metric_buckets, grad_norm)
-
             should_log = self.global_step == 1 and self.config.logging_first_step
             should_log = should_log or (self.global_step % self.config.logging_steps == 0)
             if should_log:
+                self._last_train_metrics = self._consume_logged_metrics(
+                    'train',
+                    step=self.global_step,
+                    buffer_cycle=self._buffer_metadata['buffer_cycle'],
+                )
                 self._log_metrics('train', self._last_train_metrics)
-                self._save_text_logs(self._buffer_metadata['log_rows'])
 
             if self.global_step % self.config.save_steps == 0:
                 self._save_checkpoint()
+
+        if self._has_pending_metrics('train'):
+            self._last_train_metrics = self._consume_logged_metrics(
+                'train',
+                step=self.global_step,
+                buffer_cycle=self._buffer_metadata['buffer_cycle'] if self._buffer_metadata is not None else self.generation_cycle_idx,
+            )
 
         return TrainResult(metrics=self._last_train_metrics or {})
 
     def evaluate(self):
         current_train_state = self.policy.model.backbone.training
+        self._metrics['eval'] = defaultdict(list)
+        self._textual_logs['eval'] = []
         self.policy.model.backbone.eval()
         try:
-            _, metadata = self._generate_and_score_completions()
+            inputs, metadata = self._generate_and_score_completions(mode='eval')
+            for iteration_idx in range(self.config.num_iterations):
+                self._compute_loss(
+                    inputs,
+                    mode='eval',
+                    iteration_idx=iteration_idx,
+                    requires_grad=False,
+                )
+            self._record_optimizer_metrics('eval', grad_norm=float('nan'), lr=self.scheduler.get_last_lr()[0])
         finally:
             self.policy.model.backbone.train(current_train_state)
-        return {
-            'step': self.global_step,
-            'buffer_cycle': metadata['buffer_cycle'],
-            'reward_mean': metadata['reward_mean'],
-            'reward_std': metadata['reward_std'],
-            'advantage_mean': metadata['advantage_mean'],
-            'zero_std_ratio': metadata['zero_std_ratio'],
-            'completion_length': metadata['completion_length'],
-            'valid_fraction': metadata['valid_fraction'],
-            'alert_hit_fraction': metadata['alert_hit_fraction'],
-            'invalid_fraction': metadata['invalid_fraction'],
-            'rewards/qed_mean': metadata['rewards/qed_mean'],
-            'rewards/sa_mean': metadata['rewards/sa_mean'],
-            'rewards/sa_score_mean': metadata['rewards/sa_score_mean'],
-            'rewards/soft_mean': metadata['rewards/soft_mean'],
-            'ratio_mean': float('nan'),
-            'clip_ratio/low_mean': float('nan'),
-            'clip_ratio/low_min': float('nan'),
-            'clip_ratio/high_mean': float('nan'),
-            'clip_ratio/high_max': float('nan'),
-            'clip_ratio/region_mean': float('nan'),
-            'grad_norm': float('nan'),
-            'lr': self.scheduler.get_last_lr()[0],
-        }
+        return self._consume_logged_metrics('eval', step=self.global_step, buffer_cycle=metadata['buffer_cycle'])
 
     def log_metrics(self, split, metrics):
         self._log_metrics(split, metrics)
