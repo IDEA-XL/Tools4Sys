@@ -169,8 +169,8 @@ class GenMolCpGRPOPolicy:
         safe_strings = self._decode_safe_strings(x)
         smiles = self._decode_smiles(safe_strings)
         return RolloutBatch(
-            token_ids=x,
-            completion_mask=completion_mask,
+            token_ids=x.detach().clone(),
+            completion_mask=completion_mask.detach().clone(),
             safe_strings=safe_strings,
             smiles=smiles,
         )

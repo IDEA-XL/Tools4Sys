@@ -48,15 +48,17 @@ def compute_coupled_log_probs(score_fn, token_ids, completion_mask, mask_token_i
     log_prob_batches = []
     mask_meta = []
     grad_context = nullcontext() if requires_grad else torch.no_grad()
+    target_ids = token_ids.detach().clone()
+    scoring_completion_mask = completion_mask.detach().clone()
 
     with grad_context:
         for seed in seeds:
-            full_mask, mask_a, mask_b, weights = sample_coupled_masks(completion_mask, seed=seed)
+            full_mask, mask_a, mask_b, weights = sample_coupled_masks(scoring_completion_mask, seed=seed)
             stacked_tokens = torch.cat(
                 [
-                    apply_token_mask(token_ids, full_mask, mask_token_id),
-                    apply_token_mask(token_ids, mask_a, mask_token_id),
-                    apply_token_mask(token_ids, mask_b, mask_token_id),
+                    apply_token_mask(target_ids, full_mask, mask_token_id),
+                    apply_token_mask(target_ids, mask_a, mask_token_id),
+                    apply_token_mask(target_ids, mask_b, mask_token_id),
                 ],
                 dim=0,
             )
@@ -64,10 +66,10 @@ def compute_coupled_log_probs(score_fn, token_ids, completion_mask, mask_token_i
             log_prob_batches.append(
                 selective_log_softmax(
                     logits=logits,
-                    target_ids=token_ids,
+                    target_ids=target_ids,
                     weights=weights,
                     mask_a=mask_a,
-                    completion_mask=completion_mask,
+                    completion_mask=scoring_completion_mask,
                 )
             )
             mask_meta.append({'seed': int(seed), 'mask_ratio': float(1.0 / weights[1].item())})
