@@ -15,7 +15,9 @@
 
 
 import os
-import torch
+from functools import lru_cache
+from pathlib import Path
+
 import datasets
 import torch
 from safe.tokenizer import SAFETokenizer
@@ -35,10 +37,39 @@ def get_last_checkpoint(save_dir):
             return os.path.join(save_dir, last_filename)
     
 
+def _resolve_tokenizer_sources():
+    repo_root = Path(__file__).resolve().parents[2]
+    workspace_root = repo_root.parent
+    env_path = os.environ.get('GENMOL_SAFE_TOKENIZER_PATH')
+
+    if env_path:
+        candidate = Path(env_path).expanduser().resolve()
+        if not candidate.exists():
+            raise FileNotFoundError(f'GENMOL_SAFE_TOKENIZER_PATH does not exist: {candidate}')
+        return [str(candidate)]
+
+    candidates = [
+        repo_root / 'artifacts' / 'safe-gpt-tokenizer',
+        workspace_root / 'artifacts' / 'safe-gpt-tokenizer',
+    ]
+    resolved = [str(path) for path in candidates if path.exists()]
+    resolved.append('datamol-io/safe-gpt')
+    return resolved
+
+
+@lru_cache(maxsize=1)
 def get_tokenizer():
-    tk = SAFETokenizer.from_pretrained('datamol-io/safe-gpt').get_pretrained()
-    tk.add_tokens(['<', '>'])   # for bracket_safe
-    return tk
+    errors = []
+    for source in _resolve_tokenizer_sources():
+        try:
+            tk = SAFETokenizer.from_pretrained(source).get_pretrained()
+            tk.add_tokens(['<', '>'])   # for bracket_safe
+            return tk
+        except Exception as exc:
+            errors.append(f'{source}: {exc}')
+
+    joined = '\n'.join(errors)
+    raise RuntimeError(f'Failed to load SAFE tokenizer from all configured sources:\n{joined}')
 
 
 class Collator:
