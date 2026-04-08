@@ -163,6 +163,17 @@ def _nanmean(tensor):
     return torch.nanmean(tensor).item()
 
 
+def _nanreduce(tensor, mode):
+    valid = tensor[~torch.isnan(tensor)]
+    if valid.numel() == 0:
+        return float('nan')
+    if mode == 'min':
+        return valid.min().item()
+    if mode == 'max':
+        return valid.max().item()
+    raise ValueError(f'Unsupported nan reduction mode: {mode}')
+
+
 def find_last_checkpoint(output_dir):
     if not os.path.isdir(output_dir):
         return None
@@ -500,9 +511,9 @@ class GenMolCpGRPOTrainer:
         if mode == 'mean':
             return gathered.nanmean().item()
         if mode == 'min':
-            return torch.nanmin(gathered).item()
+            return _nanreduce(gathered, mode='min')
         if mode == 'max':
-            return torch.nanmax(gathered).item()
+            return _nanreduce(gathered, mode='max')
         raise ValueError(f'Unsupported aggregation mode: {mode}')
 
     def _build_log_metrics(self, metric_buckets, grad_norm):
