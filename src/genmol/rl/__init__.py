@@ -3,6 +3,6 @@ __all__ = [
     'GenMolCpGRPOPolicy',
     'MolecularReward',
     'compute_clipped_grpo_loss',
-    'compute_leave_one_out_advantages',
+    'compute_grouped_advantages',
     'sample_group_specs',
 ]

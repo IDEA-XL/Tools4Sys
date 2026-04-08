@@ -1,3 +1,4 @@
+import math
 from contextlib import nullcontext
 
 import torch
@@ -10,137 +11,219 @@ def _cpu_generator(seed):
     return generator
 
 
-def sample_coupled_masks(completion_mask, seed, min_mask_ratio=0.2, max_mask_ratio=0.8):
+def split_tensor_dict(tensor_dict, num_chunks):
+    first_tensor = next(value for value in tensor_dict.values() if isinstance(value, torch.Tensor))
+    if first_tensor.shape[0] % num_chunks != 0:
+        raise ValueError('tensor batch dimension must be divisible by num_chunks')
+
+    chunk_size = first_tensor.shape[0] // num_chunks
+    chunks = []
+    for chunk_idx in range(num_chunks):
+        chunk = {}
+        start = chunk_idx * chunk_size
+        end = (chunk_idx + 1) * chunk_size
+        for key, value in tensor_dict.items():
+            if isinstance(value, torch.Tensor) and value.shape[:1] == first_tensor.shape[:1]:
+                chunk[key] = value[start:end]
+            else:
+                chunk[key] = value
+        chunks.append(chunk)
+    return chunks
+
+
+def selective_log_softmax(logits, index, weights=None, mask=None):
+    full_batch_size = logits.size(0) // 3
+    if full_batch_size == 0:
+        raise ValueError('logits batch size must be at least 3')
+
+    if weights is None or mask is None:
+        raise ValueError('weights and mask are required for coupled selective_log_softmax')
+
+    num_iterations = weights.size(0) // 3
+    batch_size = full_batch_size // num_iterations
+    per_token_logps = []
+
+    for sample_idx in range(full_batch_size):
+        labels = index[sample_idx]
+        chunk_idx, offset = divmod(sample_idx, batch_size)
+        base = chunk_idx * 3 * batch_size
+        logits_index = torch.tensor(
+            [base + offset, base + batch_size + offset, base + 2 * batch_size + offset],
+            device=logits.device,
+        )
+        seq_logits = logits[logits_index]
+        seq_logps = F.log_softmax(seq_logits, dim=-1)
+        gathered = seq_logps.gather(
+            dim=-1,
+            index=labels.unsqueeze(0).unsqueeze(-1).expand(3, -1, 1),
+        ).squeeze(-1)
+
+        seq_weights = weights[chunk_idx * 3:(chunk_idx + 1) * 3]
+        seq_mask = mask[sample_idx]
+        weighted = torch.where(seq_mask, gathered[1] * seq_weights[1], gathered[2] * seq_weights[2])
+        per_token_logps.append((gathered[0] + weighted) / 2)
+
+    return torch.stack(per_token_logps, dim=0)
+
+
+def forward_process(
+    batch,
+    completion_mask,
+    mask_id,
+    seed,
+    gradient_accumulation_steps=1,
+    accumulate=False,
+):
     generator = _cpu_generator(seed)
-    mask_ratio = min_mask_ratio + (max_mask_ratio - min_mask_ratio) * torch.rand((), generator=generator).item()
-    random_matrix = torch.rand(completion_mask.shape, generator=generator)
-    random_matrix = random_matrix.to(device=completion_mask.device, dtype=torch.float32)
+    batch_size, seq_len = batch.shape
+    mask_ratio = 0.2 + 0.6 * torch.rand((), generator=generator).item()
 
-    full_mask = completion_mask.clone()
+    if accumulate:
+        if batch_size % gradient_accumulation_steps != 0:
+            raise ValueError('batch size must be divisible by gradient_accumulation_steps when accumulate=True')
+        random_matrix = torch.rand((batch_size // gradient_accumulation_steps, seq_len), generator=generator)
+        random_matrix = torch.cat([random_matrix] * gradient_accumulation_steps, dim=0)
+    else:
+        random_matrix = torch.rand((batch_size, seq_len), generator=generator)
+    random_matrix = random_matrix.to(device=batch.device, dtype=torch.float32)
+
+    full_mask = completion_mask
     mask_a = completion_mask & (random_matrix < mask_ratio)
-    mask_b = completion_mask & ~mask_a
-    weights = torch.tensor(
-        [1.0, 1.0 / mask_ratio, 1.0 / (1.0 - mask_ratio)],
-        device=completion_mask.device,
-        dtype=torch.float32,
-    )
-    return full_mask, mask_a, mask_b, weights
+    mask_b = completion_mask & (random_matrix > mask_ratio)
+    noisy_batch = [
+        torch.where(full_mask, mask_id, batch),
+        torch.where(mask_a, mask_id, batch),
+        torch.where(mask_b, mask_id, batch),
+    ]
+    return noisy_batch, [1.0, 1.0 / mask_ratio, 1.0 / (1.0 - mask_ratio)], mask_a
 
 
-def apply_token_mask(token_ids, token_mask, mask_token_id):
-    return torch.where(token_mask, torch.full_like(token_ids, mask_token_id), token_ids)
+def get_per_token_logps(
+    score_fn,
+    input_ids,
+    completion_mask,
+    mask_token_id,
+    mask_seeds,
+    gradient_accumulation_steps,
+    requires_grad,
+):
+    if input_ids.dim() != 3:
+        raise ValueError(f'Expected input_ids to have 3 dimensions, got {input_ids.dim()}')
+    if completion_mask.dim() != 2:
+        raise ValueError(f'Expected completion_mask to have 2 dimensions, got {completion_mask.dim()}')
 
+    num_iterations, batch_size, seq_len = input_ids.size()
+    if len(mask_seeds) != num_iterations:
+        raise ValueError(f'Expected {num_iterations} mask seeds, got {len(mask_seeds)}')
 
-def selective_log_softmax(logits, target_ids, weights, mask_a, completion_mask):
-    batch_size = target_ids.shape[0]
-    log_probs = F.log_softmax(logits, dim=-1)
-
-    full_log_probs = log_probs[:batch_size].gather(dim=-1, index=target_ids.unsqueeze(-1)).squeeze(-1)
-    masked_log_probs = log_probs[batch_size:2 * batch_size].gather(dim=-1, index=target_ids.unsqueeze(-1)).squeeze(-1)
-    reverse_masked_log_probs = log_probs[2 * batch_size:].gather(dim=-1, index=target_ids.unsqueeze(-1)).squeeze(-1)
-
-    weighted = torch.where(mask_a, masked_log_probs * weights[1], reverse_masked_log_probs * weights[2])
-    final_log_probs = 0.5 * (full_log_probs + weighted)
-    return torch.where(completion_mask, final_log_probs, torch.zeros_like(final_log_probs))
-
-
-def compute_coupled_log_probs(score_fn, token_ids, completion_mask, mask_token_id, seeds, requires_grad):
-    log_prob_batches = []
-    mask_meta = []
     grad_context = nullcontext() if requires_grad else torch.no_grad()
-    target_ids = token_ids.detach().clone()
-    scoring_completion_mask = completion_mask.detach().clone()
-    stacked_token_batches = []
-    scoring_payloads = []
-    batch_size = target_ids.shape[0]
-
     with grad_context:
-        for seed in seeds:
-            full_mask, mask_a, mask_b, weights = sample_coupled_masks(scoring_completion_mask, seed=seed)
-            stacked_tokens = torch.cat(
-                [
-                    apply_token_mask(target_ids, full_mask, mask_token_id),
-                    apply_token_mask(target_ids, mask_a, mask_token_id),
-                    apply_token_mask(target_ids, mask_b, mask_token_id),
-                ],
-                dim=0,
+        all_perturbed = []
+        all_weights = []
+        all_expanded_inputs = []
+        all_partial_masks = []
+
+        for iteration_idx, mask_seed in enumerate(mask_seeds):
+            expanded_input = input_ids[iteration_idx]
+            perturbed, weights, partial_mask = forward_process(
+                batch=expanded_input,
+                completion_mask=completion_mask,
+                mask_id=mask_token_id,
+                seed=mask_seed,
+                gradient_accumulation_steps=gradient_accumulation_steps,
+                accumulate=num_iterations > 1,
             )
-            stacked_token_batches.append(stacked_tokens)
-            scoring_payloads.append((weights, mask_a))
-            mask_meta.append({'seed': int(seed), 'mask_ratio': float(1.0 / weights[1].item())})
+            all_perturbed.extend(perturbed)
+            all_weights.extend(weights)
+            all_expanded_inputs.append(expanded_input)
+            all_partial_masks.append(partial_mask)
 
-        all_logits = score_fn(torch.cat(stacked_token_batches, dim=0))
-        for iteration_idx, (weights, mask_a) in enumerate(scoring_payloads):
-            start_idx = iteration_idx * 3 * batch_size
-            end_idx = start_idx + 3 * batch_size
-            logits = all_logits[start_idx:end_idx]
-            log_prob_batches.append(
-                selective_log_softmax(
-                    logits=logits,
-                    target_ids=target_ids,
-                    weights=weights,
-                    mask_a=mask_a,
-                    completion_mask=scoring_completion_mask,
-                )
-            )
+        perturbed_seq = torch.cat(all_perturbed, dim=0)
+        expanded_input = torch.cat(all_expanded_inputs, dim=0)
+        partial_mask = torch.cat(all_partial_masks, dim=0)
+        weights = torch.tensor(all_weights, device=input_ids.device, dtype=torch.float32)
 
-    return torch.stack(log_prob_batches, dim=0), mask_meta
+        logits = score_fn(perturbed_seq)
+        per_token_logps = selective_log_softmax(
+            logits=logits,
+            index=expanded_input,
+            weights=weights,
+            mask=partial_mask,
+        ).view(num_iterations, batch_size, seq_len).permute(1, 0, 2)
+
+    return per_token_logps.to(torch.float32)
 
 
-def compute_leave_one_out_advantages(rewards, group_size, scale_rewards=False):
-    if group_size <= 1:
-        raise ValueError('group_size must be greater than 1 for leave-one-out advantages')
-    if rewards.numel() % group_size != 0:
-        raise ValueError('rewards must be divisible by group_size')
+def compute_grouped_advantages(rewards, num_generations, scale_rewards=False):
+    if rewards.dim() != 1:
+        raise ValueError('rewards must be a 1D tensor')
+    if rewards.numel() % num_generations != 0:
+        raise ValueError('rewards length must be divisible by num_generations')
 
-    grouped = rewards.view(-1, group_size)
-    baseline = (grouped.sum(dim=1, keepdim=True) - grouped) / (group_size - 1)
-    advantages = (grouped - baseline).reshape(-1)
-
+    rewards_grouped = rewards.view(-1, num_generations)
+    sum_group = rewards_grouped.sum(dim=1, keepdim=True)
+    baseline = (sum_group - rewards_grouped) / (num_generations - 1)
+    advantages = (rewards_grouped - baseline).view(-1)
+    std_grouped = rewards_grouped.std(dim=1, keepdim=True)
+    repeated_std = std_grouped.repeat_interleave(num_generations, dim=1).view(-1)
     if scale_rewards:
-        std = grouped.std(dim=1, keepdim=True, unbiased=False).repeat_interleave(group_size, dim=1).reshape(-1)
-        advantages = advantages / (std + 1e-4)
-
-    return advantages
-
-
-def masked_mean(values, mask):
-    masked = values * mask
-    denom = mask.sum().clamp(min=1.0)
-    return masked.sum() / denom
+        advantages = advantages / (repeated_std + 1e-4)
+    zero_std_ratio = (repeated_std < 1e-6).to(torch.float32).mean().item()
+    return advantages, repeated_std, zero_std_ratio
 
 
-def compute_clipped_grpo_loss(new_log_probs, old_log_probs, advantages, completion_mask, clip_range, ref_log_probs=None, beta=0.0):
+def compute_clipped_grpo_loss(
+    new_log_probs,
+    old_log_probs,
+    advantages,
+    completion_mask,
+    epsilon,
+    ref_log_probs=None,
+    beta=0.0,
+):
     if new_log_probs.shape != old_log_probs.shape:
         raise ValueError('new_log_probs and old_log_probs must have the same shape')
+    if new_log_probs.dim() != 3 or new_log_probs.shape[1] != 1:
+        raise ValueError('expected log prob tensors to have shape [batch, 1, seq_len]')
+    if completion_mask.dim() != 2:
+        raise ValueError('completion_mask must have shape [batch, seq_len]')
 
-    token_mask = completion_mask.unsqueeze(0).expand_as(new_log_probs).to(dtype=torch.float32)
-    advantages = advantages.view(1, -1, 1)
+    completion_mask = completion_mask.to(dtype=torch.float32)
+    advantages = advantages.view(-1, 1, 1)
+    coef_1 = torch.exp(new_log_probs - old_log_probs)
+    coef_2 = torch.clamp(coef_1, 1 - epsilon, 1 + epsilon)
+    loss_1 = coef_1 * advantages
+    loss_2 = coef_2 * advantages
+    per_token_loss = -torch.min(loss_1, loss_2)
 
-    ratio = torch.exp(new_log_probs - old_log_probs)
-    clipped_ratio = torch.clamp(ratio, 1.0 - clip_range, 1.0 + clip_range)
-    loss_unclipped = -advantages * ratio
-    loss_clipped = -advantages * clipped_ratio
-    per_token_loss = torch.maximum(loss_unclipped, loss_clipped)
-
-    kl_mean = None
-    if ref_log_probs is not None and beta > 0.0:
+    kl_value = None
+    if ref_log_probs is not None and beta != 0.0:
         per_token_kl = torch.exp(ref_log_probs - new_log_probs) - (ref_log_probs - new_log_probs) - 1.0
         per_token_loss = per_token_loss + beta * per_token_kl
-        kl_mean = masked_mean(per_token_kl, token_mask).item()
+        kl_value = (per_token_kl[:, 0, :] * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
 
-    loss = masked_mean(per_token_loss, token_mask)
+    loss = (per_token_loss[:, 0, :] * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
 
-    sign_advantages = advantages.expand_as(ratio)
-    is_low_clipped = (ratio < 1.0 - clip_range) & (sign_advantages < 0)
-    is_high_clipped = (ratio > 1.0 + clip_range) & (sign_advantages > 0)
-    clipped_region = (is_low_clipped | is_high_clipped).to(dtype=torch.float32)
+    is_low_clipped = (coef_1 < 1 - epsilon) & (advantages < 0)
+    is_high_clipped = (coef_1 > 1 + epsilon) & (advantages > 0)
+    is_region_clipped = is_low_clipped | is_high_clipped
+
+    low_clip = (is_low_clipped[:, 0, :].to(torch.float32) * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
+    high_clip = (is_high_clipped[:, 0, :].to(torch.float32) * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
+    region_clip = (is_region_clipped[:, 0, :].to(torch.float32) * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
+    ratio_mean = (coef_1[:, 0, :] * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
 
     metrics = {
-        'ratio_mean': masked_mean(ratio, token_mask).item(),
-        'clip_ratio': masked_mean(clipped_region, token_mask).item(),
+        'ratio_mean': ratio_mean.item(),
+        'clip_ratio_low_mean': low_clip.item(),
+        'clip_ratio_high_mean': high_clip.item(),
+        'clip_ratio_region_mean': region_clip.item(),
     }
-    if kl_mean is not None:
-        metrics['kl_mean'] = kl_mean
+    if kl_value is not None:
+        metrics['kl_mean'] = kl_value.item()
 
     return loss, metrics
+
+
+def compute_warmup_steps(max_steps, warmup_ratio):
+    return max(1, int(math.ceil(max_steps * warmup_ratio)))

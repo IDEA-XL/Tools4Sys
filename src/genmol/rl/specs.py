@@ -1,7 +1,8 @@
+import json
 import os
 import pickle
 import random
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 
 
@@ -11,7 +12,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.pa
 @dataclass(frozen=True)
 class DeNovoSpec:
     add_seq_len: int
-    softmax_temp: float
+    generation_temperature: float
     randomness: float
     min_add_len: int
 
@@ -23,22 +24,59 @@ def load_length_distribution(path=None):
         return tuple(pickle.load(handle))
 
 
-def sample_add_seq_len(min_add_len, rng, length_path=None):
+def sample_add_seq_len(min_add_len, rng, max_completion_length=None, length_path=None):
     seq_len_list = load_length_distribution(length_path)
     sampled_total_length = rng.choice(seq_len_list)
-    return max(sampled_total_length - 2, min_add_len)
+    add_seq_len = max(sampled_total_length - 2, min_add_len)
+    if max_completion_length is not None:
+        add_seq_len = min(add_seq_len, max_completion_length)
+    return add_seq_len
 
 
-def sample_group_specs(groups_per_rank, softmax_temp, randomness, min_add_len, seed, length_path=None):
+def sample_group_specs(
+    num_groups,
+    generation_temperature,
+    randomness,
+    min_add_len,
+    seed,
+    max_completion_length=None,
+    length_path=None,
+):
+    if num_groups <= 0:
+        raise ValueError('num_groups must be positive')
+
     rng = random.Random(seed)
     specs = []
-    for _ in range(groups_per_rank):
+    for _ in range(num_groups):
         specs.append(
             DeNovoSpec(
-                add_seq_len=sample_add_seq_len(min_add_len=min_add_len, rng=rng, length_path=length_path),
-                softmax_temp=softmax_temp,
+                add_seq_len=sample_add_seq_len(
+                    min_add_len=min_add_len,
+                    rng=rng,
+                    max_completion_length=max_completion_length,
+                    length_path=length_path,
+                ),
+                generation_temperature=generation_temperature,
                 randomness=randomness,
                 min_add_len=min_add_len,
             )
         )
     return specs
+
+
+def expand_group_specs(group_specs, num_generations):
+    if num_generations <= 1:
+        raise ValueError('num_generations must be greater than 1')
+
+    expanded = []
+    for spec in group_specs:
+        expanded.extend([spec] * num_generations)
+    return expanded
+
+
+def serialize_specs(specs):
+    return json.dumps([asdict(spec) for spec in specs], sort_keys=True)
+
+
+def deserialize_specs(payload):
+    return [DeNovoSpec(**item) for item in json.loads(payload)]
