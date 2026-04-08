@@ -300,6 +300,7 @@ class GenMolCpGRPOTrainer:
         self._last_train_metrics = None
         self._metrics = {'train': defaultdict(list), 'eval': defaultdict(list)}
         self._textual_logs = {'train': [], 'eval': []}
+        self._last_reward_metrics = {'train': None, 'eval': None}
 
         if config.report_to:
             init_kwargs = {}
@@ -320,6 +321,20 @@ class GenMolCpGRPOTrainer:
         if mode not in self._metrics:
             raise ValueError(f'Unsupported mode: {mode}')
         bucket = self._metrics[mode]
+        self._last_reward_metrics[mode] = {
+            'reward': float(metadata['reward_mean']),
+            'reward_std': float(metadata['reward_std']),
+            'advantage_mean': float(metadata['advantage_mean']),
+            'completion_length': float(metadata['completion_length']),
+            'zero_std_ratio': float(metadata['zero_std_ratio']),
+            'valid_fraction': float(metadata['valid_fraction']),
+            'alert_hit_fraction': float(metadata['alert_hit_fraction']),
+            'invalid_fraction': float(metadata['invalid_fraction']),
+            'rewards/qed_mean': float(metadata['rewards/qed_mean']),
+            'rewards/sa_mean': float(metadata['rewards/sa_mean']),
+            'rewards/sa_score_mean': float(metadata['rewards/sa_score_mean']),
+            'rewards/soft_mean': float(metadata['rewards/soft_mean']),
+        }
         bucket['reward'].append(float(metadata['reward_mean']))
         bucket['reward_std'].append(float(metadata['reward_std']))
         bucket['advantage_mean'].append(float(metadata['advantage_mean']))
@@ -592,21 +607,28 @@ class GenMolCpGRPOTrainer:
 
     def _consume_logged_metrics(self, mode, step, buffer_cycle):
         bucket = self._metrics[mode]
+        last_reward_metrics = self._last_reward_metrics[mode] or {}
+
+        def _reward_metric(name):
+            if bucket[name]:
+                return _aggregate_scalar_list(bucket[name])
+            return float(last_reward_metrics.get(name, float('nan')))
+
         metrics = {
             'step': step,
             'buffer_cycle': buffer_cycle,
-            'reward': _aggregate_scalar_list(bucket['reward']),
-            'reward_std': _aggregate_scalar_list(bucket['reward_std']),
-            'advantage_mean': _aggregate_scalar_list(bucket['advantage_mean']),
-            'zero_std_ratio': _aggregate_scalar_list(bucket['zero_std_ratio']),
-            'completion_length': _aggregate_scalar_list(bucket['completion_length']),
-            'valid_fraction': _aggregate_scalar_list(bucket['valid_fraction']),
-            'alert_hit_fraction': _aggregate_scalar_list(bucket['alert_hit_fraction']),
-            'invalid_fraction': _aggregate_scalar_list(bucket['invalid_fraction']),
-            'rewards/qed_mean': _aggregate_scalar_list(bucket['rewards/qed_mean']),
-            'rewards/sa_mean': _aggregate_scalar_list(bucket['rewards/sa_mean']),
-            'rewards/sa_score_mean': _aggregate_scalar_list(bucket['rewards/sa_score_mean']),
-            'rewards/soft_mean': _aggregate_scalar_list(bucket['rewards/soft_mean']),
+            'reward': _reward_metric('reward'),
+            'reward_std': _reward_metric('reward_std'),
+            'advantage_mean': _reward_metric('advantage_mean'),
+            'zero_std_ratio': _reward_metric('zero_std_ratio'),
+            'completion_length': _reward_metric('completion_length'),
+            'valid_fraction': _reward_metric('valid_fraction'),
+            'alert_hit_fraction': _reward_metric('alert_hit_fraction'),
+            'invalid_fraction': _reward_metric('invalid_fraction'),
+            'rewards/qed_mean': _reward_metric('rewards/qed_mean'),
+            'rewards/sa_mean': _reward_metric('rewards/sa_mean'),
+            'rewards/sa_score_mean': _reward_metric('rewards/sa_score_mean'),
+            'rewards/soft_mean': _reward_metric('rewards/soft_mean'),
             'ratio_mean': _aggregate_scalar_list(bucket['ratio_mean']),
             'clip_ratio/low_mean': _aggregate_scalar_list(bucket['clip_ratio/low_mean']),
             'clip_ratio/low_min': _aggregate_scalar_list(bucket['clip_ratio/low_min']),
