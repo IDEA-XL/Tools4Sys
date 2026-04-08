@@ -218,6 +218,13 @@ class GenMolCpGRPOTrainer:
             )
         self.num_groups_global = self.global_sample_count // config.num_generations
 
+        deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
+        if deepspeed_plugin is not None:
+            deepspeed_config = deepspeed_plugin.deepspeed_config
+            deepspeed_config['train_micro_batch_size_per_gpu'] = int(config.per_device_train_batch_size)
+            deepspeed_config['gradient_accumulation_steps'] = int(config.gradient_accumulation_steps)
+            deepspeed_config['train_batch_size'] = int(self.global_sample_count)
+
         ensure_exists(config.init_ckpt_path, 'init checkpoint')
         ensure_exists(config.ref_ckpt_path, 'reference checkpoint')
 
