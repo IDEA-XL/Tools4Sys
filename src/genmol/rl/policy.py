@@ -92,7 +92,8 @@ class GenMolCpGRPOPolicy:
     def forward_logits(self, input_ids):
         attention_mask = input_ids != self.pad_index
         with self.autocast_context:
-            return self.model.backbone(input_ids, attention_mask=attention_mask)['logits']
+            logits = self.model.backbone(input_ids, attention_mask=attention_mask)['logits']
+        return logits.float()
 
     def coupled_log_probs(self, token_ids, completion_mask, num_iterations, base_seed, requires_grad):
         seeds = [int(base_seed) + idx for idx in range(num_iterations)]
@@ -134,6 +135,8 @@ class GenMolCpGRPOPolicy:
             raise ValueError('num_samples must be positive')
 
         torch.manual_seed(seed)
+        if self.device.type == 'cuda':
+            torch.cuda.manual_seed_all(seed)
         random.seed(seed)
 
         token_ids = torch.full(

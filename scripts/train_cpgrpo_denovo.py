@@ -141,7 +141,7 @@ def main():
         print(f'world_size={world_size}', flush=True)
 
     if is_distributed:
-        dist.barrier()
+        dist.barrier(device_ids=[local_rank])
 
     policy = GenMolCpGRPOPolicy(
         checkpoint_path=config.init_ckpt_path,
