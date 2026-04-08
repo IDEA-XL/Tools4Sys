@@ -215,6 +215,7 @@ class GenMolCpGRPOTrainer:
         self.config = config
         self.output_dir = output_dir
         self.accelerator = Accelerator(
+            gradient_accumulation_steps=config.gradient_accumulation_steps,
             log_with=config.report_to if config.report_to else None,
             mixed_precision='bf16' if config.bf16 else 'no',
         )
