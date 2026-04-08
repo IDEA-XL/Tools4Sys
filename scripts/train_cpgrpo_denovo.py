@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 sys.path.append(os.path.realpath('.'))
+sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 import torch
 import torch.distributed as dist
