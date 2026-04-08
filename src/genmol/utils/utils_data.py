@@ -38,7 +38,7 @@ def get_last_checkpoint(save_dir):
     
 
 def _resolve_tokenizer_sources():
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[3]
     workspace_root = repo_root.parent
     env_path = os.environ.get('GENMOL_SAFE_TOKENIZER_PATH')
 
