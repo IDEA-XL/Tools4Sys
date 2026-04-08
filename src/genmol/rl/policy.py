@@ -15,8 +15,11 @@ from genmol.utils.utils_chem import safe_to_smiles
 
 @dataclass
 class RolloutBatch:
-    token_ids: torch.Tensor
+    prompt_ids: torch.Tensor
+    completion_ids: torch.Tensor
     completion_mask: torch.Tensor
+    full_token_ids: torch.Tensor
+    specs: list
     safe_strings: list[str]
     smiles: list[str | None]
 
@@ -79,9 +82,12 @@ class GenMolCpGRPOPolicy:
         return torch.autocast(device_type='cuda', dtype=torch.bfloat16)
 
     def _unwrap_backbone(self):
-        if isinstance(self.model.backbone, DistributedDataParallel):
-            return self.model.backbone.module
-        return self.model.backbone
+        backbone = self.model.backbone
+        if isinstance(backbone, DistributedDataParallel):
+            backbone = backbone.module
+        while hasattr(backbone, 'module'):
+            backbone = backbone.module
+        return backbone
 
     def trainable_parameters(self):
         return self._unwrap_backbone().parameters()
@@ -127,6 +133,7 @@ class GenMolCpGRPOPolicy:
     def per_token_logps(
         self,
         input_ids,
+        logits_to_keep,
         completion_mask,
         mask_seeds,
         gradient_accumulation_steps,
@@ -138,6 +145,7 @@ class GenMolCpGRPOPolicy:
         return get_per_token_logps(
             score_fn=score_fn,
             input_ids=input_ids,
+            logits_to_keep=logits_to_keep,
             completion_mask=completion_mask,
             mask_token_id=self.mask_index,
             mask_seeds=mask_seeds,
@@ -215,23 +223,45 @@ class GenMolCpGRPOPolicy:
                     chunk_masks.append(completion_mask.detach().clone())
 
         token_ids = torch.cat(chunk_outputs, dim=0)
-        completion_mask = torch.cat(chunk_masks, dim=0)
+        completion_mask = torch.cat(chunk_masks, dim=0)[:, 1:]
+        prompt_ids = token_ids[:, :1].detach().clone()
+        completion_ids = token_ids[:, 1:].detach().clone()
         safe_strings = self._decode_safe_strings(token_ids)
         smiles = self._decode_smiles(safe_strings)
         return RolloutBatch(
-            token_ids=token_ids,
+            prompt_ids=prompt_ids,
+            completion_ids=completion_ids,
             completion_mask=completion_mask,
+            full_token_ids=token_ids,
+            specs=list(specs),
             safe_strings=safe_strings,
             smiles=smiles,
         )
 
-    def save_checkpoint(self, path, step):
+    def load_ema_state(self, ema_state):
+        if self.model.ema and ema_state is not None:
+            self.model.ema.load_state_dict(ema_state)
+
+    def load_backbone_state_dict(self, state_dict):
+        self._unwrap_backbone().load_state_dict(state_dict, strict=True)
+
+    def get_backbone_state_dict(self):
+        return _move_to_cpu(self._unwrap_backbone().state_dict())
+
+    def save_checkpoint(self, path, step, accelerator=None):
         checkpoint = torch.load(self.checkpoint_path, map_location='cpu', weights_only=False)
-        state_dict = _move_to_cpu(self.model.state_dict())
-        checkpoint['state_dict'] = {
-            key.replace('backbone.module.', 'backbone.'): value
-            for key, value in state_dict.items()
-        }
+        if accelerator is None:
+            backbone_state = _move_to_cpu(self._unwrap_backbone().state_dict())
+        else:
+            backbone_state = _move_to_cpu(accelerator.get_state_dict(self.model.backbone))
+
+        model_state = _move_to_cpu(self.model.state_dict())
+        checkpoint['state_dict'] = {}
+        for key, value in model_state.items():
+            if key.startswith('backbone.'):
+                continue
+            checkpoint['state_dict'][key] = value
+        checkpoint['state_dict'].update({f'backbone.{key}': value for key, value in backbone_state.items()})
         checkpoint['global_step'] = int(step)
         checkpoint['epoch'] = 0
         checkpoint['optimizer_states'] = []

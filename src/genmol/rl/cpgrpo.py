@@ -101,6 +101,7 @@ def forward_process(
 def get_per_token_logps(
     score_fn,
     input_ids,
+    logits_to_keep,
     completion_mask,
     mask_token_id,
     mask_seeds,
@@ -113,8 +114,19 @@ def get_per_token_logps(
         raise ValueError(f'Expected completion_mask to have 2 dimensions, got {completion_mask.dim()}')
 
     num_iterations, batch_size, seq_len = input_ids.size()
+    if logits_to_keep <= 0 or logits_to_keep > seq_len:
+        raise ValueError(f'logits_to_keep must be in [1, {seq_len}], got {logits_to_keep}')
+    if completion_mask.size(0) != batch_size or completion_mask.size(1) != logits_to_keep:
+        raise ValueError(
+            'completion_mask must have shape '
+            f'[{batch_size}, {logits_to_keep}], got {list(completion_mask.shape)}'
+        )
     if len(mask_seeds) != num_iterations:
         raise ValueError(f'Expected {num_iterations} mask seeds, got {len(mask_seeds)}')
+
+    prompt_length = seq_len - logits_to_keep
+    full_completion_mask = torch.zeros((batch_size, seq_len), device=input_ids.device, dtype=torch.bool)
+    full_completion_mask[:, prompt_length:] = completion_mask
 
     grad_context = nullcontext() if requires_grad else torch.no_grad()
     with grad_context:
@@ -127,7 +139,7 @@ def get_per_token_logps(
             expanded_input = input_ids[iteration_idx]
             perturbed, weights, partial_mask = forward_process(
                 batch=expanded_input,
-                completion_mask=completion_mask,
+                completion_mask=full_completion_mask,
                 mask_id=mask_token_id,
                 seed=mask_seed,
                 gradient_accumulation_steps=gradient_accumulation_steps,
@@ -144,12 +156,15 @@ def get_per_token_logps(
         weights = torch.tensor(all_weights, device=input_ids.device, dtype=torch.float32)
 
         logits = score_fn(perturbed_seq)
+        completion_logits = logits[:, -logits_to_keep:, :]
+        completion_targets = expanded_input[:, -logits_to_keep:]
+        completion_loss_mask = partial_mask[:, -logits_to_keep:]
         per_token_logps = selective_log_softmax(
-            logits=logits,
-            index=expanded_input,
+            logits=completion_logits,
+            index=completion_targets,
             weights=weights,
-            mask=partial_mask,
-        ).view(num_iterations, batch_size, seq_len).permute(1, 0, 2)
+            mask=completion_loss_mask,
+        ).view(num_iterations, batch_size, logits_to_keep).permute(1, 0, 2)
 
     return per_token_logps.to(torch.float32)
 
@@ -214,13 +229,13 @@ def compute_clipped_grpo_loss(
     ratio_mean = (coef_1[:, 0, :] * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
 
     metrics = {
-        'ratio_mean': ratio_mean.item(),
-        'clip_ratio_low_mean': low_clip.item(),
-        'clip_ratio_high_mean': high_clip.item(),
-        'clip_ratio_region_mean': region_clip.item(),
+        'ratio_mean': ratio_mean.detach(),
+        'clip_ratio_low_mean': low_clip.detach(),
+        'clip_ratio_high_mean': high_clip.detach(),
+        'clip_ratio_region_mean': region_clip.detach(),
     }
     if kl_value is not None:
-        metrics['kl_mean'] = kl_value.item()
+        metrics['kl_mean'] = kl_value.detach()
 
     return loss, metrics
 

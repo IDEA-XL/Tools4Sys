@@ -41,3 +41,6 @@ generation_temperature: 1.0
 randomness: 0.3
 min_add_len: 60
 max_completion_length: null
+log_completions: true
+log_level: info
+report_to: []

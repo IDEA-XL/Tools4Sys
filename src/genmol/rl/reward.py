@@ -24,6 +24,8 @@ class RewardRecord:
     alert_hit: bool
     qed: float | None
     sa: float | None
+    sa_score: float | None
+    soft_reward: float | None
     smiles: str | None
 
 
@@ -72,6 +74,8 @@ class MolecularReward:
                     alert_hit=False,
                     qed=None,
                     sa=None,
+                    sa_score=None,
+                    soft_reward=None,
                     smiles=None,
                 )
                 continue
@@ -93,6 +97,8 @@ class MolecularReward:
                     alert_hit=alert_hit,
                     qed=qed_score,
                     sa=sa_score,
+                    sa_score=sa_to_score(sa_score),
+                    soft_reward=soft_reward,
                     smiles=smiles,
                 )
 
