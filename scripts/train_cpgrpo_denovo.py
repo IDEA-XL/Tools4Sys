@@ -134,6 +134,10 @@ def main():
         os.makedirs(checkpoint_dir, exist_ok=True)
         with open(os.path.join(output_dir, 'config.yaml'), 'w') as handle:
             yaml.safe_dump(asdict(config), handle, sort_keys=False)
+        print(f'output_dir={output_dir}', flush=True)
+        print(f'init_ckpt_path={config.init_ckpt_path}', flush=True)
+        print(f'ref_ckpt_path={config.ref_ckpt_path}', flush=True)
+        print(f'world_size={world_size}', flush=True)
 
     if is_distributed:
         dist.barrier()
