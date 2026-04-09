@@ -44,6 +44,12 @@ class MolecularReward:
             property_filters_flag=False,
         )
 
+    def _safe_sa_score(self, smiles):
+        try:
+            return float(self._sa_oracle([smiles])[0])
+        except Exception:
+            return None
+
     def _canonicalize(self, smiles):
         if smiles is None:
             return None, None
@@ -86,9 +92,21 @@ class MolecularReward:
         if valid_indices:
             pass_smiles = set(self._filter(canonical_smiles))
             qed_scores = [float(self._qed.qed(mol)) for mol in mols]
-            sa_scores = [float(score) for score in self._sa_oracle(canonical_smiles)]
+            sa_scores = [self._safe_sa_score(smiles) for smiles in canonical_smiles]
 
             for index, smiles, qed_score, sa_score in zip(valid_indices, canonical_smiles, qed_scores, sa_scores):
+                if sa_score is None:
+                    records[index] = RewardRecord(
+                        reward=-1.0,
+                        is_valid=False,
+                        alert_hit=False,
+                        qed=qed_score,
+                        sa=None,
+                        sa_score=None,
+                        soft_reward=None,
+                        smiles=smiles,
+                    )
+                    continue
                 alert_hit = smiles not in pass_smiles
                 soft_reward = compute_soft_reward(qed_score, sa_score)
                 records[index] = RewardRecord(
