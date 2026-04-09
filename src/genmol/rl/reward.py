@@ -1,4 +1,12 @@
+import atexit
+import math
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from multiprocessing import get_context
+
+
+_WORKER_REWARD = None
 
 
 def sa_to_score(sa_value):
@@ -29,7 +37,41 @@ class RewardRecord:
     smiles: str | None
 
 
-class MolecularReward:
+def _resolve_reward_workers():
+    raw_workers = os.environ.get('GENMOL_REWARD_WORKERS')
+    if raw_workers is not None:
+        try:
+            workers = int(raw_workers)
+        except ValueError as exc:
+            raise ValueError(f'GENMOL_REWARD_WORKERS must be an integer, got: {raw_workers}') from exc
+        if workers <= 0:
+            raise ValueError(f'GENMOL_REWARD_WORKERS must be positive, got: {workers}')
+        return workers
+
+    raw_total_cpus = os.environ.get('SLURM_CPUS_PER_TASK')
+    if raw_total_cpus is None:
+        total_cpus = os.cpu_count() or 1
+    else:
+        try:
+            total_cpus = int(raw_total_cpus)
+        except ValueError as exc:
+            raise ValueError(f'SLURM_CPUS_PER_TASK must be an integer, got: {raw_total_cpus}') from exc
+    if total_cpus <= 0:
+        raise ValueError(f'Invalid CPU count for reward workers: {total_cpus}')
+
+    raw_local_world_size = os.environ.get('LOCAL_WORLD_SIZE') or os.environ.get('WORLD_SIZE') or '1'
+    try:
+        local_world_size = int(raw_local_world_size)
+    except ValueError as exc:
+        raise ValueError(f'LOCAL_WORLD_SIZE/WORLD_SIZE must be an integer, got: {raw_local_world_size}') from exc
+    if local_world_size <= 0:
+        raise ValueError(f'Invalid local world size for reward workers: {local_world_size}')
+
+    # Leave one CPU core for the trainer process when possible.
+    return max(1, (total_cpus // local_world_size) - 1)
+
+
+class _RewardKernel:
     def __init__(self):
         from rdkit import Chem
         from rdkit.Chem import QED
@@ -65,7 +107,7 @@ class MolecularReward:
             return None, None
         return canonical, mol
 
-    def score(self, smiles_list):
+    def score_chunk(self, smiles_list):
         canonical_smiles = []
         mols = []
         valid_indices = []
@@ -120,4 +162,57 @@ class MolecularReward:
                     smiles=smiles,
                 )
 
+        return records
+
+
+def _initialize_reward_worker():
+    global _WORKER_REWARD
+    _WORKER_REWARD = _RewardKernel()
+
+
+def _score_reward_chunk(smiles_chunk):
+    if _WORKER_REWARD is None:
+        raise RuntimeError('Reward worker is not initialized')
+    return _WORKER_REWARD.score_chunk(smiles_chunk)
+
+
+class MolecularReward:
+    def __init__(self):
+        self.num_workers = _resolve_reward_workers()
+        self._kernel = _RewardKernel()
+        self._pool = None
+        if self.num_workers > 1:
+            self._pool = ProcessPoolExecutor(
+                max_workers=self.num_workers,
+                mp_context=get_context('spawn'),
+                initializer=_initialize_reward_worker,
+            )
+            atexit.register(self.close)
+
+    def close(self):
+        if self._pool is None:
+            return
+        self._pool.shutdown(wait=True, cancel_futures=False)
+        self._pool = None
+
+    def score(self, smiles_list):
+        if not smiles_list:
+            return []
+        if self._pool is None or len(smiles_list) == 1:
+            return self._kernel.score_chunk(smiles_list)
+
+        chunk_count = min(self.num_workers, len(smiles_list))
+        chunk_size = math.ceil(len(smiles_list) / chunk_count)
+        futures = []
+        for start in range(0, len(smiles_list), chunk_size):
+            futures.append(self._pool.submit(_score_reward_chunk, smiles_list[start:start + chunk_size]))
+
+        records = []
+        for future in futures:
+            records.extend(future.result())
+
+        if len(records) != len(smiles_list):
+            raise RuntimeError(
+                f'Reward worker returned mismatched record count: expected {len(smiles_list)}, got {len(records)}'
+            )
         return records

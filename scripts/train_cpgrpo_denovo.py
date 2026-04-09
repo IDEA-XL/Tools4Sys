@@ -68,17 +68,20 @@ def main():
             yaml.safe_dump(config.__dict__, handle, sort_keys=False)
 
     trainer = GenMolCpGRPOTrainer(config=config, output_dir=output_dir)
-    train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-    metrics = train_result.metrics
-    trainer.log_metrics('train', metrics)
-    trainer.save_metrics('train', metrics)
-    trainer.save_state()
-    trainer.save_model(output_dir)
+    try:
+        train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        metrics = train_result.metrics
+        trainer.log_metrics('train', metrics)
+        trainer.save_metrics('train', metrics)
+        trainer.save_state()
+        trainer.save_model(output_dir)
 
-    if config.do_eval:
-        eval_metrics = trainer.evaluate()
-        trainer.log_metrics('eval', eval_metrics)
-        trainer.save_metrics('eval', eval_metrics)
+        if config.do_eval:
+            eval_metrics = trainer.evaluate()
+            trainer.log_metrics('eval', eval_metrics)
+            trainer.save_metrics('eval', eval_metrics)
+    finally:
+        trainer.close()
 
 
 if __name__ == '__main__':

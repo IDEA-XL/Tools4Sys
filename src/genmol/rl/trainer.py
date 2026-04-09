@@ -309,12 +309,13 @@ class GenMolCpGRPOTrainer:
             self.accelerator.init_trackers('genmol-cpgrpo', config=asdict(config), init_kwargs=init_kwargs or None)
 
         logger.info(
-            'process_index=%s device=%s world_size=%s local_sample_count=%s global_sample_count=%s',
+            'process_index=%s device=%s world_size=%s local_sample_count=%s global_sample_count=%s reward_workers=%s',
             self.accelerator.process_index,
             self.device,
             self.world_size,
             self.local_sample_count,
             self.global_sample_count,
+            self.reward_model.num_workers,
         )
 
     def _record_reward_metrics(self, mode, metadata):
@@ -856,3 +857,6 @@ class GenMolCpGRPOTrainer:
             step=self.global_step,
             accelerator=self.accelerator,
         )
+
+    def close(self):
+        self.reward_model.close()
