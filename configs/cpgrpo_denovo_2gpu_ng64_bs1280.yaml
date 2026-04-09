@@ -27,7 +27,7 @@ max_grad_norm: 0.2
 logging_first_step: true
 logging_steps: 10
 logging_strategy: steps
-max_steps: 5000
+max_steps: 1000
 lr_scheduler_type: cosine_with_min_lr
 lr_scheduler_kwargs:
   min_lr_rate: 0.1
