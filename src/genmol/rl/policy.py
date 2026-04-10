@@ -125,6 +125,7 @@ class GenMolCpGRPOPolicy:
             backbone.train(was_training)
 
     def forward_logits(self, input_ids):
+        input_ids = input_ids.clone()
         attention_mask = input_ids != self.pad_index
         with self.autocast_context:
             logits = self.model.backbone(input_ids, attention_mask=attention_mask)['logits']
