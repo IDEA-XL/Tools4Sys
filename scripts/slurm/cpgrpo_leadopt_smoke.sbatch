@@ -26,13 +26,9 @@ export HF_HOME=/tmp/xinwuye_hf_cpgrpo_lead_${SLURM_JOB_ID}
 export HF_DATASETS_CACHE=${HF_HOME}/datasets
 export HF_HUB_CACHE=${HF_HOME}/hub
 export TRANSFORMERS_CACHE=${HF_HOME}/transformers
+export TRITON_CACHE_DIR=${HF_HOME}/triton_cache
 export PYTHONPATH=src
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+mkdir -p "${TRITON_CACHE_DIR}"
 
-MASTER_PORT=$((20000 + SLURM_JOB_ID % 10000))
-accelerate launch \
-  --config_file configs/accelerate_zero2.yaml \
-  --num_processes 1 \
-  --main_process_port "${MASTER_PORT}" \
-  scripts/train_cpgrpo_leadopt.py \
-  --config "${CONFIG_PATH}"
+python scripts/train_cpgrpo_leadopt.py --config "${CONFIG_PATH}"

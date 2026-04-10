@@ -35,8 +35,10 @@ export HF_HOME=/tmp/xinwuye_hf_cpgrpo_lead_${SLURM_JOB_ID}
 export HF_DATASETS_CACHE=${HF_HOME}/datasets
 export HF_HUB_CACHE=${HF_HOME}/hub
 export TRANSFORMERS_CACHE=${HF_HOME}/transformers
+export TRITON_CACHE_DIR=${HF_HOME}/triton_cache
 export PYTHONPATH=src
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+mkdir -p "${TRITON_CACHE_DIR}"
 
 if [[ "${http_proxy:-}${https_proxy:-}${all_proxy:-}" == *"127.0.0.1:7897"* ]]; then
   if ! pgrep -u "$USER" -f "${MIHOMO_DIR}/mihomo" >/dev/null 2>&1; then
