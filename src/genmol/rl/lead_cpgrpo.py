@@ -52,12 +52,14 @@ def get_per_token_logps_full(
                 end = min(start + chunk_size, batch_size)
                 perturbed_seq = torch.cat([item[start:end] for item in perturbed], dim=0)
                 logits = score_fn(perturbed_seq)
+                chunk_targets = expanded_input[start:end].clone()
+                chunk_mask = partial_mask[start:end].clone()
                 chunk_outputs.append(
                     selective_log_softmax(
                         logits=logits,
-                        index=expanded_input[start:end],
+                        index=chunk_targets,
                         weights=weight_tensor,
-                        mask=partial_mask[start:end],
+                        mask=chunk_mask,
                     )
                 )
             iteration_outputs.append(torch.cat(chunk_outputs, dim=0))
