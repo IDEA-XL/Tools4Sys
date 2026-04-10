@@ -106,8 +106,10 @@ def _row_group_index(offsets, row_index):
     return idx
 
 
-def _decode_seed_value(source_column, raw_value, path, row_group_idx, row_in_group):
+def _decode_seed_value(source_column, raw_value, path, row_group_idx, row_in_group, *, allow_empty=False):
     if raw_value is None:
+        if allow_empty:
+            return None
         raise ValueError(
             f'Encountered empty seed value while sampling shard {path} row_group={row_group_idx} row={row_in_group}'
         )
@@ -121,6 +123,8 @@ def _decode_seed_value(source_column, raw_value, path, row_group_idx, row_in_gro
                 f'Failed to decode SAFE seed from {path} row_group={row_group_idx} row={row_in_group}: {raw_value!r}'
             ) from exc
     if not decoded:
+        if allow_empty:
+            return None
         raise ValueError(
             f'Encountered empty decoded seed while sampling shard {path} row_group={row_group_idx} row={row_in_group}'
         )
@@ -131,12 +135,72 @@ def sample_seed_smiles(num_samples, seed_data_glob, seed):
     if num_samples <= 0:
         raise ValueError('num_samples must be positive')
 
-    seed_pool = load_seed_smiles(seed_data_glob)
-    if not seed_pool:
-        raise ValueError(f'No valid seed smiles found in shard glob: {seed_data_glob}')
+    manifests = build_seed_manifest(seed_data_glob)
+    total_rows = sum(item.num_rows for item in manifests)
+    cumulative_rows = []
+    running_total = 0
+    for item in manifests:
+        running_total += item.num_rows
+        cumulative_rows.append(running_total)
 
     rng = random.Random(seed)
-    sampled_smiles = [seed_pool[rng.randrange(len(seed_pool))] for _ in range(num_samples)]
+    sampled_smiles = []
+    attempt_count = 0
+    max_attempts = max(num_samples * 32, 256)
+
+    while len(sampled_smiles) < num_samples and attempt_count < max_attempts:
+        remaining = num_samples - len(sampled_smiles)
+        batch_size = min(max(remaining * 2, 8), 256)
+        sampled_positions = []
+        for _ in range(batch_size):
+            global_row_index = rng.randrange(total_rows)
+            attempt_count += 1
+            if attempt_count > max_attempts:
+                break
+            shard_idx = bisect_right(cumulative_rows, global_row_index)
+            shard_manifest = manifests[shard_idx]
+            shard_base = 0 if shard_idx == 0 else cumulative_rows[shard_idx - 1]
+            shard_row_index = global_row_index - shard_base
+            row_group_idx = _row_group_index(shard_manifest.row_group_offsets, shard_row_index)
+            row_group_start = shard_manifest.row_group_offsets[row_group_idx]
+            row_in_group = shard_row_index - row_group_start
+            sampled_positions.append((shard_manifest, row_group_idx, row_in_group))
+
+        grouped = {}
+        for manifest, row_group_idx, row_in_group in sampled_positions:
+            grouped.setdefault((manifest.path, row_group_idx), []).append((manifest, row_in_group))
+
+        parquet_cache = {}
+        for (path, row_group_idx), positions in grouped.items():
+            parquet = parquet_cache.get(path)
+            if parquet is None:
+                parquet = pq.ParquetFile(path)
+                parquet_cache[path] = parquet
+            manifest = positions[0][0]
+            table = parquet.read_row_group(row_group_idx, columns=[manifest.source_column])
+            values = table.column(manifest.source_column).to_pylist()
+            for manifest, row_in_group in positions:
+                decoded = _decode_seed_value(
+                    manifest.source_column,
+                    values[row_in_group],
+                    path,
+                    row_group_idx,
+                    row_in_group,
+                    allow_empty=True,
+                )
+                if decoded is None:
+                    continue
+                sampled_smiles.append(decoded)
+                if len(sampled_smiles) == num_samples:
+                    break
+            if len(sampled_smiles) == num_samples:
+                break
+
+    if len(sampled_smiles) < num_samples:
+        raise ValueError(
+            'Failed to sample enough non-empty seed molecules from parquet shards: '
+            f'requested={num_samples} collected={len(sampled_smiles)} attempts={attempt_count}'
+        )
     return tuple(sampled_smiles)
 
 
