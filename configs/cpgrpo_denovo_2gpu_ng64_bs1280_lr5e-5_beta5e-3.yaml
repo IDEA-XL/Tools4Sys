@@ -6,7 +6,7 @@ seed: 42
 sync_ref_model: true
 ref_model_sync_steps: 64
 ref_model_mixup_alpha: 0.6
-beta: 0.01
+beta: 0.005
 epsilon: 0.5
 scale_rewards: false
 bf16: true
@@ -18,7 +18,7 @@ gradient_accumulation_steps: 1
 gradient_checkpointing: false
 gradient_checkpointing_kwargs:
   use_reentrant: false
-learning_rate: 1.0e-6
+learning_rate: 5.0e-5
 adam_beta1: 0.9
 adam_beta2: 0.99
 adam_eps: 1.0e-8
