@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import safe as sf
 import torch
+import torch.nn.functional as F
 
 from genmol.rl.lead_cpgrpo import get_per_token_logps_full
 from genmol.rl.policy import GenMolCpGRPOPolicy
@@ -153,8 +154,21 @@ class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
                     chunk_outputs.append(x.detach().clone())
                     chunk_masks.append(completion_mask.detach().clone())
 
-        token_ids = torch.cat(chunk_outputs, dim=0)
-        completion_mask = torch.cat(chunk_masks, dim=0)
+        max_seq_len = max(chunk.size(1) for chunk in chunk_outputs)
+        padded_outputs = []
+        padded_masks = []
+        for output_chunk, mask_chunk in zip(chunk_outputs, chunk_masks):
+            pad_width = max_seq_len - output_chunk.size(1)
+            if pad_width < 0:
+                raise ValueError('pad_width must be non-negative')
+            if pad_width > 0:
+                output_chunk = F.pad(output_chunk, (0, pad_width), value=self.pad_index)
+                mask_chunk = F.pad(mask_chunk, (0, pad_width), value=False)
+            padded_outputs.append(output_chunk)
+            padded_masks.append(mask_chunk)
+
+        token_ids = torch.cat(padded_outputs, dim=0)
+        completion_mask = torch.cat(padded_masks, dim=0)
         safe_strings = self._decode_safe_strings(token_ids)
         smiles = self._decode_smiles(safe_strings)
         return LeadRolloutBatch(
