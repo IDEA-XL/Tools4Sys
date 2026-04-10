@@ -39,6 +39,7 @@ class RewardRecord:
 class _AlertFilter:
     def __init__(self):
         from rd_filters.rd_filters import RDFilters, read_rules
+        import pandas as pd
         import pkg_resources
 
         alert_file_name = pkg_resources.resource_filename(
@@ -50,6 +51,7 @@ class _AlertFilter:
             'data/rules.json',
         )
         self._rf = RDFilters(alert_file_name)
+        self._pd = pd
         rule_dict = read_rules(rules_file_path)
         rule_dict['Rule_Inpharmatica'] = False
         rule_dict['Rule_PAINS'] = True
@@ -64,16 +66,29 @@ class _AlertFilter:
         ]
         self._rf.build_rule_list(rule_list)
 
-    def passing_smiles(self, smiles_list):
-        passed = set()
-        for idx, smiles in enumerate(smiles_list):
-            try:
-                result = self._rf.evaluate((smiles, idx))
-            except Exception:
-                continue
-            if result[2] == 'OK':
-                passed.add(result[0])
-        return passed
+    def __call__(self, input_data):
+        if isinstance(input_data, str):
+            input_data = [input_data]
+        elif not isinstance(input_data, list):
+            raise ValueError('Input must be a list of SMILES or one SMILES string')
+
+        indexed_smiles = list(zip(input_data, list(range(len(input_data)))))
+        results = [self._rf.evaluate(item) for item in indexed_smiles]
+        frame = self._pd.DataFrame(
+            results,
+            columns=[
+                'SMILES',
+                'NAME',
+                'FILTER',
+                'MW',
+                'LogP',
+                'HBD',
+                'HBA',
+                'TPSA',
+                'Rot',
+            ],
+        )
+        return frame[frame.FILTER == 'OK'].SMILES.values
 
 
 def _resolve_reward_workers():
@@ -114,16 +129,16 @@ class _RewardKernel:
     def __init__(self):
         from rdkit import Chem
         from rdkit.Chem import QED
-        from tdc.chem_utils import SA
+        from tdc import Oracle
 
         self._chem = Chem
         self._qed = QED
-        self._sa = SA
+        self._sa_oracle = Oracle('sa')
         self._filter = _AlertFilter()
 
     def _safe_sa_score(self, smiles):
         try:
-            return float(self._sa(smiles))
+            return float(self._sa_oracle([smiles])[0])
         except Exception:
             return None
 
