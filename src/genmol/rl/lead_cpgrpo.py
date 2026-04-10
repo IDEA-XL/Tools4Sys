@@ -1,8 +1,53 @@
 from contextlib import nullcontext
 
 import torch
+import torch.nn.functional as F
 
-from genmol.rl.cpgrpo import forward_process, selective_log_softmax
+from genmol.rl.cpgrpo import forward_process
+
+
+def _selective_log_softmax_materialized(logits, index, weights, mask):
+    full_batch_size = logits.size(0) // 3
+    if full_batch_size == 0:
+        raise ValueError('logits batch size must be at least 3')
+    if weights is None or mask is None:
+        raise ValueError('weights and mask are required for coupled selective_log_softmax')
+    if logits.size(0) % 3 != 0:
+        raise ValueError('logits batch size must be divisible by 3')
+
+    num_iterations = weights.size(0) // 3
+    if num_iterations == 0 or weights.size(0) % 3 != 0:
+        raise ValueError('weights length must be a positive multiple of 3')
+    if full_batch_size % num_iterations != 0:
+        raise ValueError('full batch size must be divisible by num_iterations')
+    if index.size(0) != full_batch_size or mask.size(0) != full_batch_size:
+        raise ValueError('index and mask must align with full batch size')
+    if index.shape != mask.shape:
+        raise ValueError('index and mask must have the same shape')
+
+    batch_size = full_batch_size // num_iterations
+    seq_len = index.size(1)
+    vocab_size = logits.size(-1)
+
+    logits_reshaped = logits.reshape(num_iterations, 3, batch_size, seq_len, vocab_size)
+    logps = F.log_softmax(logits_reshaped, dim=-1)
+
+    index_reshaped = index.reshape(num_iterations, batch_size, seq_len).clone()
+    mask_reshaped = mask.reshape(num_iterations, batch_size, seq_len).clone()
+    gather_index = (
+        torch.stack([index_reshaped, index_reshaped, index_reshaped], dim=1)
+        .unsqueeze(-1)
+        .contiguous()
+    )
+    gathered = logps.gather(dim=-1, index=gather_index).squeeze(-1)
+
+    weight_tensor = weights.reshape(num_iterations, 3, 1, 1)
+    weighted = torch.where(
+        mask_reshaped,
+        gathered[:, 1] * weight_tensor[:, 1],
+        gathered[:, 2] * weight_tensor[:, 2],
+    )
+    return ((gathered[:, 0] + weighted) / 2).reshape(full_batch_size, seq_len)
 
 
 def get_per_token_logps_full(
@@ -60,7 +105,7 @@ def get_per_token_logps_full(
                 chunk_targets = expanded_input[start:end].clone()
                 chunk_mask = partial_mask[start:end].clone()
                 chunk_outputs.append(
-                    selective_log_softmax(
+                    _selective_log_softmax_materialized(
                         logits=logits,
                         index=chunk_targets,
                         weights=weight_tensor,
