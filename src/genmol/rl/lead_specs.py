@@ -42,7 +42,7 @@ def load_seed_smiles(seed_data_glob):
                         f'Failed to decode SAFE seed from {path} row {row_idx}: {seed_safe!r}'
                     ) from exc
                 if not decoded:
-                    raise ValueError(f'Empty decoded seed smiles from {path} row {row_idx}: {seed_safe!r}')
+                    continue
                 shard_smiles.append(decoded)
         else:
             raise ValueError(f'Expected parquet shard to contain "smiles" or "input" column: {path}')

@@ -85,6 +85,16 @@ class LeadOptimizationRewardTest(unittest.TestCase):
             smiles = load_seed_smiles(os.path.join(tmpdir, 'train-0000[0-2]-of-00102-*.parquet'))
             self.assertEqual(tuple(smiles), tuple(sf.decode(item) for item in (safe_a, safe_b, safe_c, safe_a)))
 
+    def test_seed_loader_skips_empty_decoded_safe_entries(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            valid_safe = 'CCC(=O)CC2.C12=C(C)CCCC1(C)C'
+            empty_safe = 'CN=C(N4N3.C4CCC5=O.N15Cc2ccccc2C1.C3C6.O67.C17CCCCCC1.I'
+            frame = pd.DataFrame({'input': [empty_safe, valid_safe]})
+            frame.to_parquet(os.path.join(tmpdir, 'train-00000-of-00102-a.parquet'))
+
+            smiles = load_seed_smiles(os.path.join(tmpdir, 'train-00000-of-00102-*.parquet'))
+            self.assertEqual(tuple(smiles), (sf.decode(valid_safe),))
+
 
 if __name__ == '__main__':
     unittest.main()
