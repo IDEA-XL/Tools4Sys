@@ -131,52 +131,12 @@ def sample_seed_smiles(num_samples, seed_data_glob, seed):
     if num_samples <= 0:
         raise ValueError('num_samples must be positive')
 
-    manifests = build_seed_manifest(seed_data_glob)
-    total_rows = sum(item.num_rows for item in manifests)
-    cumulative_rows = []
-    running_total = 0
-    for item in manifests:
-        running_total += item.num_rows
-        cumulative_rows.append(running_total)
+    seed_pool = load_seed_smiles(seed_data_glob)
+    if not seed_pool:
+        raise ValueError(f'No valid seed smiles found in shard glob: {seed_data_glob}')
 
     rng = random.Random(seed)
-    sampled_positions = []
-    for sample_idx in range(num_samples):
-        global_row_index = rng.randrange(total_rows)
-        shard_idx = bisect_right(cumulative_rows, global_row_index)
-        shard_manifest = manifests[shard_idx]
-        shard_base = 0 if shard_idx == 0 else cumulative_rows[shard_idx - 1]
-        shard_row_index = global_row_index - shard_base
-        row_group_idx = _row_group_index(shard_manifest.row_group_offsets, shard_row_index)
-        row_group_start = shard_manifest.row_group_offsets[row_group_idx]
-        row_in_group = shard_row_index - row_group_start
-        sampled_positions.append((sample_idx, shard_manifest, row_group_idx, row_in_group))
-
-    grouped = {}
-    for sample_idx, manifest, row_group_idx, row_in_group in sampled_positions:
-        grouped.setdefault((manifest.path, row_group_idx), []).append((sample_idx, manifest, row_in_group))
-
-    sampled_smiles = [None] * num_samples
-    parquet_cache = {}
-    for (path, row_group_idx), positions in grouped.items():
-        parquet = parquet_cache.get(path)
-        if parquet is None:
-            parquet = pq.ParquetFile(path)
-            parquet_cache[path] = parquet
-        manifest = positions[0][1]
-        table = parquet.read_row_group(row_group_idx, columns=[manifest.source_column])
-        values = table.column(manifest.source_column).to_pylist()
-        for sample_idx, manifest, row_in_group in positions:
-            sampled_smiles[sample_idx] = _decode_seed_value(
-                manifest.source_column,
-                values[row_in_group],
-                path,
-                row_group_idx,
-                row_in_group,
-            )
-
-    if any(item is None for item in sampled_smiles):
-        raise RuntimeError('Seed sampling produced missing values')
+    sampled_smiles = [seed_pool[rng.randrange(len(seed_pool))] for _ in range(num_samples)]
     return tuple(sampled_smiles)
 
 
