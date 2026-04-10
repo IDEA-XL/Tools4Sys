@@ -40,7 +40,7 @@ def get_per_token_logps_full(
         iteration_outputs = []
 
         for iteration_idx, mask_seed in enumerate(mask_seeds):
-            expanded_input = input_ids[iteration_idx]
+            expanded_input = input_ids[iteration_idx].clone()
             perturbed, weights, partial_mask = forward_process(
                 batch=expanded_input,
                 completion_mask=completion_mask,
@@ -49,6 +49,8 @@ def get_per_token_logps_full(
                 gradient_accumulation_steps=gradient_accumulation_steps,
                 accumulate=num_iterations > 1,
             )
+            perturbed = [item.clone() for item in perturbed]
+            partial_mask = partial_mask.clone()
             weight_tensor = torch.tensor(weights, device=input_ids.device, dtype=torch.float32)
             chunk_outputs = []
             for start in range(0, batch_size, chunk_size):
