@@ -32,6 +32,47 @@ class LeadCpGrpoCoreTest(unittest.TestCase):
         )
         self.assertEqual(tuple(logps.shape), (1, 2, 5))
 
+    def test_chunked_and_unchunked_outputs_match(self):
+        input_ids = torch.tensor(
+            [
+                [[1, 5, 9, 6, 2], [1, 7, 9, 8, 2]],
+                [[1, 5, 9, 6, 2], [1, 7, 9, 8, 2]],
+            ],
+            dtype=torch.long,
+        )
+        completion_mask = torch.tensor(
+            [
+                [False, False, True, False, False],
+                [False, False, True, False, False],
+            ]
+        )
+
+        def score_fn(batch):
+            logits = torch.zeros(batch.size(0), batch.size(1), 16)
+            logits.scatter_(2, batch.unsqueeze(-1), 5.0)
+            return logits
+
+        full = get_per_token_logps_full(
+            score_fn=score_fn,
+            input_ids=input_ids,
+            completion_mask=completion_mask,
+            mask_token_id=9,
+            mask_seeds=[3, 4],
+            gradient_accumulation_steps=1,
+            requires_grad=False,
+        )
+        chunked = get_per_token_logps_full(
+            score_fn=score_fn,
+            input_ids=input_ids,
+            completion_mask=completion_mask,
+            mask_token_id=9,
+            mask_seeds=[3, 4],
+            gradient_accumulation_steps=1,
+            requires_grad=False,
+            score_chunk_size=1,
+        )
+        self.assertTrue(torch.allclose(full, chunked))
+
 
 if __name__ == '__main__':
     unittest.main()

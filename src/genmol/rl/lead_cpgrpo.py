@@ -13,6 +13,7 @@ def get_per_token_logps_full(
     mask_seeds,
     gradient_accumulation_steps,
     requires_grad,
+    score_chunk_size=None,
 ):
     if input_ids.dim() != 3:
         raise ValueError(f'Expected input_ids to have 3 dimensions, got {input_ids.dim()}')
@@ -27,13 +28,13 @@ def get_per_token_logps_full(
         )
     if len(mask_seeds) != num_iterations:
         raise ValueError(f'Expected {num_iterations} mask seeds, got {len(mask_seeds)}')
+    if score_chunk_size is not None and score_chunk_size <= 0:
+        raise ValueError('score_chunk_size must be positive when provided')
 
     grad_context = nullcontext() if requires_grad else torch.no_grad()
     with grad_context:
-        all_perturbed = []
-        all_weights = []
-        all_expanded_inputs = []
-        all_partial_masks = []
+        chunk_size = batch_size if score_chunk_size is None else min(score_chunk_size, batch_size)
+        iteration_outputs = []
 
         for iteration_idx, mask_seed in enumerate(mask_seeds):
             expanded_input = input_ids[iteration_idx]
@@ -45,22 +46,22 @@ def get_per_token_logps_full(
                 gradient_accumulation_steps=gradient_accumulation_steps,
                 accumulate=num_iterations > 1,
             )
-            all_perturbed.extend(perturbed)
-            all_weights.extend(weights)
-            all_expanded_inputs.append(expanded_input)
-            all_partial_masks.append(partial_mask)
+            weight_tensor = torch.tensor(weights, device=input_ids.device, dtype=torch.float32)
+            chunk_outputs = []
+            for start in range(0, batch_size, chunk_size):
+                end = min(start + chunk_size, batch_size)
+                perturbed_seq = torch.cat([item[start:end] for item in perturbed], dim=0)
+                logits = score_fn(perturbed_seq)
+                chunk_outputs.append(
+                    selective_log_softmax(
+                        logits=logits,
+                        index=expanded_input[start:end],
+                        weights=weight_tensor,
+                        mask=partial_mask[start:end],
+                    )
+                )
+            iteration_outputs.append(torch.cat(chunk_outputs, dim=0))
 
-        perturbed_seq = torch.cat(all_perturbed, dim=0)
-        expanded_input = torch.cat(all_expanded_inputs, dim=0)
-        partial_mask = torch.cat(all_partial_masks, dim=0)
-        weights = torch.tensor(all_weights, device=input_ids.device, dtype=torch.float32)
-
-        logits = score_fn(perturbed_seq)
-        per_token_logps = selective_log_softmax(
-            logits=logits,
-            index=expanded_input,
-            weights=weights,
-            mask=partial_mask,
-        ).view(num_iterations, batch_size, seq_len).permute(1, 0, 2)
+        per_token_logps = torch.stack(iteration_outputs, dim=1)
 
     return per_token_logps.to(torch.float32)

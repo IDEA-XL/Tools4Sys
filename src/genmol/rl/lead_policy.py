@@ -83,6 +83,7 @@ class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
             mask_seeds=mask_seeds,
             gradient_accumulation_steps=gradient_accumulation_steps,
             requires_grad=requires_grad,
+            score_chunk_size=128,
         )
 
     def rollout_specs(self, specs, generation_batch_size, seed):
