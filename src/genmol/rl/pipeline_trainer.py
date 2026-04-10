@@ -257,16 +257,13 @@ class JointCpGRPOTrainer:
             self.denovo_policy.model.backbone,
             self.denovo_optimizer,
             self.denovo_scheduler,
-        ) = self.accelerator.prepare(
-            self.denovo_policy.model.backbone,
-            denovo_optimizer,
-            denovo_scheduler,
-        )
-        (
             self.lead_policy.model.backbone,
             self.lead_optimizer,
             self.lead_scheduler,
         ) = self.accelerator.prepare(
+            self.denovo_policy.model.backbone,
+            denovo_optimizer,
+            denovo_scheduler,
             self.lead_policy.model.backbone,
             lead_optimizer,
             lead_scheduler,
