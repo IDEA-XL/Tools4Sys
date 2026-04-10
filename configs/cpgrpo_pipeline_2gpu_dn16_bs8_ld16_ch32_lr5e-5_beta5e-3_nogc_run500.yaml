@@ -1,0 +1,67 @@
+denovo_init_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+lead_init_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+denovo_ref_ckpt_path: null
+lead_ref_ckpt_path: null
+output_dir: null
+overwrite_output_dir: false
+seed: 42
+bf16: true
+log_level: info
+report_to:
+  - wandb
+log_completions: false
+logging_first_step: true
+logging_steps: 10
+logging_strategy: steps
+max_steps: 500
+save_strategy: steps
+save_steps: 50
+save_total_limit: 5
+do_eval: false
+scale_rewards: false
+gradient_accumulation_steps: 1
+random_masking: true
+ddp_broadcast_buffers: false
+adam_beta1: 0.9
+adam_beta2: 0.99
+adam_eps: 1.0e-8
+weight_decay: 0.1
+max_grad_norm: 0.2
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr_rate: 0.1
+warmup_ratio: 0.0001
+denovo_num_generations: 16
+denovo_per_device_train_batch_size: 8
+denovo_generation_batch_size: 8
+denovo_generation_temperature: 1.0
+denovo_randomness: 0.3
+denovo_min_add_len: 60
+denovo_max_completion_length: null
+denovo_learning_rate: 5.0e-5
+denovo_beta: 0.005
+denovo_epsilon: 0.5
+denovo_sync_ref_model: true
+denovo_ref_model_sync_steps: 64
+denovo_ref_model_mixup_alpha: 0.6
+denovo_gradient_checkpointing: false
+denovo_gradient_checkpointing_kwargs:
+  use_reentrant: false
+lead_num_generations: 16
+lead_generation_batch_size: 32
+lead_generation_temperature: 1.0
+lead_randomness: 0.3
+lead_min_seed_len: 60
+lead_rescore_chunk_size: 32
+lead_learning_rate: 5.0e-5
+lead_beta: 0.005
+lead_epsilon: 0.5
+lead_sync_ref_model: true
+lead_ref_model_sync_steps: 64
+lead_ref_model_mixup_alpha: 0.6
+lead_gradient_checkpointing: false
+lead_gradient_checkpointing_kwargs:
+  use_reentrant: false
+sim_weight: 1.0
+denovo_reward_alpha: 0.7
+downstream_topk: 2
