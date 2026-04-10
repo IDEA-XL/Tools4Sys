@@ -5,6 +5,7 @@ import unittest
 import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+import safe as sf
 
 from genmol.rl.lead_reward import LeadOptimizationReward, compute_similarity
 from genmol.rl.lead_specs import load_seed_smiles
@@ -62,6 +63,18 @@ class LeadOptimizationRewardTest(unittest.TestCase):
             frame_a = pd.DataFrame({'smiles': ['CCO', 'CCN']})
             frame_b = pd.DataFrame({'smiles': ['c1ccccc1']})
             frame_c = pd.DataFrame({'smiles': ['CCO']})
+            frame_a.to_parquet(os.path.join(tmpdir, 'train-00000-of-00102-a.parquet'))
+            frame_b.to_parquet(os.path.join(tmpdir, 'train-00001-of-00102-b.parquet'))
+            frame_c.to_parquet(os.path.join(tmpdir, 'train-00002-of-00102-c.parquet'))
+
+            smiles = load_seed_smiles(os.path.join(tmpdir, 'train-0000[0-2]-of-00102-*.parquet'))
+            self.assertEqual(tuple(smiles), ('CCO', 'CCN', 'c1ccccc1', 'CCO'))
+
+    def test_seed_loader_reads_safe_gpt_input_column(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            frame_a = pd.DataFrame({'input': [sf.encode('CCO'), sf.encode('CCN')]})
+            frame_b = pd.DataFrame({'input': [sf.encode('c1ccccc1')]})
+            frame_c = pd.DataFrame({'input': [sf.encode('CCO')]})
             frame_a.to_parquet(os.path.join(tmpdir, 'train-00000-of-00102-a.parquet'))
             frame_b.to_parquet(os.path.join(tmpdir, 'train-00001-of-00102-b.parquet'))
             frame_c.to_parquet(os.path.join(tmpdir, 'train-00002-of-00102-c.parquet'))

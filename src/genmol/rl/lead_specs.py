@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from functools import lru_cache
 
 import pandas as pd
+import safe as sf
 
 
 @dataclass(frozen=True)
@@ -28,10 +29,23 @@ def load_seed_smiles(seed_data_glob):
     seed_paths = _resolve_seed_paths(seed_data_glob)
     smiles = []
     for path in seed_paths:
-        frame = pd.read_parquet(path, columns=['smiles'])
-        if 'smiles' not in frame.columns:
-            raise ValueError(f'Expected parquet shard to contain "smiles" column: {path}')
-        shard_smiles = frame['smiles'].dropna().astype(str).tolist()
+        frame = pd.read_parquet(path)
+        if 'smiles' in frame.columns:
+            shard_smiles = frame['smiles'].dropna().astype(str).tolist()
+        elif 'input' in frame.columns:
+            shard_smiles = []
+            for row_idx, seed_safe in enumerate(frame['input'].dropna().astype(str).tolist()):
+                try:
+                    decoded = sf.decode(seed_safe)
+                except Exception as exc:
+                    raise ValueError(
+                        f'Failed to decode SAFE seed from {path} row {row_idx}: {seed_safe!r}'
+                    ) from exc
+                if not decoded:
+                    raise ValueError(f'Empty decoded seed smiles from {path} row {row_idx}: {seed_safe!r}')
+                shard_smiles.append(decoded)
+        else:
+            raise ValueError(f'Expected parquet shard to contain "smiles" or "input" column: {path}')
         smiles.extend(item for item in shard_smiles if item)
     if not smiles:
         raise ValueError(f'No non-empty smiles found in seed parquet shards: {seed_paths}')
