@@ -87,6 +87,7 @@ class LeadTrainConfig:
     generation_temperature: float = 1.0
     randomness: float = 0.3
     min_seed_len: int = 60
+    rescore_chunk_size: int = 64
     log_completions: bool = True
     log_level: str = 'info'
     report_to: list[str] = field(default_factory=list)
@@ -112,6 +113,8 @@ def load_config(path):
         raise ValueError('gradient_accumulation_steps must be positive')
     if config.generation_batch_size <= 0:
         raise ValueError('generation_batch_size must be positive')
+    if config.rescore_chunk_size <= 0:
+        raise ValueError('rescore_chunk_size must be positive')
     if not 0.0 <= config.ref_model_mixup_alpha <= 1.0:
         raise ValueError('ref_model_mixup_alpha must be in [0, 1]')
     if not config.seed_data_glob:
@@ -182,12 +185,14 @@ class LeadOptCpGRPOTrainer:
             device=self.device,
             bf16=config.bf16,
             trainable=True,
+            score_chunk_size=config.rescore_chunk_size,
         )
         self.reference = LeadOptCpGRPOPolicy(
             checkpoint_path=config.ref_ckpt_path,
             device=self.device,
             bf16=config.bf16,
             trainable=False,
+            score_chunk_size=config.rescore_chunk_size,
         )
         if config.gradient_checkpointing:
             self.policy.enable_gradient_checkpointing(config.gradient_checkpointing_kwargs)

@@ -20,9 +20,12 @@ class LeadRolloutBatch:
 
 
 class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, score_chunk_size=64, **kwargs):
         super().__init__(*args, **kwargs)
         self.slicer = Slicer()
+        if score_chunk_size <= 0:
+            raise ValueError('score_chunk_size must be positive')
+        self.score_chunk_size = int(score_chunk_size)
 
     def _encode_seed(self, seed_smiles):
         encoded_smiles = sf.SAFEConverter(slicer=self.slicer, ignore_stereo=True).encoder(seed_smiles, allow_empty=True)
@@ -83,7 +86,7 @@ class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
             mask_seeds=mask_seeds,
             gradient_accumulation_steps=gradient_accumulation_steps,
             requires_grad=requires_grad,
-            score_chunk_size=128,
+            score_chunk_size=self.score_chunk_size,
         )
 
     def rollout_specs(self, specs, generation_batch_size, seed):
