@@ -11,7 +11,7 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from accelerate import Accelerator
-from accelerate.utils import set_seed
+from accelerate.utils import DistributedDataParallelKwargs, set_seed
 
 from genmol.rl.cpgrpo import compute_clipped_grpo_loss, compute_grouped_advantages
 from genmol.rl.lead_policy import LeadOptCpGRPOPolicy
@@ -128,9 +128,11 @@ def main():
     config: JointTrainConfig = load_config(args.config)
     configure_logging()
 
+    ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=config.ddp_broadcast_buffers)
     accelerator = Accelerator(
         gradient_accumulation_steps=1,
         mixed_precision='bf16' if config.bf16 else 'no',
+        kwargs_handlers=[ddp_kwargs],
     )
     device = accelerator.device
     world_size = accelerator.num_processes

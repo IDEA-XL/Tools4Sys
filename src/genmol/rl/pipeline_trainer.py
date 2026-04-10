@@ -11,7 +11,7 @@ import torch
 import torch.distributed as dist
 import yaml
 from accelerate import Accelerator
-from accelerate.utils import set_seed
+from accelerate.utils import DistributedDataParallelKwargs, set_seed
 
 from genmol.rl.cpgrpo import (
     compute_clipped_grpo_loss,
@@ -71,6 +71,7 @@ class JointTrainConfig:
     scale_rewards: bool = False
     gradient_accumulation_steps: int = 1
     random_masking: bool = True
+    ddp_broadcast_buffers: bool = False
 
     adam_beta1: float = 0.9
     adam_beta2: float = 0.99
@@ -179,10 +180,12 @@ class JointCpGRPOTrainer:
     def __init__(self, config, output_dir):
         self.config = config
         self.output_dir = output_dir
+        ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=config.ddp_broadcast_buffers)
         self.accelerator = Accelerator(
             gradient_accumulation_steps=1,
             log_with=config.report_to if config.report_to else None,
             mixed_precision='bf16' if config.bf16 else 'no',
+            kwargs_handlers=[ddp_kwargs],
         )
         self.device = self.accelerator.device
         self.world_size = self.accelerator.num_processes
