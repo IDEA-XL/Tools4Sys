@@ -978,18 +978,6 @@ class JointCpGRPOTrainer:
             batch = self._generate_and_score_pipeline(mode='train')
             self._record_rollout_metrics(batch['metrics'])
 
-            self.denovo_optimizer.zero_grad(set_to_none=True)
-            denovo_loss, denovo_step_metrics = self._compute_denovo_loss(batch['denovo'])
-            self.accelerator.backward(denovo_loss)
-            denovo_grad_norm = self.accelerator.clip_grad_norm_(
-                self.denovo_policy.model.backbone.parameters(),
-                self.config.max_grad_norm,
-            )
-            self.denovo_optimizer.step()
-            self.denovo_scheduler.step()
-            self.denovo_optimizer.zero_grad(set_to_none=True)
-            self.denovo_policy.update_ema()
-
             self.lead_optimizer.zero_grad(set_to_none=True)
             lead_loss, lead_step_metrics = self._compute_lead_loss(batch['lead'])
             self.accelerator.backward(lead_loss)
@@ -1001,6 +989,18 @@ class JointCpGRPOTrainer:
             self.lead_scheduler.step()
             self.lead_optimizer.zero_grad(set_to_none=True)
             self.lead_policy.update_ema()
+
+            self.denovo_optimizer.zero_grad(set_to_none=True)
+            denovo_loss, denovo_step_metrics = self._compute_denovo_loss(batch['denovo'])
+            self.accelerator.backward(denovo_loss)
+            denovo_grad_norm = self.accelerator.clip_grad_norm_(
+                self.denovo_policy.model.backbone.parameters(),
+                self.config.max_grad_norm,
+            )
+            self.denovo_optimizer.step()
+            self.denovo_scheduler.step()
+            self.denovo_optimizer.zero_grad(set_to_none=True)
+            self.denovo_policy.update_ema()
 
             self._record_stage_loss_metrics('denovo', denovo_step_metrics)
             self._record_stage_loss_metrics('lead', lead_step_metrics)
