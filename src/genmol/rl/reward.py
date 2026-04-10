@@ -1,12 +1,11 @@
-import atexit
 import math
 import os
-from concurrent.futures import ProcessPoolExecutor
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from multiprocessing import get_context
 
 
-_WORKER_REWARD = None
+_THREAD_LOCAL = threading.local()
 
 
 def sa_to_score(sa_value):
@@ -165,15 +164,16 @@ class _RewardKernel:
         return records
 
 
-def _initialize_reward_worker():
-    global _WORKER_REWARD
-    _WORKER_REWARD = _RewardKernel()
+def _get_thread_reward_kernel():
+    kernel = getattr(_THREAD_LOCAL, 'reward_kernel', None)
+    if kernel is None:
+        kernel = _RewardKernel()
+        _THREAD_LOCAL.reward_kernel = kernel
+    return kernel
 
 
 def _score_reward_chunk(smiles_chunk):
-    if _WORKER_REWARD is None:
-        raise RuntimeError('Reward worker is not initialized')
-    return _WORKER_REWARD.score_chunk(smiles_chunk)
+    return _get_thread_reward_kernel().score_chunk(smiles_chunk)
 
 
 class MolecularReward:
@@ -182,12 +182,10 @@ class MolecularReward:
         self._kernel = _RewardKernel()
         self._pool = None
         if self.num_workers > 1:
-            self._pool = ProcessPoolExecutor(
+            self._pool = ThreadPoolExecutor(
                 max_workers=self.num_workers,
-                mp_context=get_context('spawn'),
-                initializer=_initialize_reward_worker,
+                thread_name_prefix='genmol-reward',
             )
-            atexit.register(self.close)
 
     def close(self):
         if self._pool is None:
