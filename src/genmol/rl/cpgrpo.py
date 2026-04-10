@@ -44,7 +44,7 @@ def selective_log_softmax(logits, index, weights=None, mask=None):
     per_token_logps = []
 
     for sample_idx in range(full_batch_size):
-        labels = index[sample_idx]
+        labels = index[sample_idx].clone()
         chunk_idx, offset = divmod(sample_idx, batch_size)
         base = chunk_idx * 3 * batch_size
         logits_index = torch.tensor(
@@ -59,7 +59,7 @@ def selective_log_softmax(logits, index, weights=None, mask=None):
         ).squeeze(-1)
 
         seq_weights = weights[chunk_idx * 3:(chunk_idx + 1) * 3]
-        seq_mask = mask[sample_idx]
+        seq_mask = mask[sample_idx].clone()
         weighted = torch.where(seq_mask, gathered[1] * seq_weights[1], gathered[2] * seq_weights[2])
         per_token_logps.append((gathered[0] + weighted) / 2)
 
