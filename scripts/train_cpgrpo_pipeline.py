@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 
+import torch
 import yaml
 
 sys.path.append(os.path.realpath('.'))
@@ -37,6 +38,9 @@ def main():
     parser.add_argument('--config', required=True)
     parser.add_argument('--resume_from_checkpoint', default=None)
     args = parser.parse_args()
+
+    if os.environ.get('GENMOL_DEBUG_ANOMALY') == '1':
+        torch.autograd.set_detect_anomaly(True)
 
     config = load_config(args.config)
     configure_logging(config.log_level)
