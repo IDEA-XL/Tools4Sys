@@ -708,6 +708,7 @@ class JointCpGRPOTrainer:
         global_lead_lengths = torch.tensor(
             [value for shard in all_lead_lengths_lists for value in shard],
             device=self.device,
+            dtype=torch.float32,
         )
         global_lead_advantages_logged = torch.tensor(
             [value for shard in all_lead_adv_lists for value in shard],
