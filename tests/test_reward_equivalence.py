@@ -134,9 +134,9 @@ class LegacyMolecularReward:
 
 class RewardEquivalenceTest(unittest.TestCase):
     def test_alert_filter_matches_legacy_molfilter(self):
-        import tdc
+        from tdc.chem_utils.oracle.filter import MolFilter
 
-        legacy_filter = tdc.chem_utils.oracle.filter.MolFilter(
+        legacy_filter = MolFilter(
             filters=['PAINS', 'SureChEMBL', 'Glaxo'],
             property_filters_flag=False,
         )
