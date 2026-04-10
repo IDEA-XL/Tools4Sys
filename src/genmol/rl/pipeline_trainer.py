@@ -520,9 +520,11 @@ class JointCpGRPOTrainer:
     def _score_lead_reference(self, rollout, mask_seed):
         if self.config.lead_beta == 0.0 or rollout is None:
             return None
+        reference_input_ids = rollout.input_ids.detach().clone()
+        reference_completion_mask = rollout.completion_mask.detach().clone()
         return self.lead_reference.per_token_logps(
-            input_ids=rollout.input_ids.unsqueeze(0),
-            completion_mask=rollout.completion_mask,
+            input_ids=reference_input_ids.unsqueeze(0),
+            completion_mask=reference_completion_mask,
             mask_seeds=[mask_seed],
             gradient_accumulation_steps=1,
             requires_grad=False,
@@ -833,8 +835,8 @@ class JointCpGRPOTrainer:
                 'mask_seed': denovo_mask_seed,
             },
             'lead': {
-                'input_ids': None if lead_rollout is None else lead_rollout.input_ids,
-                'completion_mask': None if lead_rollout is None else lead_rollout.completion_mask,
+                'input_ids': None if lead_rollout is None else lead_rollout.input_ids.detach().clone(),
+                'completion_mask': None if lead_rollout is None else lead_rollout.completion_mask.detach().clone(),
                 'advantages': local_lead_advantages,
                 'ref_per_token_logps': lead_ref_per_token_logps,
                 'mask_seed': lead_mask_seed,
@@ -885,9 +887,11 @@ class JointCpGRPOTrainer:
                 'kl_mean': nan_tensor,
             }
 
+        lead_input_ids = inputs['input_ids'].detach().clone()
+        lead_completion_mask = inputs['completion_mask'].detach().clone()
         per_token_logps = self.lead_policy.per_token_logps(
-            input_ids=inputs['input_ids'].unsqueeze(0),
-            completion_mask=inputs['completion_mask'],
+            input_ids=lead_input_ids.unsqueeze(0),
+            completion_mask=lead_completion_mask,
             mask_seeds=[inputs['mask_seed']],
             gradient_accumulation_steps=1,
             requires_grad=True,
@@ -896,7 +900,7 @@ class JointCpGRPOTrainer:
             new_log_probs=per_token_logps,
             old_log_probs=per_token_logps.detach(),
             advantages=inputs['advantages'],
-            completion_mask=inputs['completion_mask'],
+            completion_mask=lead_completion_mask,
             epsilon=self.config.lead_epsilon,
             ref_log_probs=inputs['ref_per_token_logps'],
             beta=self.config.lead_beta,
