@@ -23,9 +23,9 @@ from genmol.rl.lead_reward import LeadOptimizationReward
 from genmol.rl.lead_specs import (
     deserialize_specs,
     expand_group_specs,
-    load_seed_smiles,
     sample_group_specs,
     serialize_specs,
+    validate_seed_data,
 )
 from genmol.rl.trainer import (
     TrainResult,
@@ -173,7 +173,7 @@ class LeadOptCpGRPOTrainer:
 
         ensure_exists(config.init_ckpt_path, 'init checkpoint')
         ensure_exists(config.ref_ckpt_path, 'reference checkpoint')
-        load_seed_smiles(config.seed_data_glob)
+        validate_seed_data(config.seed_data_glob)
 
         set_seed(config.seed, device_specific=True)
 

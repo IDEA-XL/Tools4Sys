@@ -8,7 +8,7 @@ from rdkit.Chem import AllChem
 import safe as sf
 
 from genmol.rl.lead_reward import LeadOptimizationReward, compute_similarity
-from genmol.rl.lead_specs import load_seed_smiles
+from genmol.rl.lead_specs import load_seed_smiles, sample_seed_smiles
 from genmol.rl.reward import MolecularReward
 
 
@@ -84,6 +84,24 @@ class LeadOptimizationRewardTest(unittest.TestCase):
 
             smiles = load_seed_smiles(os.path.join(tmpdir, 'train-0000[0-2]-of-00102-*.parquet'))
             self.assertEqual(tuple(smiles), tuple(sf.decode(item) for item in (safe_a, safe_b, safe_c, safe_a)))
+
+    def test_seed_sampler_reads_from_three_shards_without_full_materialization_contract(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            frame_a = pd.DataFrame({'smiles': ['CCO', 'CCN', 'CCC']})
+            frame_b = pd.DataFrame({'smiles': ['c1ccccc1', 'CCCl', 'CCBr']})
+            frame_c = pd.DataFrame({'smiles': ['CO', 'CN', 'CF']})
+            frame_a.to_parquet(os.path.join(tmpdir, 'train-00000-of-00102-a.parquet'), row_group_size=2)
+            frame_b.to_parquet(os.path.join(tmpdir, 'train-00001-of-00102-b.parquet'), row_group_size=2)
+            frame_c.to_parquet(os.path.join(tmpdir, 'train-00002-of-00102-c.parquet'), row_group_size=2)
+
+            sampled = sample_seed_smiles(
+                num_samples=6,
+                seed_data_glob=os.path.join(tmpdir, 'train-0000[0-2]-of-00102-*.parquet'),
+                seed=123,
+            )
+            allowed = {'CCO', 'CCN', 'CCC', 'c1ccccc1', 'CCCl', 'CCBr', 'CO', 'CN', 'CF'}
+            self.assertEqual(len(sampled), 6)
+            self.assertTrue(all(item in allowed for item in sampled))
 
     def test_seed_loader_skips_empty_decoded_safe_entries(self):
         with tempfile.TemporaryDirectory() as tmpdir:
