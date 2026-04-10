@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
-CONFIG_PATH=configs/cpgrpo_denovo_2gpu_ng64_bs1280.yaml
+CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_2gpu_ng64_bs1280.yaml}
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
