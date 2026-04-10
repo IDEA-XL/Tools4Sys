@@ -34,12 +34,9 @@ def _selective_log_softmax_materialized(logits, index, weights, mask):
 
     index_reshaped = index.reshape(num_iterations, batch_size, seq_len).clone()
     mask_reshaped = mask.reshape(num_iterations, batch_size, seq_len).clone()
-    gather_index = (
-        torch.stack([index_reshaped, index_reshaped, index_reshaped], dim=1)
-        .unsqueeze(-1)
-        .contiguous()
-    )
-    gathered = logps.gather(dim=-1, index=gather_index).squeeze(-1)
+    select_index = torch.stack([index_reshaped, index_reshaped, index_reshaped], dim=1).contiguous()
+    selector = F.one_hot(select_index, num_classes=vocab_size).to(dtype=logps.dtype)
+    gathered = (logps * selector).sum(dim=-1)
 
     weight_tensor = weights.reshape(num_iterations, 3, 1, 1)
     weighted = torch.where(
