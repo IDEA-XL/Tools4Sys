@@ -1,11 +1,11 @@
 import math
+import multiprocessing as mp
 import os
-import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
 
-_THREAD_LOCAL = threading.local()
+_PROCESS_KERNEL = None
 
 
 def sa_to_score(sa_value):
@@ -34,6 +34,46 @@ class RewardRecord:
     sa_score: float | None
     soft_reward: float | None
     smiles: str | None
+
+
+class _AlertFilter:
+    def __init__(self):
+        from rd_filters.rd_filters import RDFilters, read_rules
+        import pkg_resources
+
+        alert_file_name = pkg_resources.resource_filename(
+            'rd_filters',
+            'data/alert_collection.csv',
+        )
+        rules_file_path = pkg_resources.resource_filename(
+            'rd_filters',
+            'data/rules.json',
+        )
+        self._rf = RDFilters(alert_file_name)
+        rule_dict = read_rules(rules_file_path)
+        rule_dict['Rule_Inpharmatica'] = False
+        rule_dict['Rule_PAINS'] = True
+        rule_dict['Rule_SureChEMBL'] = True
+        rule_dict['Rule_Glaxo'] = True
+        for key in ['HBA', 'HBD', 'LogP', 'MW', 'Rot', 'TPSA']:
+            rule_dict.pop(key, None)
+        rule_list = [
+            key.replace('Rule_', '')
+            for key, enabled in rule_dict.items()
+            if key.startswith('Rule_') and enabled
+        ]
+        self._rf.build_rule_list(rule_list)
+
+    def passing_smiles(self, smiles_list):
+        passed = set()
+        for idx, smiles in enumerate(smiles_list):
+            try:
+                result = self._rf.evaluate((smiles, idx))
+            except Exception:
+                continue
+            if result[2] == 'OK':
+                passed.add(result[0])
+        return passed
 
 
 def _resolve_reward_workers():
@@ -74,20 +114,16 @@ class _RewardKernel:
     def __init__(self):
         from rdkit import Chem
         from rdkit.Chem import QED
-        from tdc import Oracle
-        import tdc
+        from tdc.chem_utils import SA
 
         self._chem = Chem
         self._qed = QED
-        self._sa_oracle = Oracle('sa')
-        self._filter = tdc.chem_utils.oracle.filter.MolFilter(
-            filters=['PAINS', 'SureChEMBL', 'Glaxo'],
-            property_filters_flag=False,
-        )
+        self._sa = SA
+        self._filter = _AlertFilter()
 
     def _safe_sa_score(self, smiles):
         try:
-            return float(self._sa_oracle([smiles])[0])
+            return float(self._sa(smiles))
         except Exception:
             return None
 
@@ -164,16 +200,15 @@ class _RewardKernel:
         return records
 
 
-def _get_thread_reward_kernel():
-    kernel = getattr(_THREAD_LOCAL, 'reward_kernel', None)
-    if kernel is None:
-        kernel = _RewardKernel()
-        _THREAD_LOCAL.reward_kernel = kernel
-    return kernel
+def _initialize_process_reward_kernel():
+    global _PROCESS_KERNEL
+    _PROCESS_KERNEL = _RewardKernel()
 
 
 def _score_reward_chunk(smiles_chunk):
-    return _get_thread_reward_kernel().score_chunk(smiles_chunk)
+    if _PROCESS_KERNEL is None:
+        raise RuntimeError('Reward worker kernel is not initialized')
+    return _PROCESS_KERNEL.score_chunk(smiles_chunk)
 
 
 class MolecularReward:
@@ -182,9 +217,10 @@ class MolecularReward:
         self._kernel = _RewardKernel()
         self._pool = None
         if self.num_workers > 1:
-            self._pool = ThreadPoolExecutor(
+            self._pool = ProcessPoolExecutor(
                 max_workers=self.num_workers,
-                thread_name_prefix='genmol-reward',
+                mp_context=mp.get_context('spawn'),
+                initializer=_initialize_process_reward_kernel,
             )
 
     def close(self):
