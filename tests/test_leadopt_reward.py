@@ -72,15 +72,18 @@ class LeadOptimizationRewardTest(unittest.TestCase):
 
     def test_seed_loader_reads_safe_gpt_input_column(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            frame_a = pd.DataFrame({'input': [sf.encode('CCO'), sf.encode('CCN')]})
-            frame_b = pd.DataFrame({'input': [sf.encode('c1ccccc1')]})
-            frame_c = pd.DataFrame({'input': [sf.encode('CCO')]})
+            safe_a = 'CCC(=O)CC2.C12=C(C)CCCC1(C)C'
+            safe_b = 'CC3.O32.C2C(O)=NC4C.c14cccc(N=C(C)O)c1'
+            safe_c = 'CCC3.N3C1CC(C2CCCO2)Oc2cc(Br)ccc21'
+            frame_a = pd.DataFrame({'input': [safe_a, safe_b]})
+            frame_b = pd.DataFrame({'input': [safe_c]})
+            frame_c = pd.DataFrame({'input': [safe_a]})
             frame_a.to_parquet(os.path.join(tmpdir, 'train-00000-of-00102-a.parquet'))
             frame_b.to_parquet(os.path.join(tmpdir, 'train-00001-of-00102-b.parquet'))
             frame_c.to_parquet(os.path.join(tmpdir, 'train-00002-of-00102-c.parquet'))
 
             smiles = load_seed_smiles(os.path.join(tmpdir, 'train-0000[0-2]-of-00102-*.parquet'))
-            self.assertEqual(tuple(smiles), ('CCO', 'CCN', 'c1ccccc1', 'CCO'))
+            self.assertEqual(tuple(smiles), tuple(sf.decode(item) for item in (safe_a, safe_b, safe_c, safe_a)))
 
 
 if __name__ == '__main__':
