@@ -20,6 +20,9 @@ def get_per_token_logps_full(
     if completion_mask.dim() != 2:
         raise ValueError(f'Expected completion_mask to have 2 dimensions, got {completion_mask.dim()}')
 
+    input_ids = input_ids.clone()
+    completion_mask = completion_mask.clone()
+
     num_iterations, batch_size, seq_len = input_ids.size()
     if completion_mask.size(0) != batch_size or completion_mask.size(1) != seq_len:
         raise ValueError(
