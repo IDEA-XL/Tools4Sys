@@ -20,6 +20,43 @@ class LeadRolloutBatch:
     smiles: list[str | None]
 
 
+def select_valid_mutation_interval(special_token_idx, seed_length, max_position_embeddings, rng):
+    if seed_length <= 0:
+        raise ValueError(f'seed_length must be positive, got {seed_length}')
+    if max_position_embeddings <= 0:
+        raise ValueError(
+            f'max_position_embeddings must be positive, got {max_position_embeddings}'
+        )
+    if seed_length > max_position_embeddings:
+        raise ValueError(
+            'seed_length exceeds model maximum context: '
+            f'{seed_length} vs {max_position_embeddings}'
+        )
+    if len(special_token_idx) < 2:
+        raise ValueError(
+            'special_token_idx must contain at least two boundary markers, got '
+            f'{special_token_idx}'
+        )
+
+    candidate_intervals = []
+    for left_idx, right_idx in zip(special_token_idx[:-1], special_token_idx[1:]):
+        mask_start_idx = int(left_idx) + 1
+        mask_end_idx = int(right_idx)
+        removable_width = mask_end_idx - mask_start_idx
+        max_insert = max_position_embeddings - seed_length + removable_width
+        if max_insert >= 1:
+            candidate_intervals.append((mask_start_idx, mask_end_idx, int(max_insert)))
+
+    if not candidate_intervals:
+        raise ValueError(
+            'No valid mutation interval can keep the prompt within model context: '
+            f'seed_length={seed_length} max_position_embeddings={max_position_embeddings} '
+            f'special_token_idx={special_token_idx}'
+        )
+
+    return candidate_intervals[rng.randrange(len(candidate_intervals))]
+
+
 class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
     def __init__(self, *args, score_chunk_size=64, **kwargs):
         super().__init__(*args, **kwargs)
@@ -47,15 +84,25 @@ class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
             num_insert_mask = max(1, min_seed_len - seed_ids.numel() + 1)
             mask_start_idx = seed_ids.numel() - 1
             mask_end_idx = seed_ids.numel() - 1
+            max_insert = max_position_embeddings - seed_ids.numel() + mask_end_idx - mask_start_idx
         else:
             dot_positions = (seed_ids == self.model.tokenizer('.')['input_ids'][1]).nonzero(as_tuple=True)[0].tolist()
             special_token_idx = [0] + dot_positions + [seed_ids.numel() - 1]
-            fragment_idx = rng.randint(0, len(special_token_idx) - 2)
-            mask_start_idx = special_token_idx[fragment_idx] + 1
-            mask_end_idx = special_token_idx[fragment_idx + 1]
+            mask_start_idx, mask_end_idx, max_insert = select_valid_mutation_interval(
+                special_token_idx=special_token_idx,
+                seed_length=int(seed_ids.numel()),
+                max_position_embeddings=int(max_position_embeddings),
+                rng=rng,
+            )
             num_insert_mask = rng.randint(5, 15)
-        max_insert = max_position_embeddings - seed_ids.numel() + mask_end_idx - mask_start_idx
-        num_insert_mask = max(1, min(num_insert_mask, max_insert))
+        if max_insert < 1:
+            raise ValueError(
+                'No room to insert mask tokens without exceeding model context: '
+                f'seed_smiles={seed_smiles!r} seed_length={seed_ids.numel()} '
+                f'mask_start_idx={mask_start_idx} mask_end_idx={mask_end_idx} '
+                f'max_position_embeddings={max_position_embeddings}'
+            )
+        num_insert_mask = min(num_insert_mask, max_insert)
 
         new_ids = torch.hstack(
             [
@@ -64,6 +111,11 @@ class LeadOptCpGRPOPolicy(GenMolCpGRPOPolicy):
                 seed_ids[mask_end_idx:],
             ]
         )
+        if new_ids.numel() > max_position_embeddings:
+            raise ValueError(
+                'Constructed lead prompt exceeds model context: '
+                f'{new_ids.numel()} vs {max_position_embeddings} for seed {seed_smiles!r}'
+            )
         completion_mask = torch.zeros_like(new_ids, dtype=torch.bool)
         completion_mask[mask_start_idx:mask_start_idx + num_insert_mask] = True
         return new_ids, completion_mask

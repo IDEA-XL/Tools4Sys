@@ -128,6 +128,12 @@ class GenMolCpGRPOPolicy:
         input_ids = input_ids.clone()
         attention_mask = input_ids != self.pad_index
         batch_size, seq_len = input_ids.shape
+        max_position_embeddings = int(self.model.config.model.max_position_embeddings)
+        if seq_len > max_position_embeddings:
+            raise ValueError(
+                'Input sequence length exceeds model maximum context: '
+                f'{seq_len} vs {max_position_embeddings}'
+            )
         token_type_ids = torch.zeros((batch_size, seq_len), device=input_ids.device, dtype=torch.long)
         position_ids = torch.arange(seq_len, device=input_ids.device, dtype=torch.long).unsqueeze(0)
         with self.autocast_context:
