@@ -8,7 +8,6 @@ from dataclasses import asdict
 
 import torch
 import torch.distributed as dist
-from accelerate.utils import set_seed
 from torch.nn.parallel import DistributedDataParallel
 
 from genmol.rl.cpgrpo import (
@@ -42,6 +41,20 @@ from genmol.rl.trainer import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _set_process_seed(seed, process_index):
+    full_seed = int(seed) + int(process_index)
+    random.seed(full_seed)
+    try:
+        import numpy as np
+
+        np.random.seed(full_seed)
+    except ImportError:
+        pass
+    torch.manual_seed(full_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(full_seed)
 
 
 class ProcessGroupJointCpGRPOTrainer:
@@ -106,7 +119,7 @@ class ProcessGroupJointCpGRPOTrainer:
         ensure_exists(config.lead_init_ckpt_path, 'lead init checkpoint')
         ensure_exists(config.lead_ref_ckpt_path, 'lead reference checkpoint')
 
-        set_seed(config.seed, device_specific=True)
+        _set_process_seed(config.seed, self.rank)
 
         self.denovo_micro_batch_size = config.denovo_per_device_train_batch_size
         self.denovo_local_sample_count = self.denovo_micro_batch_size * config.gradient_accumulation_steps
@@ -1421,3 +1434,6 @@ class ProcessGroupJointCpGRPOTrainer:
         self.base_reward_model.close()
         if self._wandb is not None:
             self._wandb.finish()
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+            dist.destroy_process_group()
