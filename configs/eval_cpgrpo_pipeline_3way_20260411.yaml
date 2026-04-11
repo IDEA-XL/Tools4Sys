@@ -1,0 +1,28 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/cpgrpo_pipeline_eval_20260411.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/cpgrpo_pipeline_eval_20260411.json
+output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/cpgrpo_pipeline_eval_20260411.rows.jsonl
+seed: 42
+bf16: true
+device: cuda
+num_samples: 1024
+denovo_num_generations: 16
+denovo_generation_batch_size: 1024
+denovo_generation_temperature: 1.0
+denovo_randomness: 0.3
+denovo_min_add_len: 60
+denovo_max_completion_length: null
+lead_generation_batch_size: 256
+lead_generation_temperature: 1.0
+lead_randomness: 0.3
+lead_min_seed_len: 60
+sim_weight: 1.0
+experiments:
+  - name: orig_genmol_v2
+    denovo_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+    lead_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+  - name: standalone_cpgrpo
+    denovo_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_2gpu_ng16_bs1024_lr5e-5_beta5e-3_20260411_140401/checkpoint-000050/model.ckpt
+    lead_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_leadopt/cpgrpo_leadopt_2gpu_ng16_bs256_ch256_lr5e-5_beta5e-3_20260411_141632/checkpoint-000050/model.ckpt
+  - name: joint_pipeline_cpgrpo
+    denovo_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_pipeline/cpgrpo_pipeline_4gpu_pg_dn16_bs1024_ni2_ld16_bs256_ch256_lr5e-5_beta5e-3_alpha08_20260411_141410/checkpoint-000050/denovo_model.ckpt
+    lead_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_pipeline/cpgrpo_pipeline_4gpu_pg_dn16_bs1024_ni2_ld16_bs256_ch256_lr5e-5_beta5e-3_alpha08_20260411_141410/checkpoint-000050/lead_model.ckpt
