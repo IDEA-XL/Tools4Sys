@@ -256,6 +256,7 @@ class GenMolCpGRPOPolicy:
     def load_ema_state(self, ema_state):
         if self.model.ema and ema_state is not None:
             self.model.ema.load_state_dict(ema_state)
+            self.model.ema.move_shadow_params_to_device(self.device)
 
     def load_backbone_state_dict(self, state_dict):
         self._unwrap_backbone().load_state_dict(state_dict, strict=True)
