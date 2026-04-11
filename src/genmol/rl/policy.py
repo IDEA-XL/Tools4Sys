@@ -127,8 +127,16 @@ class GenMolCpGRPOPolicy:
     def forward_logits(self, input_ids):
         input_ids = input_ids.clone()
         attention_mask = input_ids != self.pad_index
+        batch_size, seq_len = input_ids.shape
+        token_type_ids = torch.zeros((batch_size, seq_len), device=input_ids.device, dtype=torch.long)
+        position_ids = torch.arange(seq_len, device=input_ids.device, dtype=torch.long).unsqueeze(0)
         with self.autocast_context:
-            logits = self.model.backbone(input_ids, attention_mask=attention_mask)['logits']
+            logits = self.model.backbone(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+            )['logits']
         return logits.float()
 
     def per_token_logps(

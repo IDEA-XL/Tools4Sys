@@ -16,6 +16,7 @@ from accelerate.utils import DistributedDataParallelKwargs, set_seed
 from genmol.rl.cpgrpo import (
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
+    split_tensor_dict,
 )
 from genmol.rl.lead_policy import LeadOptCpGRPOPolicy
 from genmol.rl.lead_reward import compute_similarity
@@ -70,8 +71,9 @@ class JointTrainConfig:
     do_eval: bool = False
     scale_rewards: bool = False
     gradient_accumulation_steps: int = 1
+    num_iterations: int = 1
     random_masking: bool = True
-    ddp_broadcast_buffers: bool = False
+    ddp_broadcast_buffers: bool = True
 
     adam_beta1: float = 0.9
     adam_beta2: float = 0.99
@@ -132,11 +134,10 @@ def load_config(path):
         raise ValueError('Only save_strategy=steps is supported')
     if config.do_eval:
         raise ValueError('Joint pipeline trainer does not support do_eval yet')
-    if config.gradient_accumulation_steps != 1:
-        raise ValueError(
-            'Joint pipeline trainer currently supports only gradient_accumulation_steps=1 '
-            f'for stable two-model rollout/update semantics, got {config.gradient_accumulation_steps}'
-        )
+    if config.gradient_accumulation_steps <= 0:
+        raise ValueError('gradient_accumulation_steps must be positive')
+    if config.num_iterations <= 0:
+        raise ValueError('num_iterations must be positive')
     if config.denovo_num_generations <= 1:
         raise ValueError('denovo_num_generations must be greater than 1')
     if config.lead_num_generations <= 1:
@@ -157,6 +158,18 @@ def load_config(path):
         raise ValueError('lead_ref_model_mixup_alpha must be in [0, 1]')
     if not 0.0 <= config.denovo_reward_alpha <= 1.0:
         raise ValueError('denovo_reward_alpha must be in [0, 1]')
+    if (
+        config.num_iterations > 1
+        and config.denovo_per_device_train_batch_size % config.gradient_accumulation_steps != 0
+    ):
+        raise ValueError(
+            'denovo_per_device_train_batch_size must be divisible by gradient_accumulation_steps '
+            'when num_iterations > 1'
+        )
+    if config.num_iterations > 1 and config.lead_num_generations % config.gradient_accumulation_steps != 0:
+        raise ValueError(
+            'lead_num_generations must be divisible by gradient_accumulation_steps when num_iterations > 1'
+        )
     return config
 
 
@@ -182,14 +195,15 @@ class JointCpGRPOTrainer:
         self.output_dir = output_dir
         ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=config.ddp_broadcast_buffers)
         self.accelerator = Accelerator(
-            gradient_accumulation_steps=1,
+            gradient_accumulation_steps=config.gradient_accumulation_steps,
             log_with=config.report_to if config.report_to else None,
             mixed_precision='bf16' if config.bf16 else 'no',
             kwargs_handlers=[ddp_kwargs],
         )
         self.device = self.accelerator.device
         self.world_size = self.accelerator.num_processes
-        self.denovo_local_sample_count = config.denovo_per_device_train_batch_size
+        self.denovo_micro_batch_size = config.denovo_per_device_train_batch_size
+        self.denovo_local_sample_count = self.denovo_micro_batch_size * config.gradient_accumulation_steps
         self.denovo_global_sample_count = self.denovo_local_sample_count * self.world_size
         if self.denovo_global_sample_count % config.denovo_num_generations != 0:
             raise ValueError(
@@ -279,6 +293,10 @@ class JointCpGRPOTrainer:
 
         self.global_step = 0
         self.generation_cycle_idx = 0
+        self._buffer_iteration = 0
+        self._buffered_inputs = None
+        self._buffer_metadata = None
+        self._last_rollout_metrics = None
         self._metrics = defaultdict(list)
         self._textual_logs = []
         self._last_train_metrics = None
@@ -294,13 +312,16 @@ class JointCpGRPOTrainer:
             )
 
         logger.info(
-            'process_index=%s device=%s world_size=%s denovo_local_sample_count=%s lead_num_generations=%s '
-            'reward_workers=%s',
+            'process_index=%s device=%s world_size=%s denovo_micro_batch_size=%s denovo_local_sample_count=%s '
+            'lead_num_generations=%s gradient_accumulation_steps=%s num_iterations=%s reward_workers=%s',
             self.accelerator.process_index,
             self.device,
             self.world_size,
+            self.denovo_micro_batch_size,
             self.denovo_local_sample_count,
             self.config.lead_num_generations,
+            self.config.gradient_accumulation_steps,
+            self.config.num_iterations,
             self.base_reward_model.num_workers,
         )
 
@@ -328,10 +349,10 @@ class JointCpGRPOTrainer:
             return torch.empty((0,), device=self.device, dtype=torch.float32), local_start
         return torch.tensor(flat, device=self.device, dtype=torch.float32), local_start
 
-    def _sample_mask_seed(self):
+    def _sample_mask_seeds(self):
         if self.config.random_masking:
-            return int(torch.randint(0, 2**12, (1,), device=self.device).item())
-        return 42
+            return torch.randint(0, 2**12, (self.config.num_iterations,), device=self.device).tolist()
+        return [42] * self.config.num_iterations
 
     def _score_lead_records(self, seed_smiles_list, candidate_smiles_list):
         base_records = self.base_reward_model.score(candidate_smiles_list)
@@ -435,6 +456,7 @@ class JointCpGRPOTrainer:
         self._metrics[key].append(float(value))
 
     def _record_rollout_metrics(self, metrics):
+        self._last_rollout_metrics = dict(metrics)
         for key, value in metrics.items():
             self._append_metric(key, value)
 
@@ -458,11 +480,111 @@ class JointCpGRPOTrainer:
             self._append_metric(f'{prefix}/kl_mean', torch.nanmean(gathered_kl).item())
 
     def _consume_logged_metrics(self):
-        metrics = {'step': self.global_step, 'buffer_cycle': self.generation_cycle_idx - 1}
+        if self._buffer_metadata is None:
+            buffer_cycle = self.generation_cycle_idx - 1
+        else:
+            buffer_cycle = int(self._buffer_metadata['buffer_cycle'])
+        metrics = {'step': self.global_step, 'buffer_cycle': buffer_cycle}
+        rollout_metrics = self._last_rollout_metrics or {}
+        for key, value in rollout_metrics.items():
+            values = self._metrics.get(key, [])
+            if values:
+                metrics[key] = _aggregate_scalar_list(values)
+            else:
+                metrics[key] = float(value)
         for key, values in list(self._metrics.items()):
+            if key in metrics:
+                continue
             metrics[key] = _aggregate_scalar_list(values)
         self._metrics = defaultdict(list)
         return metrics
+
+    def _empty_lead_inputs(self, mask_seeds):
+        return {
+            'input_ids': None,
+            'completion_mask': None,
+            'advantages': torch.empty((0,), device=self.device, dtype=torch.float32),
+            'old_per_token_logps': None,
+            'ref_per_token_logps': None,
+            'mask_seeds': list(mask_seeds),
+            'has_samples': False,
+        }
+
+    def _split_lead_inputs(self, inputs, valid_seed_indices):
+        if self.config.gradient_accumulation_steps == 1:
+            return [inputs]
+
+        if not inputs['has_samples']:
+            return [self._empty_lead_inputs(inputs['mask_seeds']) for _ in range(self.config.gradient_accumulation_steps)]
+
+        lead_keys = (
+            'input_ids',
+            'completion_mask',
+            'advantages',
+            'old_per_token_logps',
+            'ref_per_token_logps',
+        )
+        lead_chunks = []
+        for chunk_idx in range(self.config.gradient_accumulation_steps):
+            seed_start = chunk_idx * self.denovo_micro_batch_size
+            seed_end = seed_start + self.denovo_micro_batch_size
+            sample_indices = []
+            for group_idx, seed_idx in enumerate(valid_seed_indices):
+                if seed_start <= seed_idx < seed_end:
+                    group_start = group_idx * self.config.lead_num_generations
+                    group_end = group_start + self.config.lead_num_generations
+                    sample_indices.extend(range(group_start, group_end))
+
+            if not sample_indices:
+                lead_chunks.append(self._empty_lead_inputs(inputs['mask_seeds']))
+                continue
+
+            index_tensor = torch.tensor(sample_indices, device=self.device, dtype=torch.long)
+            chunk = {
+                'mask_seeds': list(inputs['mask_seeds']),
+                'has_samples': True,
+            }
+            for key in lead_keys:
+                value = inputs[key]
+                if value is None:
+                    chunk[key] = None
+                else:
+                    chunk[key] = value.index_select(0, index_tensor)
+            lead_chunks.append(chunk)
+        return lead_chunks
+
+    def _split_pipeline_inputs(self, accumulated_local_batch):
+        denovo_chunks = split_tensor_dict(
+            accumulated_local_batch['denovo'],
+            self.config.gradient_accumulation_steps,
+        )
+        lead_chunks = self._split_lead_inputs(
+            accumulated_local_batch['lead'],
+            accumulated_local_batch['lead_valid_seed_indices'],
+        )
+        if len(denovo_chunks) != len(lead_chunks):
+            raise ValueError(
+                'denovo chunk count and lead chunk count must match: '
+                f'{len(denovo_chunks)} vs {len(lead_chunks)}'
+            )
+        return {
+            'denovo': denovo_chunks,
+            'lead': lead_chunks,
+        }
+
+    def _prepare_inputs(self, mode='train'):
+        if self._buffered_inputs is None or self._buffer_iteration >= self.config.num_iterations:
+            accumulated_local_batch = self._generate_and_score_pipeline(mode=mode)
+            self._record_rollout_metrics(accumulated_local_batch['metrics'])
+            self._buffered_inputs = self._split_pipeline_inputs(accumulated_local_batch)
+            self._buffer_metadata = {'buffer_cycle': int(accumulated_local_batch['buffer_cycle'])}
+            self._buffer_iteration = 0
+
+        return self._buffered_inputs, self._buffer_iteration
+
+    def _clear_rollout_buffer(self):
+        self._buffered_inputs = None
+        self._buffer_iteration = 0
 
     def _log_metrics(self, split, metrics):
         if self.accelerator.is_main_process:
@@ -507,34 +629,36 @@ class JointCpGRPOTrainer:
             self.accelerator.log(metrics, step=self.global_step)
         self._flush_text_logs()
 
-    def _score_denovo_reference(self, rollout, mask_seed):
+    def _score_denovo_reference(self, rollout, mask_seeds):
         if self.config.denovo_beta == 0.0:
             return None
-        prompt_completion_ids = torch.cat([rollout.prompt_ids, rollout.completion_ids], dim=1).unsqueeze(0)
+        prompt_completion_ids = torch.cat([rollout.prompt_ids, rollout.completion_ids], dim=1)
+        expanded_ids = prompt_completion_ids.unsqueeze(0).expand(self.config.num_iterations, -1, -1)
         return self.denovo_reference.per_token_logps(
-            input_ids=prompt_completion_ids,
+            input_ids=expanded_ids,
             logits_to_keep=rollout.completion_ids.size(1),
             completion_mask=rollout.completion_mask,
-            mask_seeds=[mask_seed],
-            gradient_accumulation_steps=1,
+            mask_seeds=mask_seeds,
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             requires_grad=False,
         )
 
-    def _score_lead_reference(self, rollout, mask_seed):
+    def _score_lead_reference(self, rollout, mask_seeds):
         if self.config.lead_beta == 0.0 or rollout is None:
             return None
         reference_input_ids = rollout.input_ids.detach().clone()
         reference_completion_mask = rollout.completion_mask.detach().clone()
         return self.lead_reference.per_token_logps(
-            input_ids=reference_input_ids.unsqueeze(0),
+            input_ids=reference_input_ids.unsqueeze(0).expand(self.config.num_iterations, -1, -1),
             completion_mask=reference_completion_mask,
-            mask_seeds=[mask_seed],
-            gradient_accumulation_steps=1,
+            mask_seeds=mask_seeds,
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             requires_grad=False,
         )
 
     def _generate_and_score_pipeline(self, mode):
-        cycle_seed = self.config.seed + self.generation_cycle_idx * 10000
+        buffer_cycle = self.generation_cycle_idx
+        cycle_seed = self.config.seed + buffer_cycle * 10000
         if self.accelerator.is_main_process:
             group_specs = sample_denovo_group_specs(
                 num_groups=self.denovo_num_groups_global,
@@ -619,10 +743,35 @@ class JointCpGRPOTrainer:
             local_lead_advantages = torch.empty((0,), device=self.device)
             lead_zero_std_ratio = float('nan')
 
-        denovo_mask_seed = self._sample_mask_seed()
-        lead_mask_seed = self._sample_mask_seed()
-        denovo_ref_per_token_logps = self._score_denovo_reference(denovo_rollout, denovo_mask_seed)
-        lead_ref_per_token_logps = self._score_lead_reference(lead_rollout, lead_mask_seed)
+        denovo_mask_seeds = self._sample_mask_seeds()
+        lead_mask_seeds = self._sample_mask_seeds()
+
+        prompt_completion_ids = torch.cat([denovo_rollout.prompt_ids, denovo_rollout.completion_ids], dim=1)
+        denovo_expanded_ids = prompt_completion_ids.unsqueeze(0).expand(self.config.num_iterations, -1, -1)
+        if self.config.num_iterations > 1:
+            denovo_old_per_token_logps = self.denovo_policy.per_token_logps(
+                input_ids=denovo_expanded_ids,
+                logits_to_keep=denovo_rollout.completion_ids.size(1),
+                completion_mask=denovo_rollout.completion_mask,
+                mask_seeds=denovo_mask_seeds,
+                gradient_accumulation_steps=self.config.gradient_accumulation_steps,
+                requires_grad=False,
+            )
+        else:
+            denovo_old_per_token_logps = None
+        denovo_ref_per_token_logps = self._score_denovo_reference(denovo_rollout, denovo_mask_seeds)
+
+        if lead_rollout is not None and self.config.num_iterations > 1:
+            lead_old_per_token_logps = self.lead_policy.per_token_logps(
+                input_ids=lead_rollout.input_ids.unsqueeze(0).expand(self.config.num_iterations, -1, -1),
+                completion_mask=lead_rollout.completion_mask,
+                mask_seeds=lead_mask_seeds,
+                gradient_accumulation_steps=self.config.gradient_accumulation_steps,
+                requires_grad=False,
+            )
+        else:
+            lead_old_per_token_logps = None
+        lead_ref_per_token_logps = self._score_lead_reference(lead_rollout, lead_mask_seeds)
 
         gathered_denovo_valid = self.accelerator.gather(
             torch.tensor([float(record.is_valid) for record in denovo_reward_records], device=self.device)
@@ -782,10 +931,10 @@ class JointCpGRPOTrainer:
         ):
             log_rows.append(
                 {
-                    'mode': mode,
-                    'stage': 'denovo',
-                    'buffer_cycle': self.generation_cycle_idx,
-                    'step': self.global_step,
+                        'mode': mode,
+                        'stage': 'denovo',
+                        'buffer_cycle': buffer_cycle,
+                        'step': self.global_step,
                     'spec': asdict(spec),
                     'safe': denovo_rollout.safe_strings[row_idx],
                     'smiles': record.smiles,
@@ -808,7 +957,7 @@ class JointCpGRPOTrainer:
                     {
                         'mode': mode,
                         'stage': 'lead',
-                        'buffer_cycle': self.generation_cycle_idx,
+                        'buffer_cycle': buffer_cycle,
                         'step': self.global_step,
                         'spec': asdict(spec),
                         'seed_smiles': reward_item['seed_smiles'],
@@ -829,43 +978,56 @@ class JointCpGRPOTrainer:
 
         self.generation_cycle_idx += 1
         return {
+            'buffer_cycle': buffer_cycle,
             'denovo': {
                 'prompt_ids': denovo_rollout.prompt_ids,
                 'completion_ids': denovo_rollout.completion_ids,
                 'completion_mask': denovo_rollout.completion_mask,
                 'advantages': local_denovo_advantages,
+                'old_per_token_logps': denovo_old_per_token_logps,
                 'ref_per_token_logps': denovo_ref_per_token_logps,
-                'mask_seed': denovo_mask_seed,
+                'mask_seeds': denovo_mask_seeds,
             },
             'lead': {
                 'input_ids': None if lead_rollout is None else lead_rollout.input_ids.detach().clone(),
                 'completion_mask': None if lead_rollout is None else lead_rollout.completion_mask.detach().clone(),
                 'advantages': local_lead_advantages,
+                'old_per_token_logps': lead_old_per_token_logps,
                 'ref_per_token_logps': lead_ref_per_token_logps,
-                'mask_seed': lead_mask_seed,
+                'mask_seeds': lead_mask_seeds,
                 'has_samples': lead_rollout is not None,
             },
+            'lead_valid_seed_indices': list(valid_seed_indices),
             'metrics': rollout_metrics,
         }
 
-    def _compute_denovo_loss(self, inputs):
+    def _compute_denovo_loss(self, inputs, iteration_idx):
         prompt_completion_ids = torch.cat([inputs['prompt_ids'], inputs['completion_ids']], dim=1).unsqueeze(0)
         logits_to_keep = inputs['completion_ids'].size(1)
         per_token_logps = self.denovo_policy.per_token_logps(
             input_ids=prompt_completion_ids,
             logits_to_keep=logits_to_keep,
             completion_mask=inputs['completion_mask'],
-            mask_seeds=[inputs['mask_seed']],
-            gradient_accumulation_steps=1,
+            mask_seeds=[inputs['mask_seeds'][iteration_idx]],
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             requires_grad=True,
         )
+        if inputs['old_per_token_logps'] is None:
+            old_per_token_logps = per_token_logps.detach()
+        else:
+            old_per_token_logps = inputs['old_per_token_logps'][:, iteration_idx, :].unsqueeze(1)
+
+        if inputs['ref_per_token_logps'] is None:
+            ref_per_token_logps = None
+        else:
+            ref_per_token_logps = inputs['ref_per_token_logps'][:, iteration_idx, :].unsqueeze(1)
         loss, step_metrics = compute_clipped_grpo_loss(
             new_log_probs=per_token_logps,
-            old_log_probs=per_token_logps.detach(),
+            old_log_probs=old_per_token_logps,
             advantages=inputs['advantages'],
             completion_mask=inputs['completion_mask'],
             epsilon=self.config.denovo_epsilon,
-            ref_log_probs=inputs['ref_per_token_logps'],
+            ref_log_probs=ref_per_token_logps,
             beta=self.config.denovo_beta,
         )
         return loss, step_metrics
@@ -879,7 +1041,7 @@ class JointCpGRPOTrainer:
             raise RuntimeError('Policy has no trainable parameters')
         return loss
 
-    def _compute_lead_loss(self, inputs):
+    def _compute_lead_loss(self, inputs, iteration_idx):
         if not inputs['has_samples']:
             nan_tensor = torch.tensor(float('nan'), device=self.device)
             return self._zero_policy_loss(self.lead_policy), {
@@ -895,17 +1057,26 @@ class JointCpGRPOTrainer:
         per_token_logps = self.lead_policy.per_token_logps(
             input_ids=lead_input_ids.unsqueeze(0),
             completion_mask=lead_completion_mask,
-            mask_seeds=[inputs['mask_seed']],
-            gradient_accumulation_steps=1,
+            mask_seeds=[inputs['mask_seeds'][iteration_idx]],
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             requires_grad=True,
         )
+        if inputs['old_per_token_logps'] is None:
+            old_per_token_logps = per_token_logps.detach()
+        else:
+            old_per_token_logps = inputs['old_per_token_logps'][:, iteration_idx, :].unsqueeze(1)
+
+        if inputs['ref_per_token_logps'] is None:
+            ref_per_token_logps = None
+        else:
+            ref_per_token_logps = inputs['ref_per_token_logps'][:, iteration_idx, :].unsqueeze(1)
         loss, step_metrics = compute_clipped_grpo_loss(
             new_log_probs=per_token_logps,
-            old_log_probs=per_token_logps.detach(),
+            old_log_probs=old_per_token_logps,
             advantages=inputs['advantages'],
             completion_mask=lead_completion_mask,
             epsilon=self.config.lead_epsilon,
-            ref_log_probs=inputs['ref_per_token_logps'],
+            ref_log_probs=ref_per_token_logps,
             beta=self.config.lead_beta,
         )
         return loss, step_metrics
@@ -975,6 +1146,10 @@ class JointCpGRPOTrainer:
         self.global_step = int(trainer_state['global_step'])
         self.generation_cycle_idx = int(trainer_state['generation_cycle_idx'])
         self._last_train_metrics = trainer_state.get('last_metrics')
+        self._buffer_iteration = 0
+        self._buffered_inputs = None
+        self._buffer_metadata = None
+        self._last_rollout_metrics = None
 
     def train(self, resume_from_checkpoint=None):
         if resume_from_checkpoint is not None:
@@ -982,12 +1157,23 @@ class JointCpGRPOTrainer:
             self._load_checkpoint(resume_from_checkpoint)
 
         while self.global_step < self.config.max_steps:
-            batch = self._generate_and_score_pipeline(mode='train')
-            self._record_rollout_metrics(batch['metrics'])
+            buffered_inputs, iteration_idx = self._prepare_inputs(mode='train')
 
             self.lead_optimizer.zero_grad(set_to_none=True)
-            lead_loss, lead_step_metrics = self._compute_lead_loss(batch['lead'])
-            self.accelerator.backward(lead_loss)
+            self.denovo_optimizer.zero_grad(set_to_none=True)
+
+            for chunk_idx in range(self.config.gradient_accumulation_steps):
+                denovo_inputs = buffered_inputs['denovo'][chunk_idx]
+                lead_inputs = buffered_inputs['lead'][chunk_idx]
+
+                lead_loss, lead_step_metrics = self._compute_lead_loss(lead_inputs, iteration_idx)
+                self.accelerator.backward(lead_loss / self.config.gradient_accumulation_steps)
+                self._record_stage_loss_metrics('lead', lead_step_metrics)
+
+                denovo_loss, denovo_step_metrics = self._compute_denovo_loss(denovo_inputs, iteration_idx)
+                self.accelerator.backward(denovo_loss / self.config.gradient_accumulation_steps)
+                self._record_stage_loss_metrics('denovo', denovo_step_metrics)
+
             lead_grad_norm = self.accelerator.clip_grad_norm_(
                 self.lead_policy.model.backbone.parameters(),
                 self.config.max_grad_norm,
@@ -997,9 +1183,6 @@ class JointCpGRPOTrainer:
             self.lead_optimizer.zero_grad(set_to_none=True)
             self.lead_policy.update_ema()
 
-            self.denovo_optimizer.zero_grad(set_to_none=True)
-            denovo_loss, denovo_step_metrics = self._compute_denovo_loss(batch['denovo'])
-            self.accelerator.backward(denovo_loss)
             denovo_grad_norm = self.accelerator.clip_grad_norm_(
                 self.denovo_policy.model.backbone.parameters(),
                 self.config.max_grad_norm,
@@ -1009,14 +1192,15 @@ class JointCpGRPOTrainer:
             self.denovo_optimizer.zero_grad(set_to_none=True)
             self.denovo_policy.update_ema()
 
-            self._record_stage_loss_metrics('denovo', denovo_step_metrics)
-            self._record_stage_loss_metrics('lead', lead_step_metrics)
             self._append_metric('denovo/grad_norm', float(denovo_grad_norm))
             self._append_metric('lead/grad_norm', float(lead_grad_norm))
             self._append_metric('denovo/lr', float(self.denovo_scheduler.get_last_lr()[0]))
             self._append_metric('lead/lr', float(self.lead_scheduler.get_last_lr()[0]))
 
             self.global_step += 1
+            self._buffer_iteration += 1
+            if self._buffer_iteration >= self.config.num_iterations:
+                self._clear_rollout_buffer()
 
             if (
                 self.config.denovo_sync_ref_model
