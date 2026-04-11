@@ -27,6 +27,13 @@ from genmol.rl.trainer import write_jsonl
 logger = logging.getLogger(__name__)
 
 
+DISPLAY_NAME_BY_EXPERIMENT = {
+    'orig_genmol_v2': 'Original GenMol v2',
+    'standalone_cpgrpo': 'Standalone cpGRPO',
+    'joint_pipeline_cpgrpo': 'Joint Pipeline cpGRPO',
+}
+
+
 @dataclass(frozen=True)
 class EvalExperimentConfig:
     name: str
@@ -146,16 +153,16 @@ def _invalid_lead_row(seed_smiles):
 
 def _build_markdown(results):
     columns = [
-        'experiment',
-        'reward_mean',
-        'base_reward_mean',
-        'sim_mean',
-        'valid_fraction',
-        'alert_hit_fraction',
-        'qed_mean',
-        'sa_mean',
-        'sa_score_mean',
-        'soft_reward_mean',
+        'Experiment',
+        'Overall Pipeline Score',
+        'Base Quality Score',
+        'Seed Similarity',
+        'Valid Molecule Rate',
+        'Alert Hit Rate',
+        'QED',
+        'SA',
+        'SA Score',
+        'Soft Quality Score',
     ]
     lines = [
         '# Coupled-GRPO Pipeline Evaluation',
@@ -165,7 +172,7 @@ def _build_markdown(results):
     ]
     for result in results:
         row = [
-            result['experiment'],
+            DISPLAY_NAME_BY_EXPERIMENT.get(result['experiment'], result['experiment']),
             _format_metric(result['reward_mean']),
             _format_metric(result['base_reward_mean']),
             _format_metric(result['sim_mean']),
@@ -177,7 +184,27 @@ def _build_markdown(results):
             _format_metric(result['soft_reward_mean']),
         ]
         lines.append('| ' + ' | '.join(row) + ' |')
-    lines.append('')
+    lines.extend(
+        [
+            '',
+            'Column notes:',
+            '- `Overall Pipeline Score`: mean of the final lead-stage evaluation score, equal to base quality plus similarity.',
+            '- `Base Quality Score`: mean of the lead-stage base quality term before adding similarity.',
+            '- `Seed Similarity`: mean Tanimoto similarity between the de novo seed and the optimized molecule.',
+            '- `Valid Molecule Rate`: fraction of evaluated outputs that decode to valid molecules.',
+            '- `Alert Hit Rate`: fraction of outputs that hit the molecular alert rule set.',
+            '- `QED`: mean quantitative estimate of drug-likeness.',
+            '- `SA`: mean synthetic accessibility value. Lower is easier to synthesize.',
+            '- `SA Score`: SA converted to the bounded reward-scale score used by training.',
+            '- `Soft Quality Score`: mean of `0.6 * QED + 0.4 * SA Score`.',
+            '',
+            'Row notes:',
+            '- `Original GenMol v2`: both stages use the original pretrained GenMol v2 checkpoint.',
+            '- `Standalone cpGRPO`: model 1 uses the standalone de novo cpGRPO checkpoint and model 2 uses the standalone lead cpGRPO checkpoint.',
+            '- `Joint Pipeline cpGRPO`: both stages use checkpoints from the jointly trained pipeline run.',
+            '',
+        ]
+    )
     return '\n'.join(lines)
 
 
