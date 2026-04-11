@@ -1,6 +1,6 @@
 init_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
 ref_ckpt_path: null
-seed_data_glob: /public/home/xinwuye/ai4s-tool-joint-train/data/safe-gpt/train-0000[0-2]-of-00102-*.parquet
+seed_data_glob: /public/home/xinwuye/ai4s-tool-joint-train/data/safe-gpt/train-0000[0-1]-of-00102-*.parquet
 output_dir: null
 overwrite_output_dir: false
 seed: 42
