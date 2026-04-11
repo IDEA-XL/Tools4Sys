@@ -56,6 +56,7 @@ class JointTrainConfig:
     lead_ref_ckpt_path: str | None = None
     output_dir: str | None = None
     overwrite_output_dir: bool = False
+    distributed_backend: str = 'accelerator'
     seed: int = 42
     bf16: bool = True
     log_level: str = 'info'
@@ -124,6 +125,10 @@ def load_config(path):
     with open(path) as handle:
         raw = yaml.safe_load(handle)
     config = JointTrainConfig(**raw)
+    if config.distributed_backend not in {'accelerator', 'process_group_ddp'}:
+        raise ValueError(
+            "distributed_backend must be one of {'accelerator', 'process_group_ddp'}"
+        )
     if config.denovo_ref_ckpt_path is None:
         config.denovo_ref_ckpt_path = config.denovo_init_ckpt_path
     if config.lead_ref_ckpt_path is None:

@@ -18,6 +18,7 @@ from genmol.rl.pipeline_trainer import (
     load_config,
     resolve_output_dir,
 )
+from genmol.rl.pipeline_pg_trainer import ProcessGroupJointCpGRPOTrainer
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,12 @@ def main():
         with open(os.path.join(output_dir, 'config.yaml'), 'w') as handle:
             yaml.safe_dump(config.__dict__, handle, sort_keys=False)
 
-    trainer = JointCpGRPOTrainer(config=config, output_dir=output_dir)
+    if config.distributed_backend == 'accelerator':
+        trainer = JointCpGRPOTrainer(config=config, output_dir=output_dir)
+    elif config.distributed_backend == 'process_group_ddp':
+        trainer = ProcessGroupJointCpGRPOTrainer(config=config, output_dir=output_dir)
+    else:
+        raise ValueError(f'Unsupported distributed_backend: {config.distributed_backend}')
     try:
         train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         metrics = train_result.metrics
