@@ -22,8 +22,11 @@ from genmol.rl.lead_policy import LeadOptCpGRPOPolicy
 from genmol.rl.lead_reward import compute_similarity
 from genmol.rl.lead_specs import LeadOptSpec
 from genmol.rl.pipeline_reward import (
+    aggregate_selected_seed_downstream_base_rewards,
     combine_seed_rewards,
-    topk_mean,
+    merge_selected_seed_downstream_base_rewards,
+    partition_selected_seed_entries,
+    select_full_denovo_groups_for_lead,
 )
 from genmol.rl.policy import GenMolCpGRPOPolicy
 from genmol.rl.reward import MolecularReward
@@ -102,6 +105,7 @@ class JointTrainConfig:
     denovo_gradient_checkpointing_kwargs: dict = field(default_factory=lambda: {'use_reentrant': False})
 
     lead_num_generations: int = 32
+    lead_per_device_train_batch_size: int | None = None
     lead_generation_batch_size: int = 64
     lead_generation_temperature: float = 1.0
     lead_randomness: float = 0.3
@@ -151,6 +155,10 @@ def load_config(path):
         raise ValueError('denovo_per_device_train_batch_size must be positive')
     if config.denovo_generation_batch_size <= 0:
         raise ValueError('denovo_generation_batch_size must be positive')
+    if config.lead_per_device_train_batch_size is None:
+        config.lead_per_device_train_batch_size = config.denovo_per_device_train_batch_size * config.lead_num_generations
+    if config.lead_per_device_train_batch_size <= 0:
+        raise ValueError('lead_per_device_train_batch_size must be positive')
     if config.lead_generation_batch_size <= 0:
         raise ValueError('lead_generation_batch_size must be positive')
     if config.lead_rescore_chunk_size <= 0:
@@ -163,18 +171,6 @@ def load_config(path):
         raise ValueError('lead_ref_model_mixup_alpha must be in [0, 1]')
     if not 0.0 <= config.denovo_reward_alpha <= 1.0:
         raise ValueError('denovo_reward_alpha must be in [0, 1]')
-    if (
-        config.num_iterations > 1
-        and config.denovo_per_device_train_batch_size % config.gradient_accumulation_steps != 0
-    ):
-        raise ValueError(
-            'denovo_per_device_train_batch_size must be divisible by gradient_accumulation_steps '
-            'when num_iterations > 1'
-        )
-    if config.num_iterations > 1 and config.lead_num_generations % config.gradient_accumulation_steps != 0:
-        raise ValueError(
-            'lead_num_generations must be divisible by gradient_accumulation_steps when num_iterations > 1'
-        )
     return config
 
 
@@ -216,6 +212,27 @@ class JointCpGRPOTrainer:
                 f'{self.denovo_global_sample_count} vs {config.denovo_num_generations}'
             )
         self.denovo_num_groups_global = self.denovo_global_sample_count // config.denovo_num_generations
+        self.lead_micro_batch_size = int(config.lead_per_device_train_batch_size)
+        self.lead_local_sample_count = self.lead_micro_batch_size * config.gradient_accumulation_steps
+        if self.lead_local_sample_count % config.lead_num_generations != 0:
+            raise ValueError(
+                'lead local sample count must be divisible by lead_num_generations: '
+                f'{self.lead_local_sample_count} vs {config.lead_num_generations}'
+            )
+        self.lead_num_groups_local = self.lead_local_sample_count // config.lead_num_generations
+        self.lead_global_sample_count = self.lead_local_sample_count * self.world_size
+        if self.lead_global_sample_count % config.lead_num_generations != 0:
+            raise ValueError(
+                'global lead train batch size must be divisible by lead_num_generations: '
+                f'{self.lead_global_sample_count} vs {config.lead_num_generations}'
+            )
+        self.lead_num_groups_global = self.lead_global_sample_count // config.lead_num_generations
+        if self.lead_num_groups_global % config.denovo_num_generations != 0:
+            raise ValueError(
+                'lead global group count must be divisible by denovo_num_generations so whole de novo groups can '
+                f'be sampled for lead: {self.lead_num_groups_global} vs {config.denovo_num_generations}'
+            )
+        self.selected_denovo_group_count = self.lead_num_groups_global // config.denovo_num_generations
 
         ensure_exists(config.denovo_init_ckpt_path, 'de novo init checkpoint')
         ensure_exists(config.denovo_ref_ckpt_path, 'de novo reference checkpoint')
@@ -318,13 +335,17 @@ class JointCpGRPOTrainer:
 
         logger.info(
             'process_index=%s device=%s world_size=%s denovo_micro_batch_size=%s denovo_local_sample_count=%s '
-            'lead_num_generations=%s gradient_accumulation_steps=%s num_iterations=%s reward_workers=%s',
+            'lead_micro_batch_size=%s lead_local_sample_count=%s lead_num_generations=%s '
+            'lead_num_groups_global=%s gradient_accumulation_steps=%s num_iterations=%s reward_workers=%s',
             self.accelerator.process_index,
             self.device,
             self.world_size,
             self.denovo_micro_batch_size,
             self.denovo_local_sample_count,
+            self.lead_micro_batch_size,
+            self.lead_local_sample_count,
             self.config.lead_num_generations,
+            self.lead_num_groups_global,
             self.config.gradient_accumulation_steps,
             self.config.num_iterations,
             self.base_reward_model.num_workers,
@@ -397,46 +418,78 @@ class JointCpGRPOTrainer:
             )
         return combined
 
-    def _build_lead_specs(self, seed_records, cycle_seed):
+    def _build_lead_specs(self, seed_smiles_list, cycle_seed):
         rng = random.Random(cycle_seed + 7919 + self.accelerator.process_index * 1000)
         lead_specs = []
-        valid_seed_indices = []
-        valid_seed_smiles = []
-        for seed_idx, seed_record in enumerate(seed_records):
-            if not seed_record.is_valid or seed_record.smiles is None:
-                continue
-            valid_seed_indices.append(seed_idx)
-            valid_seed_smiles.append(seed_record.smiles)
+        for seed_smiles in seed_smiles_list:
             for _ in range(self.config.lead_num_generations):
                 lead_specs.append(
                     LeadOptSpec(
-                        seed_smiles=seed_record.smiles,
+                        seed_smiles=seed_smiles,
                         mutation_seed=rng.randrange(2**31),
                         generation_temperature=self.config.lead_generation_temperature,
                         randomness=self.config.lead_randomness,
                         min_seed_len=self.config.lead_min_seed_len,
                     )
                 )
-        return lead_specs, valid_seed_indices, valid_seed_smiles
+        return lead_specs
 
-    def _compute_downstream_seed_rewards(self, valid_seed_indices, lead_base_rewards, seed_count):
-        downstream = torch.full((seed_count,), -1.0, device=self.device, dtype=torch.float32)
-        if not valid_seed_indices:
-            return downstream
-        expected = len(valid_seed_indices) * self.config.lead_num_generations
-        if lead_base_rewards.numel() != expected:
+    def _select_lead_seed_payload(self, denovo_reward_records, local_seed_base_rewards, cycle_seed, local_start):
+        local_seed_entries = []
+        for record, base_reward in zip(denovo_reward_records, local_seed_base_rewards.tolist()):
+            local_seed_entries.append(
+                {
+                    'is_valid': bool(record.is_valid and record.smiles is not None),
+                    'smiles': record.smiles,
+                    'base_reward': float(base_reward),
+                }
+            )
+        gathered_seed_entries = self._all_gather_objects(local_seed_entries)
+        payload = [None]
+        if self.accelerator.is_main_process:
+            try:
+                global_seed_entries = [item for shard in gathered_seed_entries for item in shard]
+                if len(global_seed_entries) != self.denovo_global_sample_count:
+                    raise ValueError(
+                        'Global de novo seed entry count mismatch: '
+                        f'{len(global_seed_entries)} vs {self.denovo_global_sample_count}'
+                    )
+                selected_group_indices, selected_seed_entries, selected_seed_mask = select_full_denovo_groups_for_lead(
+                    seed_entries=global_seed_entries,
+                    denovo_group_size=self.config.denovo_num_generations,
+                    lead_num_seed_groups=self.lead_num_groups_global,
+                    seed=cycle_seed + 15485863,
+                )
+                lead_seed_shards = partition_selected_seed_entries(selected_seed_entries, self.world_size)
+                payload[0] = {
+                    'error': None,
+                    'selected_group_indices': selected_group_indices,
+                    'selected_seed_mask': selected_seed_mask,
+                    'lead_seed_shards': lead_seed_shards,
+                    'default_downstream_base_rewards': [item['base_reward'] for item in global_seed_entries],
+                }
+            except Exception as exc:
+                payload[0] = {'error': str(exc)}
+        if dist.is_available() and dist.is_initialized():
+            dist.broadcast_object_list(payload, src=0)
+        selection_payload = payload[0]
+        if selection_payload is None:
+            raise RuntimeError('Lead seed selection payload was not broadcast')
+        if selection_payload.get('error') is not None:
+            raise ValueError(selection_payload['error'])
+        local_end = local_start + len(denovo_reward_records)
+        local_selected_seed_mask = torch.tensor(
+            selection_payload['selected_seed_mask'][local_start:local_end],
+            device=self.device,
+            dtype=torch.bool,
+        )
+        local_selected_seed_entries = selection_payload['lead_seed_shards'][self.accelerator.process_index]
+        if len(local_selected_seed_entries) != self.lead_num_groups_local:
             raise ValueError(
-                'Lead base reward tensor size does not match grouped valid-seed layout: '
-                f'{lead_base_rewards.numel()} vs {expected}'
+                'Per-rank selected lead seed count mismatch: '
+                f'{len(local_selected_seed_entries)} vs {self.lead_num_groups_local}'
             )
-        for group_idx, seed_idx in enumerate(valid_seed_indices):
-            start = group_idx * self.config.lead_num_generations
-            end = start + self.config.lead_num_generations
-            downstream[seed_idx] = topk_mean(
-                lead_base_rewards[start:end],
-                k=self.config.downstream_topk,
-            )
-        return downstream
+        return selection_payload, local_selected_seed_entries, local_selected_seed_mask
 
     def _record_text_logs(self, rows):
         if not self.config.log_completions or not rows:
@@ -515,47 +568,24 @@ class JointCpGRPOTrainer:
             'has_samples': False,
         }
 
-    def _split_lead_inputs(self, inputs, valid_seed_indices):
+    def _split_lead_inputs(self, inputs):
         if self.config.gradient_accumulation_steps == 1:
             return [inputs]
 
         if not inputs['has_samples']:
             return [self._empty_lead_inputs(inputs['mask_seeds']) for _ in range(self.config.gradient_accumulation_steps)]
 
-        lead_keys = (
-            'input_ids',
-            'completion_mask',
-            'advantages',
-            'old_per_token_logps',
-            'ref_per_token_logps',
-        )
-        lead_chunks = []
-        for chunk_idx in range(self.config.gradient_accumulation_steps):
-            seed_start = chunk_idx * self.denovo_micro_batch_size
-            seed_end = seed_start + self.denovo_micro_batch_size
-            sample_indices = []
-            for group_idx, seed_idx in enumerate(valid_seed_indices):
-                if seed_start <= seed_idx < seed_end:
-                    group_start = group_idx * self.config.lead_num_generations
-                    group_end = group_start + self.config.lead_num_generations
-                    sample_indices.extend(range(group_start, group_end))
-
-            if not sample_indices:
-                lead_chunks.append(self._empty_lead_inputs(inputs['mask_seeds']))
-                continue
-
-            index_tensor = torch.tensor(sample_indices, device=self.device, dtype=torch.long)
-            chunk = {
-                'mask_seeds': list(inputs['mask_seeds']),
-                'has_samples': True,
-            }
-            for key in lead_keys:
-                value = inputs[key]
-                if value is None:
-                    chunk[key] = None
-                else:
-                    chunk[key] = value.index_select(0, index_tensor)
-            lead_chunks.append(chunk)
+        tensor_keys = {
+            'input_ids': inputs['input_ids'],
+            'completion_mask': inputs['completion_mask'],
+            'advantages': inputs['advantages'],
+            'old_per_token_logps': inputs['old_per_token_logps'],
+            'ref_per_token_logps': inputs['ref_per_token_logps'],
+        }
+        lead_chunks = split_tensor_dict(tensor_keys, self.config.gradient_accumulation_steps)
+        for chunk in lead_chunks:
+            chunk['mask_seeds'] = list(inputs['mask_seeds'])
+            chunk['has_samples'] = True
         return lead_chunks
 
     def _split_pipeline_inputs(self, accumulated_local_batch):
@@ -563,10 +593,7 @@ class JointCpGRPOTrainer:
             accumulated_local_batch['denovo'],
             self.config.gradient_accumulation_steps,
         )
-        lead_chunks = self._split_lead_inputs(
-            accumulated_local_batch['lead'],
-            accumulated_local_batch['lead_valid_seed_indices'],
-        )
+        lead_chunks = self._split_lead_inputs(accumulated_local_batch['lead'])
         if len(denovo_chunks) != len(lead_chunks):
             raise ValueError(
                 'denovo chunk count and lead chunk count must match: '
@@ -693,32 +720,58 @@ class JointCpGRPOTrainer:
             dtype=torch.float32,
         )
 
-        lead_specs, valid_seed_indices, _ = self._build_lead_specs(denovo_reward_records, cycle_seed)
-        if lead_specs:
-            lead_rollout_seed = cycle_seed + 500000 + self.accelerator.process_index * 1000
-            lead_rollout = self.lead_policy.rollout_specs(
-                specs=lead_specs,
-                generation_batch_size=self.config.lead_generation_batch_size,
-                seed=lead_rollout_seed,
-            )
-            lead_records = self._score_lead_records(lead_rollout.seed_smiles, lead_rollout.smiles)
-            local_lead_rewards = [item['reward'] for item in lead_records]
-            local_lead_base_rewards_tensor = torch.tensor(
-                [item['base_reward'] for item in lead_records],
-                device=self.device,
-                dtype=torch.float32,
-            )
-        else:
-            lead_rollout = None
-            lead_records = []
-            local_lead_rewards = []
-            local_lead_base_rewards_tensor = torch.empty((0,), device=self.device, dtype=torch.float32)
-
-        local_downstream_base_rewards = self._compute_downstream_seed_rewards(
-            valid_seed_indices=valid_seed_indices,
-            lead_base_rewards=local_lead_base_rewards_tensor,
-            seed_count=len(denovo_reward_records),
+        selection_payload, local_selected_seed_entries, local_selected_seed_mask = self._select_lead_seed_payload(
+            denovo_reward_records=denovo_reward_records,
+            local_seed_base_rewards=local_seed_base_rewards,
+            cycle_seed=cycle_seed,
+            local_start=local_start,
         )
+        local_selected_seed_smiles = [item['smiles'] for item in local_selected_seed_entries]
+        lead_specs = self._build_lead_specs(local_selected_seed_smiles, cycle_seed)
+        if len(lead_specs) != self.lead_local_sample_count:
+            raise ValueError(
+                'Local lead rollout spec count mismatch: '
+                f'{len(lead_specs)} vs {self.lead_local_sample_count}'
+            )
+
+        lead_rollout_seed = cycle_seed + 500000 + self.accelerator.process_index * 1000
+        lead_rollout = self.lead_policy.rollout_specs(
+            specs=lead_specs,
+            generation_batch_size=self.config.lead_generation_batch_size,
+            seed=lead_rollout_seed,
+        )
+        lead_records = self._score_lead_records(lead_rollout.seed_smiles, lead_rollout.smiles)
+        local_lead_rewards = [item['reward'] for item in lead_records]
+        if len(local_lead_rewards) != self.lead_local_sample_count:
+            raise ValueError(
+                'Local lead reward count mismatch: '
+                f'{len(local_lead_rewards)} vs {self.lead_local_sample_count}'
+            )
+        local_lead_base_rewards_tensor = torch.tensor(
+            [item['base_reward'] for item in lead_records],
+            device=self.device,
+            dtype=torch.float32,
+        )
+        local_selected_downstream_rewards = aggregate_selected_seed_downstream_base_rewards(
+            selected_seed_entries=local_selected_seed_entries,
+            lead_base_rewards=local_lead_base_rewards_tensor,
+            lead_num_generations=self.config.lead_num_generations,
+            downstream_topk=self.config.downstream_topk,
+        )
+        gathered_selected_downstream_rewards = self._all_gather_objects(local_selected_downstream_rewards)
+        merged_downstream_base_rewards = merge_selected_seed_downstream_base_rewards(
+            default_downstream_base_rewards=selection_payload['default_downstream_base_rewards'],
+            selected_seed_rewards=[
+                item for shard in gathered_selected_downstream_rewards for item in shard
+            ],
+            expected_selected_seed_count=self.lead_num_groups_global,
+        )
+        global_downstream_base_rewards = torch.tensor(
+            merged_downstream_base_rewards,
+            device=self.device,
+            dtype=torch.float32,
+        )
+        local_downstream_base_rewards = global_downstream_base_rewards[local_start:local_end]
         local_denovo_rewards = combine_seed_rewards(
             seed_base_rewards=local_seed_base_rewards,
             downstream_base_rewards=local_downstream_base_rewards,
@@ -812,9 +865,7 @@ class JointCpGRPOTrainer:
         gathered_seed_base_rewards = self.accelerator.gather(local_seed_base_rewards.detach())
         gathered_downstream_base_rewards = self.accelerator.gather(local_downstream_base_rewards.detach())
         gathered_denovo_advantages = self.accelerator.gather(local_denovo_advantages.detach())
-        gathered_valid_seed_mask = self.accelerator.gather(
-            torch.tensor([float(idx in set(valid_seed_indices)) for idx in range(len(denovo_reward_records))], device=self.device)
-        )
+        gathered_selected_seed_mask = self.accelerator.gather(local_selected_seed_mask.float())
 
         all_lead_valid_lists = self._all_gather_objects([float(item['record'].is_valid) for item in lead_records])
         all_lead_alert_lists = self._all_gather_objects([float(item['record'].alert_hit) for item in lead_records])
@@ -885,7 +936,7 @@ class JointCpGRPOTrainer:
             'denovo/invalid_fraction': 1.0 - gathered_denovo_valid.mean().item(),
             'denovo/base_reward_mean': gathered_seed_base_rewards.mean().item(),
             'denovo/downstream_base_mean': gathered_downstream_base_rewards.mean().item(),
-            'denovo/valid_seed_fraction': gathered_valid_seed_mask.mean().item(),
+            'denovo/selected_seed_fraction': gathered_selected_seed_mask.mean().item(),
             'denovo/rewards/qed_mean': _nanmean(gathered_denovo_qed),
             'denovo/rewards/sa_mean': _nanmean(gathered_denovo_sa),
             'denovo/rewards/sa_score_mean': _nanmean(gathered_denovo_sa_score),
@@ -936,10 +987,10 @@ class JointCpGRPOTrainer:
         ):
             log_rows.append(
                 {
-                        'mode': mode,
-                        'stage': 'denovo',
-                        'buffer_cycle': buffer_cycle,
-                        'step': self.global_step,
+                    'mode': mode,
+                    'stage': 'denovo',
+                    'buffer_cycle': buffer_cycle,
+                    'step': self.global_step,
                     'spec': asdict(spec),
                     'safe': denovo_rollout.safe_strings[row_idx],
                     'smiles': record.smiles,
@@ -953,32 +1004,32 @@ class JointCpGRPOTrainer:
                     'soft_reward': record.soft_reward,
                     'is_valid': record.is_valid,
                     'alert_hit': record.alert_hit,
+                    'selected_for_lead': bool(local_selected_seed_mask[row_idx].item()),
                 }
             )
-        if lead_rollout is not None:
-            for spec, reward_item, safe_string in zip(lead_specs, lead_records, lead_rollout.safe_strings):
-                record = reward_item['record']
-                log_rows.append(
-                    {
-                        'mode': mode,
-                        'stage': 'lead',
-                        'buffer_cycle': buffer_cycle,
-                        'step': self.global_step,
-                        'spec': asdict(spec),
-                        'seed_smiles': reward_item['seed_smiles'],
-                        'safe': safe_string,
-                        'smiles': record.smiles,
-                        'base_reward': reward_item['base_reward'],
-                        'reward': reward_item['reward'],
-                        'sim': reward_item['sim'],
-                        'qed': record.qed,
-                        'sa': record.sa,
-                        'sa_score': record.sa_score,
-                        'soft_reward': record.soft_reward,
-                        'is_valid': record.is_valid,
-                        'alert_hit': record.alert_hit,
-                    }
-                )
+        for spec, reward_item, safe_string in zip(lead_specs, lead_records, lead_rollout.safe_strings):
+            record = reward_item['record']
+            log_rows.append(
+                {
+                    'mode': mode,
+                    'stage': 'lead',
+                    'buffer_cycle': buffer_cycle,
+                    'step': self.global_step,
+                    'spec': asdict(spec),
+                    'seed_smiles': reward_item['seed_smiles'],
+                    'safe': safe_string,
+                    'smiles': record.smiles,
+                    'base_reward': reward_item['base_reward'],
+                    'reward': reward_item['reward'],
+                    'sim': reward_item['sim'],
+                    'qed': record.qed,
+                    'sa': record.sa,
+                    'sa_score': record.sa_score,
+                    'soft_reward': record.soft_reward,
+                    'is_valid': record.is_valid,
+                    'alert_hit': record.alert_hit,
+                }
+            )
         self._record_text_logs(log_rows)
 
         self.generation_cycle_idx += 1
@@ -994,15 +1045,14 @@ class JointCpGRPOTrainer:
                 'mask_seeds': denovo_mask_seeds,
             },
             'lead': {
-                'input_ids': None if lead_rollout is None else lead_rollout.input_ids.detach().clone(),
-                'completion_mask': None if lead_rollout is None else lead_rollout.completion_mask.detach().clone(),
+                'input_ids': lead_rollout.input_ids.detach().clone(),
+                'completion_mask': lead_rollout.completion_mask.detach().clone(),
                 'advantages': local_lead_advantages,
                 'old_per_token_logps': lead_old_per_token_logps,
                 'ref_per_token_logps': lead_ref_per_token_logps,
                 'mask_seeds': lead_mask_seeds,
-                'has_samples': lead_rollout is not None,
+                'has_samples': True,
             },
-            'lead_valid_seed_indices': list(valid_seed_indices),
             'metrics': rollout_metrics,
         }
 

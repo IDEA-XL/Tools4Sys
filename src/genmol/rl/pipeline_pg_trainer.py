@@ -18,7 +18,13 @@ from genmol.rl.cpgrpo import (
 from genmol.rl.lead_policy import LeadOptCpGRPOPolicy
 from genmol.rl.lead_reward import compute_similarity
 from genmol.rl.lead_specs import LeadOptSpec
-from genmol.rl.pipeline_reward import combine_seed_rewards, topk_mean
+from genmol.rl.pipeline_reward import (
+    aggregate_selected_seed_downstream_base_rewards,
+    combine_seed_rewards,
+    merge_selected_seed_downstream_base_rewards,
+    partition_selected_seed_entries,
+    select_full_denovo_groups_for_lead,
+)
 from genmol.rl.pipeline_trainer import JointTrainConfig
 from genmol.rl.policy import GenMolCpGRPOPolicy
 from genmol.rl.reward import MolecularReward
@@ -130,6 +136,27 @@ class ProcessGroupJointCpGRPOTrainer:
                 f'{self.denovo_global_sample_count} vs {config.denovo_num_generations}'
             )
         self.denovo_num_groups_global = self.denovo_global_sample_count // config.denovo_num_generations
+        self.lead_micro_batch_size = int(config.lead_per_device_train_batch_size)
+        self.lead_local_sample_count = self.lead_micro_batch_size * config.gradient_accumulation_steps
+        if self.lead_local_sample_count % config.lead_num_generations != 0:
+            raise ValueError(
+                'lead local sample count must be divisible by lead_num_generations for process_group_ddp: '
+                f'{self.lead_local_sample_count} vs {config.lead_num_generations}'
+            )
+        self.lead_num_groups_local = self.lead_local_sample_count // config.lead_num_generations
+        self.lead_global_sample_count = self.lead_local_sample_count * self.stage_group_size
+        if self.lead_global_sample_count % config.lead_num_generations != 0:
+            raise ValueError(
+                'global lead batch must be divisible by lead_num_generations for process_group_ddp: '
+                f'{self.lead_global_sample_count} vs {config.lead_num_generations}'
+            )
+        self.lead_num_groups_global = self.lead_global_sample_count // config.lead_num_generations
+        if self.lead_num_groups_global % config.denovo_num_generations != 0:
+            raise ValueError(
+                'lead global group count must be divisible by denovo_num_generations so full de novo groups can '
+                f'be sampled for lead: {self.lead_num_groups_global} vs {config.denovo_num_generations}'
+            )
+        self.selected_denovo_group_count = self.lead_num_groups_global // config.denovo_num_generations
 
         self.denovo_policy = None
         self.denovo_reference = None
@@ -244,7 +271,8 @@ class ProcessGroupJointCpGRPOTrainer:
         logger.info(
             'rank=%s local_rank=%s stage=%s stage_local_rank=%s stage_group_size=%s world_size=%s '
             'denovo_micro_batch_size=%s denovo_local_sample_count=%s denovo_stage_global_sample_count=%s '
-            'lead_num_generations=%s '
+            'lead_micro_batch_size=%s lead_local_sample_count=%s lead_stage_global_sample_count=%s '
+            'lead_num_generations=%s lead_num_groups_global=%s '
             'gradient_accumulation_steps=%s num_iterations=%s reward_workers=%s',
             self.rank,
             self.local_rank,
@@ -255,7 +283,11 @@ class ProcessGroupJointCpGRPOTrainer:
             self.denovo_micro_batch_size,
             self.denovo_local_sample_count,
             self.denovo_global_sample_count,
+            self.lead_micro_batch_size,
+            self.lead_local_sample_count,
+            self.lead_global_sample_count,
             self.config.lead_num_generations,
+            self.lead_num_groups_global,
             self.config.gradient_accumulation_steps,
             self.config.num_iterations,
             self.base_reward_model.num_workers,
@@ -398,24 +430,79 @@ class ProcessGroupJointCpGRPOTrainer:
                 )
         return lead_specs
 
-    def _compute_downstream_seed_rewards(self, valid_seed_indices, lead_base_rewards, seed_count):
-        downstream = torch.full((seed_count,), -1.0, device=self.device, dtype=torch.float32)
-        if not valid_seed_indices:
-            return downstream
-        expected = len(valid_seed_indices) * self.config.lead_num_generations
-        if lead_base_rewards.numel() != expected:
-            raise ValueError(
-                'Lead base reward tensor size does not match grouped valid-seed layout: '
-                f'{lead_base_rewards.numel()} vs {expected}'
+    def _select_lead_seed_requests(
+        self,
+        denovo_reward_records,
+        local_seed_base_rewards,
+        cycle_seed,
+        local_start,
+    ):
+        if not self.is_denovo_rank:
+            raise RuntimeError('_select_lead_seed_requests is only valid on denovo ranks')
+
+        local_seed_entries = []
+        for record, base_reward in zip(denovo_reward_records, local_seed_base_rewards.tolist()):
+            local_seed_entries.append(
+                {
+                    'is_valid': bool(record.is_valid and record.smiles is not None),
+                    'smiles': record.smiles,
+                    'base_reward': float(base_reward),
+                }
             )
-        for group_idx, seed_idx in enumerate(valid_seed_indices):
-            start = group_idx * self.config.lead_num_generations
-            end = start + self.config.lead_num_generations
-            downstream[seed_idx] = topk_mean(
-                lead_base_rewards[start:end],
-                k=self.config.downstream_topk,
+        gathered_seed_entries = self._stage_all_gather_objects(local_seed_entries)
+        payload = [None]
+        if self.is_stage_main:
+            try:
+                global_seed_entries = [item for shard in gathered_seed_entries for item in shard]
+                if len(global_seed_entries) != self.denovo_global_sample_count:
+                    raise ValueError(
+                        'Global de novo seed entry count mismatch for process_group_ddp: '
+                        f'{len(global_seed_entries)} vs {self.denovo_global_sample_count}'
+                    )
+                selected_group_indices, selected_seed_entries, selected_seed_mask = select_full_denovo_groups_for_lead(
+                    seed_entries=global_seed_entries,
+                    denovo_group_size=self.config.denovo_num_generations,
+                    lead_num_seed_groups=self.lead_num_groups_global,
+                    seed=cycle_seed + 15485863,
+                )
+                payload[0] = {
+                    'error': None,
+                    'selected_group_indices': selected_group_indices,
+                    'selected_seed_mask': selected_seed_mask,
+                    'request_shards': partition_selected_seed_entries(
+                        selected_seed_entries,
+                        self.stage_group_size,
+                    ),
+                    'default_downstream_base_rewards': [item['base_reward'] for item in global_seed_entries],
+                }
+            except Exception as exc:
+                payload[0] = {'error': str(exc)}
+        dist.broadcast_object_list(payload, src=self.denovo_ranks[0], group=self.denovo_group)
+        selection_payload = payload[0]
+        if selection_payload is None:
+            raise RuntimeError('Lead seed selection payload was not broadcast for process_group_ddp')
+
+        local_end = local_start + len(denovo_reward_records)
+        if selection_payload.get('error') is not None:
+            local_selected_seed_mask = torch.zeros(
+                len(denovo_reward_records),
+                device=self.device,
+                dtype=torch.bool,
             )
-        return downstream
+            request_shard = []
+        else:
+            local_selected_seed_mask = torch.tensor(
+                selection_payload['selected_seed_mask'][local_start:local_end],
+                device=self.device,
+                dtype=torch.bool,
+            )
+            request_shard = selection_payload['request_shards'][self.stage_local_rank]
+            if len(request_shard) != self.lead_num_groups_local:
+                raise ValueError(
+                    'Per-rank selected lead seed count mismatch for process_group_ddp: '
+                    f'{len(request_shard)} vs {self.lead_num_groups_local}'
+                )
+        return selection_payload, request_shard, local_selected_seed_mask
 
     def _record_text_logs(self, rows):
         if not self.config.log_completions or not rows:
@@ -484,47 +571,24 @@ class ProcessGroupJointCpGRPOTrainer:
             'has_samples': False,
         }
 
-    def _split_lead_inputs(self, inputs, valid_seed_indices):
+    def _split_lead_inputs(self, inputs):
         if self.config.gradient_accumulation_steps == 1:
             return [inputs]
 
         if not inputs['has_samples']:
             return [self._empty_lead_inputs(inputs['mask_seeds']) for _ in range(self.config.gradient_accumulation_steps)]
 
-        lead_keys = (
-            'input_ids',
-            'completion_mask',
-            'advantages',
-            'old_per_token_logps',
-            'ref_per_token_logps',
-        )
-        lead_chunks = []
-        for chunk_idx in range(self.config.gradient_accumulation_steps):
-            seed_start = chunk_idx * self.denovo_micro_batch_size
-            seed_end = seed_start + self.denovo_micro_batch_size
-            sample_indices = []
-            for group_idx, seed_idx in enumerate(valid_seed_indices):
-                if seed_start <= seed_idx < seed_end:
-                    group_start = group_idx * self.config.lead_num_generations
-                    group_end = group_start + self.config.lead_num_generations
-                    sample_indices.extend(range(group_start, group_end))
-
-            if not sample_indices:
-                lead_chunks.append(self._empty_lead_inputs(inputs['mask_seeds']))
-                continue
-
-            index_tensor = torch.tensor(sample_indices, device=self.device, dtype=torch.long)
-            chunk = {
-                'mask_seeds': list(inputs['mask_seeds']),
-                'has_samples': True,
-            }
-            for key in lead_keys:
-                value = inputs[key]
-                if value is None:
-                    chunk[key] = None
-                else:
-                    chunk[key] = value.index_select(0, index_tensor)
-            lead_chunks.append(chunk)
+        tensor_keys = {
+            'input_ids': inputs['input_ids'],
+            'completion_mask': inputs['completion_mask'],
+            'advantages': inputs['advantages'],
+            'old_per_token_logps': inputs['old_per_token_logps'],
+            'ref_per_token_logps': inputs['ref_per_token_logps'],
+        }
+        lead_chunks = split_tensor_dict(tensor_keys, self.config.gradient_accumulation_steps)
+        for chunk in lead_chunks:
+            chunk['mask_seeds'] = list(inputs['mask_seeds'])
+            chunk['has_samples'] = True
         return lead_chunks
 
     def _prepare_inputs(self, mode='train'):
@@ -537,10 +601,7 @@ class ProcessGroupJointCpGRPOTrainer:
                     self.config.gradient_accumulation_steps,
                 )
             else:
-                self._buffered_inputs = self._split_lead_inputs(
-                    generated['inputs'],
-                    generated['valid_seed_indices'],
-                )
+                self._buffered_inputs = self._split_lead_inputs(generated['inputs'])
             self._buffer_metadata = {'buffer_cycle': int(generated['buffer_cycle'])}
             self._buffer_iteration = 0
         return self._buffered_inputs, self._buffer_iteration
@@ -649,7 +710,7 @@ class ProcessGroupJointCpGRPOTrainer:
         global_denovo_rewards,
         global_denovo_reward_std,
         denovo_zero_std_ratio,
-        valid_seed_indices,
+        local_selected_seed_mask,
     ):
         gathered_denovo_valid = self._stage_gather_tensor(
             torch.tensor([float(record.is_valid) for record in denovo_reward_records], device=self.device)
@@ -685,11 +746,7 @@ class ProcessGroupJointCpGRPOTrainer:
         gathered_seed_base_rewards = self._stage_gather_tensor(local_seed_base_rewards.detach())
         gathered_downstream_base_rewards = self._stage_gather_tensor(local_downstream_base_rewards.detach())
         gathered_advantages = self._stage_gather_tensor(local_denovo_advantages.detach())
-        valid_seed_mask = torch.tensor(
-            [float(idx in set(valid_seed_indices)) for idx in range(len(denovo_reward_records))],
-            device=self.device,
-        )
-        gathered_valid_seed_mask = self._stage_gather_tensor(valid_seed_mask)
+        gathered_selected_seed_mask = self._stage_gather_tensor(local_selected_seed_mask.float())
 
         return {
             'denovo/reward_mean': global_denovo_rewards.mean().item(),
@@ -702,7 +759,7 @@ class ProcessGroupJointCpGRPOTrainer:
             'denovo/invalid_fraction': 1.0 - gathered_denovo_valid.mean().item(),
             'denovo/base_reward_mean': gathered_seed_base_rewards.mean().item(),
             'denovo/downstream_base_mean': gathered_downstream_base_rewards.mean().item(),
-            'denovo/valid_seed_fraction': gathered_valid_seed_mask.mean().item(),
+            'denovo/selected_seed_fraction': gathered_selected_seed_mask.mean().item(),
             'denovo/rewards/qed_mean': _nanmean(gathered_denovo_qed),
             'denovo/rewards/sa_mean': _nanmean(gathered_denovo_sa),
             'denovo/rewards/sa_score_mean': _nanmean(gathered_denovo_sa_score),
@@ -831,31 +888,37 @@ class ProcessGroupJointCpGRPOTrainer:
             dtype=torch.float32,
         )
 
-        valid_seed_indices = []
-        valid_seed_smiles = []
-        for seed_idx, seed_record in enumerate(denovo_reward_records):
-            if not seed_record.is_valid or seed_record.smiles is None:
-                continue
-            valid_seed_indices.append(seed_idx)
-            valid_seed_smiles.append(seed_record.smiles)
+        selection_payload, local_lead_seed_entries, local_selected_seed_mask = self._select_lead_seed_requests(
+            denovo_reward_records=denovo_reward_records,
+            local_seed_base_rewards=local_seed_base_rewards,
+            cycle_seed=cycle_seed,
+            local_start=local_start,
+        )
         self._send_lead_request(
             {
                 'buffer_cycle': buffer_cycle,
                 'cycle_seed': cycle_seed,
                 'seed_count': len(denovo_reward_records),
-                'valid_seed_indices': list(valid_seed_indices),
-                'valid_seed_smiles': list(valid_seed_smiles),
+                'selection_error': selection_payload.get('error'),
+                'selected_seed_entries': local_lead_seed_entries,
             }
         )
 
         downstream_response = self._recv_downstream_response()
-        if downstream_response['seed_count'] != len(denovo_reward_records):
-            raise ValueError(
-                'partner downstream seed count mismatch: '
-                f"{downstream_response['seed_count']} vs {len(denovo_reward_records)}"
-            )
+        if downstream_response.get('error') is not None:
+            raise ValueError(downstream_response['error'])
+        gathered_selected_seed_rewards = self._stage_all_gather_objects(
+            downstream_response['selected_seed_rewards']
+        )
+        merged_downstream_base_rewards = merge_selected_seed_downstream_base_rewards(
+            default_downstream_base_rewards=selection_payload['default_downstream_base_rewards'],
+            selected_seed_rewards=[
+                item for shard in gathered_selected_seed_rewards for item in shard
+            ],
+            expected_selected_seed_count=self.lead_num_groups_global,
+        )
         local_downstream_base_rewards = torch.tensor(
-            downstream_response['downstream_base_rewards'],
+            merged_downstream_base_rewards[local_start:local_end],
             device=self.device,
             dtype=torch.float32,
         )
@@ -898,7 +961,7 @@ class ProcessGroupJointCpGRPOTrainer:
             global_denovo_rewards=global_denovo_rewards,
             global_denovo_reward_std=global_denovo_reward_std,
             denovo_zero_std_ratio=denovo_zero_std_ratio,
-            valid_seed_indices=valid_seed_indices,
+            local_selected_seed_mask=local_selected_seed_mask,
         )
 
         log_rows = []
@@ -924,6 +987,7 @@ class ProcessGroupJointCpGRPOTrainer:
                     'soft_reward': record.soft_reward,
                     'is_valid': record.is_valid,
                     'alert_hit': record.alert_hit,
+                    'selected_for_lead': bool(local_selected_seed_mask[row_idx].item()),
                 }
             )
         self._record_text_logs(log_rows)
@@ -947,40 +1011,53 @@ class ProcessGroupJointCpGRPOTrainer:
         lead_request = self._recv_lead_request()
         buffer_cycle = int(lead_request['buffer_cycle'])
         cycle_seed = int(lead_request['cycle_seed'])
-        valid_seed_indices = list(lead_request['valid_seed_indices'])
-        valid_seed_smiles = list(lead_request['valid_seed_smiles'])
-        seed_count = int(lead_request['seed_count'])
+        selection_error = lead_request.get('selection_error')
+        if selection_error is not None:
+            self._send_downstream_response({'error': selection_error})
+            raise ValueError(selection_error)
 
-        lead_specs = self._build_lead_specs(valid_seed_smiles, cycle_seed)
-        if lead_specs:
-            lead_rollout_seed = cycle_seed + 500000 + self.stage_local_rank * 1000
-            lead_rollout = self.lead_policy.rollout_specs(
-                specs=lead_specs,
-                generation_batch_size=self.config.lead_generation_batch_size,
-                seed=lead_rollout_seed,
+        selected_seed_entries = list(lead_request['selected_seed_entries'])
+        if len(selected_seed_entries) != self.lead_num_groups_local:
+            raise ValueError(
+                'Per-rank selected lead seed count mismatch in lead stage: '
+                f'{len(selected_seed_entries)} vs {self.lead_num_groups_local}'
             )
-            lead_records = self._score_lead_records(lead_rollout.seed_smiles, lead_rollout.smiles)
-            local_lead_rewards = [item['reward'] for item in lead_records]
-            local_lead_base_rewards_tensor = torch.tensor(
-                [item['base_reward'] for item in lead_records],
-                device=self.device,
-                dtype=torch.float32,
-            )
-        else:
-            lead_rollout = None
-            lead_records = []
-            local_lead_rewards = []
-            local_lead_base_rewards_tensor = torch.empty((0,), device=self.device, dtype=torch.float32)
+        selected_seed_smiles = [item['smiles'] for item in selected_seed_entries]
 
-        local_downstream_base_rewards = self._compute_downstream_seed_rewards(
-            valid_seed_indices=valid_seed_indices,
+        lead_specs = self._build_lead_specs(selected_seed_smiles, cycle_seed)
+        if len(lead_specs) != self.lead_local_sample_count:
+            raise ValueError(
+                'Local lead rollout spec count mismatch in lead stage: '
+                f'{len(lead_specs)} vs {self.lead_local_sample_count}'
+            )
+        lead_rollout_seed = cycle_seed + 500000 + self.stage_local_rank * 1000
+        lead_rollout = self.lead_policy.rollout_specs(
+            specs=lead_specs,
+            generation_batch_size=self.config.lead_generation_batch_size,
+            seed=lead_rollout_seed,
+        )
+        lead_records = self._score_lead_records(lead_rollout.seed_smiles, lead_rollout.smiles)
+        local_lead_rewards = [item['reward'] for item in lead_records]
+        if len(local_lead_rewards) != self.lead_local_sample_count:
+            raise ValueError(
+                'Local lead reward count mismatch in lead stage: '
+                f'{len(local_lead_rewards)} vs {self.lead_local_sample_count}'
+            )
+        local_lead_base_rewards_tensor = torch.tensor(
+            [item['base_reward'] for item in lead_records],
+            device=self.device,
+            dtype=torch.float32,
+        )
+        local_selected_seed_rewards = aggregate_selected_seed_downstream_base_rewards(
+            selected_seed_entries=selected_seed_entries,
             lead_base_rewards=local_lead_base_rewards_tensor,
-            seed_count=seed_count,
+            lead_num_generations=self.config.lead_num_generations,
+            downstream_topk=self.config.downstream_topk,
         )
         self._send_downstream_response(
             {
-                'seed_count': seed_count,
-                'downstream_base_rewards': local_downstream_base_rewards.detach().cpu().tolist(),
+                'error': None,
+                'selected_seed_rewards': local_selected_seed_rewards,
             }
         )
 
@@ -1052,15 +1129,14 @@ class ProcessGroupJointCpGRPOTrainer:
         return {
             'buffer_cycle': buffer_cycle,
             'metrics': rollout_metrics,
-            'valid_seed_indices': valid_seed_indices,
             'inputs': {
-                'input_ids': None if lead_rollout is None else lead_rollout.input_ids.detach().clone(),
-                'completion_mask': None if lead_rollout is None else lead_rollout.completion_mask.detach().clone(),
+                'input_ids': lead_rollout.input_ids.detach().clone(),
+                'completion_mask': lead_rollout.completion_mask.detach().clone(),
                 'advantages': local_lead_advantages,
                 'old_per_token_logps': lead_old_per_token_logps,
                 'ref_per_token_logps': lead_ref_per_token_logps,
                 'mask_seeds': lead_mask_seeds,
-                'has_samples': lead_rollout is not None,
+                'has_samples': True,
             },
         }
 
