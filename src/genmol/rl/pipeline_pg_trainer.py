@@ -243,7 +243,8 @@ class ProcessGroupJointCpGRPOTrainer:
 
         logger.info(
             'rank=%s local_rank=%s stage=%s stage_local_rank=%s stage_group_size=%s world_size=%s '
-            'denovo_micro_batch_size=%s denovo_local_sample_count=%s lead_num_generations=%s '
+            'denovo_micro_batch_size=%s denovo_local_sample_count=%s denovo_stage_global_sample_count=%s '
+            'lead_num_generations=%s '
             'gradient_accumulation_steps=%s num_iterations=%s reward_workers=%s',
             self.rank,
             self.local_rank,
@@ -253,6 +254,7 @@ class ProcessGroupJointCpGRPOTrainer:
             self.world_size,
             self.denovo_micro_batch_size,
             self.denovo_local_sample_count,
+            self.denovo_global_sample_count,
             self.config.lead_num_generations,
             self.config.gradient_accumulation_steps,
             self.config.num_iterations,
@@ -1261,9 +1263,30 @@ class ProcessGroupJointCpGRPOTrainer:
 
     def _load_checkpoint(self, checkpoint_dir):
         trainer_state_path = os.path.join(checkpoint_dir, 'trainer_state.json')
+        backend_state_path = os.path.join(checkpoint_dir, 'backend_state.json')
         ensure_exists(trainer_state_path, 'trainer state')
+        ensure_exists(backend_state_path, 'process-group backend state')
         with open(trainer_state_path) as handle:
             trainer_state = json.load(handle)
+        with open(backend_state_path) as handle:
+            backend_state = json.load(handle)
+
+        expected_backend = 'process_group_ddp'
+        actual_backend = backend_state.get('distributed_backend')
+        if actual_backend != expected_backend:
+            raise ValueError(
+                f'Checkpoint backend mismatch: expected {expected_backend}, found {actual_backend!r}'
+            )
+        if int(backend_state.get('world_size', -1)) != self.world_size:
+            raise ValueError(
+                'Checkpoint world_size mismatch for process_group_ddp backend: '
+                f"{backend_state.get('world_size')} vs current {self.world_size}"
+            )
+        if int(backend_state.get('stage_group_size', -1)) != self.stage_group_size:
+            raise ValueError(
+                'Checkpoint stage_group_size mismatch for process_group_ddp backend: '
+                f"{backend_state.get('stage_group_size')} vs current {self.stage_group_size}"
+            )
 
         if self.is_denovo_rank:
             ensure_exists(os.path.join(checkpoint_dir, 'denovo_model.ckpt'), 'de novo model checkpoint')
