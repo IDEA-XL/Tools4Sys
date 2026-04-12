@@ -24,6 +24,36 @@ def apply_reward_gate(soft_reward, is_valid, alert_hit):
     return float(soft_reward)
 
 
+def compute_internal_diversity(smiles_list):
+    valid_smiles = [smiles for smiles in smiles_list if smiles is not None]
+    if len(valid_smiles) < 2:
+        return 0.0
+
+    from rdkit import DataStructs
+    from rdkit.Chem import MolFromSmiles, rdFingerprintGenerator
+
+    fingerprint_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+    fingerprints = []
+    for smiles in valid_smiles:
+        mol = MolFromSmiles(smiles, sanitize=True)
+        if mol is None:
+            continue
+        fingerprints.append(fingerprint_generator.GetFingerprint(mol))
+
+    if len(fingerprints) < 2:
+        return 0.0
+
+    similarity_sum = 0.0
+    pair_count = 0
+    for left_idx in range(len(fingerprints)):
+        for right_idx in range(left_idx + 1, len(fingerprints)):
+            similarity_sum += float(DataStructs.TanimotoSimilarity(fingerprints[left_idx], fingerprints[right_idx]))
+            pair_count += 1
+    if pair_count == 0:
+        return 0.0
+    return 1.0 - (similarity_sum / pair_count)
+
+
 @dataclass(frozen=True)
 class RewardRecord:
     reward: float

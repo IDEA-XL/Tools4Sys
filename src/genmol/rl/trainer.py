@@ -16,11 +16,12 @@ from accelerate.utils import set_seed
 from genmol.rl.cpgrpo import (
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
+    compute_sgrpo_advantages,
     compute_warmup_steps,
     split_tensor_dict,
 )
 from genmol.rl.policy import GenMolCpGRPOPolicy
-from genmol.rl.reward import MolecularReward
+from genmol.rl.reward import MolecularReward, compute_internal_diversity
 from genmol.rl.specs import deserialize_specs, expand_group_specs, sample_group_specs, serialize_specs
 
 
@@ -73,6 +74,8 @@ class TrainConfig:
     log_completions: bool = True
     log_level: str = 'info'
     report_to: list[str] = field(default_factory=list)
+    rl_algorithm: str = 'coupled_grpo'
+    supergroup_num_groups: int = 1
 
 
 @dataclass
@@ -102,6 +105,12 @@ def load_config(path):
         raise ValueError('generation_batch_size must be positive')
     if not 0.0 <= config.ref_model_mixup_alpha <= 1.0:
         raise ValueError('ref_model_mixup_alpha must be in [0, 1]')
+    if config.rl_algorithm not in {'coupled_grpo', 'coupled_sgrpo'}:
+        raise ValueError(
+            f"Unsupported rl_algorithm: {config.rl_algorithm}. Expected 'coupled_grpo' or 'coupled_sgrpo'"
+        )
+    if config.supergroup_num_groups <= 0:
+        raise ValueError('supergroup_num_groups must be positive')
     return config
 
 
@@ -244,6 +253,14 @@ class GenMolCpGRPOTrainer:
                 f'{self.global_sample_count} vs {config.num_generations}'
             )
         self.num_groups_global = self.global_sample_count // config.num_generations
+        if config.rl_algorithm == 'coupled_sgrpo':
+            if config.supergroup_num_groups <= 1:
+                raise ValueError('supergroup_num_groups must be greater than 1 for coupled_sgrpo')
+            if self.num_groups_global % config.supergroup_num_groups != 0:
+                raise ValueError(
+                    'num_groups_global must be divisible by supergroup_num_groups for coupled_sgrpo: '
+                    f'{self.num_groups_global} vs {config.supergroup_num_groups}'
+                )
 
         deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
         if deepspeed_plugin is not None:
@@ -336,6 +353,16 @@ class GenMolCpGRPOTrainer:
             'rewards/sa_score_mean': float(metadata['rewards/sa_score_mean']),
             'rewards/soft_mean': float(metadata['rewards/soft_mean']),
         }
+        if 'rollout_advantage_mean' in metadata:
+            self._last_reward_metrics[mode]['rollout_advantage_mean'] = float(metadata['rollout_advantage_mean'])
+        if 'group_advantage_mean' in metadata:
+            self._last_reward_metrics[mode]['group_advantage_mean'] = float(metadata['group_advantage_mean'])
+        if 'group_reward/diversity_mean' in metadata:
+            self._last_reward_metrics[mode]['group_reward/diversity_mean'] = float(metadata['group_reward/diversity_mean'])
+        if 'rollout_zero_std_ratio' in metadata:
+            self._last_reward_metrics[mode]['rollout_zero_std_ratio'] = float(metadata['rollout_zero_std_ratio'])
+        if 'group_zero_std_ratio' in metadata:
+            self._last_reward_metrics[mode]['group_zero_std_ratio'] = float(metadata['group_zero_std_ratio'])
         bucket['reward'].append(float(metadata['reward_mean']))
         bucket['reward_std'].append(float(metadata['reward_std']))
         bucket['advantage_mean'].append(float(metadata['advantage_mean']))
@@ -348,6 +375,16 @@ class GenMolCpGRPOTrainer:
         bucket['rewards/sa_mean'].append(float(metadata['rewards/sa_mean']))
         bucket['rewards/sa_score_mean'].append(float(metadata['rewards/sa_score_mean']))
         bucket['rewards/soft_mean'].append(float(metadata['rewards/soft_mean']))
+        if 'rollout_advantage_mean' in metadata:
+            bucket['rollout_advantage_mean'].append(float(metadata['rollout_advantage_mean']))
+        if 'group_advantage_mean' in metadata:
+            bucket['group_advantage_mean'].append(float(metadata['group_advantage_mean']))
+        if 'group_reward/diversity_mean' in metadata:
+            bucket['group_reward/diversity_mean'].append(float(metadata['group_reward/diversity_mean']))
+        if 'rollout_zero_std_ratio' in metadata:
+            bucket['rollout_zero_std_ratio'].append(float(metadata['rollout_zero_std_ratio']))
+        if 'group_zero_std_ratio' in metadata:
+            bucket['group_zero_std_ratio'].append(float(metadata['group_zero_std_ratio']))
 
     def _record_loss_metrics(self, mode, step_metrics):
         if mode not in self._metrics:
@@ -446,12 +483,43 @@ class GenMolCpGRPOTrainer:
         reward_records = self.reward_model.score(rollout.smiles)
         local_rewards = torch.tensor([record.reward for record in reward_records], device=self.device, dtype=torch.float32)
         global_rewards = self.accelerator.gather(local_rewards).detach()
-        global_advantages, global_reward_std, zero_std_ratio = compute_grouped_advantages(
-            rewards=global_rewards,
-            num_generations=self.config.num_generations,
-            scale_rewards=self.config.scale_rewards,
-        )
-        local_advantages = global_advantages[local_start:local_end].to(device=self.device)
+        if self.config.rl_algorithm == 'coupled_grpo':
+            global_advantages, global_reward_std, zero_std_ratio = compute_grouped_advantages(
+                rewards=global_rewards,
+                num_generations=self.config.num_generations,
+                scale_rewards=self.config.scale_rewards,
+            )
+            local_advantages = global_advantages[local_start:local_end].to(device=self.device)
+            extra_advantage_metrics = {}
+        else:
+            global_smiles = self._all_gather_objects([record.smiles for record in reward_records])
+            if len(global_smiles) != self.global_sample_count:
+                raise ValueError(
+                    f'Expected {self.global_sample_count} gathered smiles, got {len(global_smiles)}'
+                )
+            group_diversities = []
+            for group_start in range(0, len(global_smiles), self.config.num_generations):
+                group_diversities.append(
+                    compute_internal_diversity(global_smiles[group_start:group_start + self.config.num_generations])
+                )
+            global_group_rewards = torch.tensor(group_diversities, device=self.device, dtype=torch.float32)
+            global_advantages, _, _, sgrpo_metrics = compute_sgrpo_advantages(
+                rollout_rewards=global_rewards,
+                group_rewards=global_group_rewards,
+                num_generations=self.config.num_generations,
+                supergroup_num_groups=self.config.supergroup_num_groups,
+                scale_rewards=self.config.scale_rewards,
+            )
+            local_advantages = global_advantages[local_start:local_end].to(device=self.device)
+            global_reward_std = torch.full_like(global_rewards, float(sgrpo_metrics['rollout_reward_std_mean']))
+            zero_std_ratio = float(sgrpo_metrics['rollout_zero_std_ratio'])
+            extra_advantage_metrics = {
+                'rollout_advantage_mean': float(sgrpo_metrics['rollout_advantage_mean']),
+                'group_advantage_mean': float(sgrpo_metrics['group_advantage_mean']),
+                'group_reward/diversity_mean': float(sgrpo_metrics['group_reward_mean']),
+                'rollout_zero_std_ratio': float(sgrpo_metrics['rollout_zero_std_ratio']),
+                'group_zero_std_ratio': float(sgrpo_metrics['group_zero_std_ratio']),
+            }
 
         local_valid = torch.tensor([float(record.is_valid) for record in reward_records], device=self.device)
         local_alert = torch.tensor([float(record.alert_hit) for record in reward_records], device=self.device)
@@ -545,6 +613,7 @@ class GenMolCpGRPOTrainer:
             'rewards/sa_score_mean': _nanmean(gathered_sa_score),
             'rewards/soft_mean': _nanmean(gathered_soft),
         }
+        metadata.update(extra_advantage_metrics)
         self._record_reward_metrics(mode, metadata)
         self._record_text_logs(mode, log_rows)
 
@@ -639,6 +708,16 @@ class GenMolCpGRPOTrainer:
             'grad_norm': float(bucket['grad_norm'][-1]) if bucket['grad_norm'] else float('nan'),
             'lr': float(bucket['lr'][-1]) if bucket['lr'] else float('nan'),
         }
+        if bucket['rollout_advantage_mean'] or 'rollout_advantage_mean' in last_reward_metrics:
+            metrics['rollout_advantage_mean'] = _reward_metric('rollout_advantage_mean')
+        if bucket['group_advantage_mean'] or 'group_advantage_mean' in last_reward_metrics:
+            metrics['group_advantage_mean'] = _reward_metric('group_advantage_mean')
+        if bucket['group_reward/diversity_mean'] or 'group_reward/diversity_mean' in last_reward_metrics:
+            metrics['group_reward/diversity_mean'] = _reward_metric('group_reward/diversity_mean')
+        if bucket['rollout_zero_std_ratio'] or 'rollout_zero_std_ratio' in last_reward_metrics:
+            metrics['rollout_zero_std_ratio'] = _reward_metric('rollout_zero_std_ratio')
+        if bucket['group_zero_std_ratio'] or 'group_zero_std_ratio' in last_reward_metrics:
+            metrics['group_zero_std_ratio'] = _reward_metric('group_zero_std_ratio')
         metrics['reward_mean'] = metrics['reward']
         if bucket['kl']:
             metrics['kl'] = _aggregate_scalar_list(bucket['kl'])
@@ -677,7 +756,18 @@ class GenMolCpGRPOTrainer:
                 metrics['rewards/soft_mean'],
                 metrics['grad_norm'],
                 metrics['lr'],
-                '' if 'kl_mean' not in metrics else f" kl_mean={metrics['kl_mean']:.6f}",
+                (
+                    ''
+                    if 'rollout_advantage_mean' not in metrics
+                    else (
+                        f" rollout_advantage_mean={metrics['rollout_advantage_mean']:.6f}"
+                        f" group_advantage_mean={metrics['group_advantage_mean']:.6f}"
+                        f" group_reward/diversity_mean={metrics['group_reward/diversity_mean']:.6f}"
+                        f" rollout_zero_std_ratio={metrics['rollout_zero_std_ratio']:.6f}"
+                        f" group_zero_std_ratio={metrics['group_zero_std_ratio']:.6f}"
+                    )
+                )
+                + ('' if 'kl_mean' not in metrics else f" kl_mean={metrics['kl_mean']:.6f}"),
             )
             write_jsonl(self.metrics_path, metrics)
             with open(self.state_path, 'w') as handle:

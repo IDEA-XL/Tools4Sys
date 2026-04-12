@@ -187,6 +187,61 @@ def compute_grouped_advantages(rewards, num_generations, scale_rewards=False):
     return advantages, repeated_std, zero_std_ratio
 
 
+def compute_sgrpo_advantages(
+    rollout_rewards,
+    group_rewards,
+    num_generations,
+    supergroup_num_groups,
+    scale_rewards=False,
+):
+    if rollout_rewards.dim() != 1:
+        raise ValueError('rollout_rewards must be a 1D tensor')
+    if group_rewards.dim() != 1:
+        raise ValueError('group_rewards must be a 1D tensor')
+    if num_generations <= 1:
+        raise ValueError('num_generations must be greater than 1')
+    if supergroup_num_groups <= 1:
+        raise ValueError('supergroup_num_groups must be greater than 1')
+    if rollout_rewards.numel() % num_generations != 0:
+        raise ValueError('rollout_rewards length must be divisible by num_generations')
+
+    num_groups = rollout_rewards.numel() // num_generations
+    if group_rewards.numel() != num_groups:
+        raise ValueError(
+            f'group_rewards length must equal number of groups: {group_rewards.numel()} vs {num_groups}'
+        )
+    if num_groups % supergroup_num_groups != 0:
+        raise ValueError(
+            'number of groups must be divisible by supergroup_num_groups: '
+            f'{num_groups} vs {supergroup_num_groups}'
+        )
+
+    rollout_supergroup_size = num_generations * supergroup_num_groups
+    rollout_advantages, rollout_reward_std, rollout_zero_std_ratio = compute_grouped_advantages(
+        rewards=rollout_rewards,
+        num_generations=rollout_supergroup_size,
+        scale_rewards=scale_rewards,
+    )
+    group_advantages, group_reward_std, group_zero_std_ratio = compute_grouped_advantages(
+        rewards=group_rewards,
+        num_generations=supergroup_num_groups,
+        scale_rewards=scale_rewards,
+    )
+    expanded_group_advantages = group_advantages.repeat_interleave(num_generations)
+    final_advantages = (rollout_advantages + expanded_group_advantages) / 2.0
+
+    metrics = {
+        'rollout_advantage_mean': rollout_advantages.mean().item(),
+        'group_advantage_mean': expanded_group_advantages.mean().item(),
+        'group_reward_mean': group_rewards.mean().item(),
+        'rollout_zero_std_ratio': rollout_zero_std_ratio,
+        'group_zero_std_ratio': group_zero_std_ratio,
+        'rollout_reward_std_mean': rollout_reward_std.mean().item(),
+        'group_reward_std_mean': group_reward_std.mean().item(),
+    }
+    return final_advantages, expanded_group_advantages, rollout_advantages, metrics
+
+
 def compute_clipped_grpo_loss(
     new_log_probs,
     old_log_probs,
