@@ -168,6 +168,7 @@ class LeadOptCpGRPOTrainer:
         self.num_groups_global = self.global_sample_count // config.num_generations
 
         deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
+        self._deepspeed_manages_scheduler = deepspeed_plugin is not None
         if deepspeed_plugin is not None:
             deepspeed_config = deepspeed_plugin.deepspeed_config
             deepspeed_config['train_micro_batch_size_per_gpu'] = int(config.per_device_train_batch_size)
@@ -699,7 +700,8 @@ class LeadOptCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.optimizer.step()
-            self.scheduler.step()
+            if not self._deepspeed_manages_scheduler:
+                self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
             self.policy.update_ema()
             self.global_step += 1

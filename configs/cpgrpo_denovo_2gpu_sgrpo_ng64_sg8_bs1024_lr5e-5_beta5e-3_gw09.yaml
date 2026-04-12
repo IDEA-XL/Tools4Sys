@@ -11,7 +11,7 @@ epsilon: 0.5
 scale_rewards: false
 bf16: true
 do_eval: false
-num_generations: 16
+num_generations: 64
 num_iterations: 1
 per_device_train_batch_size: 1024
 gradient_accumulation_steps: 1
@@ -27,14 +27,14 @@ max_grad_norm: 0.2
 logging_first_step: true
 logging_steps: 10
 logging_strategy: steps
-max_steps: 50
+max_steps: 1000
 lr_scheduler_type: cosine_with_min_lr
 lr_scheduler_kwargs:
   min_lr_rate: 0.1
 warmup_ratio: 0.0001
 save_strategy: steps
-save_steps: 25
-save_total_limit: 2
+save_steps: 50
+save_total_limit: 5
 random_masking: true
 generation_batch_size: 1024
 generation_temperature: 1.0
@@ -47,4 +47,4 @@ report_to:
   - wandb
 rl_algorithm: coupled_sgrpo
 supergroup_num_groups: 8
-group_advantage_weight: 0.5
+group_advantage_weight: 0.9

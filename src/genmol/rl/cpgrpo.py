@@ -192,6 +192,7 @@ def compute_sgrpo_advantages(
     group_rewards,
     num_generations,
     supergroup_num_groups,
+    group_advantage_weight,
     scale_rewards=False,
 ):
     if rollout_rewards.dim() != 1:
@@ -202,6 +203,8 @@ def compute_sgrpo_advantages(
         raise ValueError('num_generations must be greater than 1')
     if supergroup_num_groups <= 1:
         raise ValueError('supergroup_num_groups must be greater than 1')
+    if not 0.0 <= group_advantage_weight <= 1.0:
+        raise ValueError('group_advantage_weight must be in [0, 1]')
     if rollout_rewards.numel() % num_generations != 0:
         raise ValueError('rollout_rewards length must be divisible by num_generations')
 
@@ -228,12 +231,17 @@ def compute_sgrpo_advantages(
         scale_rewards=scale_rewards,
     )
     expanded_group_advantages = group_advantages.repeat_interleave(num_generations)
-    final_advantages = (rollout_advantages + expanded_group_advantages) / 2.0
+    rollout_advantage_weight = 1.0 - group_advantage_weight
+    final_advantages = (
+        rollout_advantages * rollout_advantage_weight
+        + expanded_group_advantages * group_advantage_weight
+    )
 
     metrics = {
         'rollout_advantage_mean': rollout_advantages.mean().item(),
         'group_advantage_mean': expanded_group_advantages.mean().item(),
         'group_reward_mean': group_rewards.mean().item(),
+        'group_advantage_weight': float(group_advantage_weight),
         'rollout_zero_std_ratio': rollout_zero_std_ratio,
         'group_zero_std_ratio': group_zero_std_ratio,
         'rollout_reward_std_mean': rollout_reward_std.mean().item(),

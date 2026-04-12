@@ -44,7 +44,7 @@ class TrainConfig:
     bf16: bool = True
     do_eval: bool = False
     num_generations: int = 8
-    num_iterations: int = 2
+    num_iterations: int = 1
     per_device_train_batch_size: int = 8
     gradient_accumulation_steps: int = 1
     gradient_checkpointing: bool = True
@@ -76,6 +76,7 @@ class TrainConfig:
     report_to: list[str] = field(default_factory=list)
     rl_algorithm: str = 'coupled_grpo'
     supergroup_num_groups: int = 1
+    group_advantage_weight: float = 0.5
 
 
 @dataclass
@@ -111,6 +112,8 @@ def load_config(path):
         )
     if config.supergroup_num_groups <= 0:
         raise ValueError('supergroup_num_groups must be positive')
+    if not 0.0 <= config.group_advantage_weight <= 1.0:
+        raise ValueError('group_advantage_weight must be in [0, 1]')
     return config
 
 
@@ -263,6 +266,7 @@ class GenMolCpGRPOTrainer:
                 )
 
         deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
+        self._deepspeed_manages_scheduler = deepspeed_plugin is not None
         if deepspeed_plugin is not None:
             deepspeed_config = deepspeed_plugin.deepspeed_config
             deepspeed_config['train_micro_batch_size_per_gpu'] = int(config.per_device_train_batch_size)
@@ -508,6 +512,7 @@ class GenMolCpGRPOTrainer:
                 group_rewards=global_group_rewards,
                 num_generations=self.config.num_generations,
                 supergroup_num_groups=self.config.supergroup_num_groups,
+                group_advantage_weight=self.config.group_advantage_weight,
                 scale_rewards=self.config.scale_rewards,
             )
             local_advantages = global_advantages[local_start:local_end].to(device=self.device)
@@ -862,7 +867,8 @@ class GenMolCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.optimizer.step()
-            self.scheduler.step()
+            if not self._deepspeed_manages_scheduler:
+                self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
             self.policy.update_ema()
             self.global_step += 1

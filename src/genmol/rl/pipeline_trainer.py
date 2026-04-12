@@ -201,6 +201,8 @@ class JointCpGRPOTrainer:
             mixed_precision='bf16' if config.bf16 else 'no',
             kwargs_handlers=[ddp_kwargs],
         )
+        deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
+        self._deepspeed_manages_scheduler = deepspeed_plugin is not None
         self.device = self.accelerator.device
         self.world_size = self.accelerator.num_processes
         self.denovo_micro_batch_size = config.denovo_per_device_train_batch_size
@@ -1234,7 +1236,8 @@ class JointCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.lead_optimizer.step()
-            self.lead_scheduler.step()
+            if not self._deepspeed_manages_scheduler:
+                self.lead_scheduler.step()
             self.lead_optimizer.zero_grad(set_to_none=True)
             self.lead_policy.update_ema()
 
@@ -1243,7 +1246,8 @@ class JointCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.denovo_optimizer.step()
-            self.denovo_scheduler.step()
+            if not self._deepspeed_manages_scheduler:
+                self.denovo_scheduler.step()
             self.denovo_optimizer.zero_grad(set_to_none=True)
             self.denovo_policy.update_ema()
 
