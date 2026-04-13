@@ -196,7 +196,7 @@ class JointCpGRPOTrainer:
         self.output_dir = output_dir
         ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=config.ddp_broadcast_buffers)
         self.accelerator = Accelerator(
-            split_batches=True,
+            step_scheduler_with_optimizer=False,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
             log_with=config.report_to if config.report_to else None,
             mixed_precision='bf16' if config.bf16 else 'no',
