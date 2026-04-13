@@ -196,13 +196,13 @@ class JointCpGRPOTrainer:
         self.output_dir = output_dir
         ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=config.ddp_broadcast_buffers)
         self.accelerator = Accelerator(
+            split_batches=True,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
             log_with=config.report_to if config.report_to else None,
             mixed_precision='bf16' if config.bf16 else 'no',
             kwargs_handlers=[ddp_kwargs],
         )
         deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
-        self._deepspeed_manages_scheduler = deepspeed_plugin is not None
         self.device = self.accelerator.device
         self.world_size = self.accelerator.num_processes
         self.denovo_micro_batch_size = config.denovo_per_device_train_batch_size
@@ -1236,8 +1236,7 @@ class JointCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.lead_optimizer.step()
-            if not self._deepspeed_manages_scheduler:
-                self.lead_scheduler.step()
+            self.lead_scheduler.step()
             self.lead_optimizer.zero_grad(set_to_none=True)
             self.lead_policy.update_ema()
 
@@ -1246,8 +1245,7 @@ class JointCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.denovo_optimizer.step()
-            if not self._deepspeed_manages_scheduler:
-                self.denovo_scheduler.step()
+            self.denovo_scheduler.step()
             self.denovo_optimizer.zero_grad(set_to_none=True)
             self.denovo_policy.update_ema()
 

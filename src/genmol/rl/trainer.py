@@ -242,6 +242,7 @@ class GenMolCpGRPOTrainer:
         self.config = config
         self.output_dir = output_dir
         self.accelerator = Accelerator(
+            split_batches=True,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
             log_with=config.report_to if config.report_to else None,
             mixed_precision='bf16' if config.bf16 else 'no',
@@ -266,7 +267,6 @@ class GenMolCpGRPOTrainer:
                 )
 
         deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
-        self._deepspeed_manages_scheduler = deepspeed_plugin is not None
         if deepspeed_plugin is not None:
             deepspeed_config = deepspeed_plugin.deepspeed_config
             deepspeed_config['train_micro_batch_size_per_gpu'] = int(config.per_device_train_batch_size)
@@ -867,8 +867,7 @@ class GenMolCpGRPOTrainer:
                 self.config.max_grad_norm,
             )
             self.optimizer.step()
-            if not self._deepspeed_manages_scheduler:
-                self.scheduler.step()
+            self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
             self.policy.update_ema()
             self.global_step += 1
