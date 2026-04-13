@@ -1,0 +1,33 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_sgrpo_randomness_sweep_20260413/denovo_sgrpo_randomness_sweep_20260413.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_sgrpo_randomness_sweep_20260413/denovo_sgrpo_randomness_sweep_20260413.json
+output_qed_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_sgrpo_randomness_sweep_20260413/qed_vs_diversity.png
+output_sa_score_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_sgrpo_randomness_sweep_20260413/sa_score_vs_diversity.png
+seed: 42
+bf16: true
+device: cuda
+num_samples: 1000
+generation_batch_size: 2048
+generation_temperature: 1.0
+randomness_values:
+  - 0.3
+  - 0.5
+  - 0.7
+  - 0.8
+min_add_len: 60
+max_completion_length: null
+experiments:
+  - name: orig_genmol_v2
+    display_name: Original GenMol v2
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+  - name: sgrpo_base
+    display_name: SGRPO Base
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_2gpu_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_20260412_225314/checkpoint-001000/model.ckpt
+  - name: sgrpo_rnd08
+    display_name: SGRPO rnd=0.8
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_2gpu_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_rnd08_20260412_233337/checkpoint-001000/model.ckpt
+  - name: sgrpo_gw09
+    display_name: SGRPO gw=0.9
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_2gpu_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_20260413_035936/checkpoint-001000/model.ckpt
+  - name: sgrpo_rnd08_gw09
+    display_name: SGRPO rnd=0.8 + gw=0.9
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_2gpu_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_rnd08_gw09_20260413_042920/checkpoint-001000/model.ckpt
