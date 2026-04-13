@@ -82,6 +82,7 @@ def load_config(path):
         raw = yaml.safe_load(handle)
     experiments = [EvalExperimentConfig(**item) for item in raw.pop('experiments')]
     randomness_values = _resolve_randomness_values(raw)
+    raw.pop('randomness_values', None)
     config = EvalConfig(experiments=experiments, randomness_values=randomness_values, **raw)
 
     if config.num_samples <= 0:
