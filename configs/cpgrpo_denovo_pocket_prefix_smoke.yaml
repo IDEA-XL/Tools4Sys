@@ -1,9 +1,9 @@
 model_variant: pocket_prefix_mm
 init_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/runs/pocket_prefix_supervised/checkpoints/final_model.ckpt
 ref_ckpt_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/runs/pocket_prefix_supervised/checkpoints/final_model.ckpt
-manifest_path: /public/home/xinwuye/data/targetdiff/crossdocked_pocket10_pocket_prefix_manifest.pt
-crossdocked_lmdb_path: /public/home/xinwuye/data/targetdiff/crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb
-crossdocked_split_path: /public/home/xinwuye/data/targetdiff/crossdocked_pocket10_pose_split.pt
+manifest_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix/data/gdrive_exact_only/crossdocked_pocket10_pocket_prefix_manifest.pt
+crossdocked_lmdb_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix/data/gdrive_exact_only/crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb
+crossdocked_split_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix/data/gdrive_exact_only/crossdocked_pocket10_pose_split.pt
 split: train
 output_dir: null
 overwrite_output_dir: false
