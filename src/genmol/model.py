@@ -27,6 +27,7 @@ from bionemo.moco.schedules.noise.continuous_noise_transforms import LogLinearEx
 from bionemo.moco.distributions.prior import DiscreteMaskedPrior
 
 from genmol.utils.ema import ExponentialMovingAverage
+from genmol.mm.checkpoint import require_unimodal_checkpoint, stamp_checkpoint_variant, UNIMODAL_VARIANT
 from genmol.utils.utils_data import get_tokenizer
 from genmol.utils.utils_save import clean_checkpoint, fast_forward_info
 
@@ -59,11 +60,13 @@ class GenMol(L.LightningModule):
             self.ema = None
 
     def on_load_checkpoint(self, checkpoint):
+        require_unimodal_checkpoint(checkpoint, checkpoint_path='<in-memory-lightning-checkpoint>')
         if self.ema:
             self.ema.load_state_dict(checkpoint['ema'])
         self.fast_forward_epochs, self.fast_forward_batches = fast_forward_info(checkpoint)
         
     def on_save_checkpoint(self, checkpoint):
+        stamp_checkpoint_variant(checkpoint, UNIMODAL_VARIANT)
         if self.ema:
             checkpoint['ema'] = self.ema.state_dict()
         clean_checkpoint(checkpoint, self.trainer.accumulate_grad_batches)

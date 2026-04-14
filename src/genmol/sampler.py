@@ -28,6 +28,7 @@ import safe as sf
 from rdkit import Chem
 from genmol.utils.utils_chem import safe_to_smiles, filter_by_substructure, mix_sequences, Slicer
 from genmol.utils.bracket_safe_converter import BracketSAFEConverter, bracketsafe2safe
+from genmol.mm.checkpoint import load_checkpoint_payload, require_unimodal_checkpoint
 from genmol.model import GenMol
 
 
@@ -35,6 +36,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__fi
 
 
 def load_model_from_path(path):
+    checkpoint = load_checkpoint_payload(path)
+    require_unimodal_checkpoint(checkpoint, path)
     model = GenMol.load_from_checkpoint(path)
     model.backbone.eval()
     if model.ema:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import torch
 from torch.nn.parallel import DistributedDataParallel
 
+from genmol.mm.checkpoint import load_checkpoint_payload, require_unimodal_checkpoint, stamp_checkpoint_variant, UNIMODAL_VARIANT
 from genmol.model import GenMol
 from genmol.rl.cpgrpo import get_per_token_logps
 from genmol.utils.bracket_safe_converter import bracketsafe2safe
@@ -41,6 +42,8 @@ class GenMolCpGRPOPolicy:
         self.checkpoint_path = checkpoint_path
         self.device = torch.device(device)
         self.bf16 = bf16
+        checkpoint = load_checkpoint_payload(checkpoint_path)
+        require_unimodal_checkpoint(checkpoint, checkpoint_path)
         self.model = GenMol.load_from_checkpoint(checkpoint_path, map_location='cpu')
         self.model.to(self.device)
 
@@ -265,7 +268,8 @@ class GenMolCpGRPOPolicy:
         return _move_to_cpu(self._unwrap_backbone().state_dict())
 
     def save_checkpoint(self, path, step, accelerator=None):
-        checkpoint = torch.load(self.checkpoint_path, map_location='cpu', weights_only=False)
+        checkpoint = load_checkpoint_payload(self.checkpoint_path)
+        require_unimodal_checkpoint(checkpoint, self.checkpoint_path)
         if accelerator is None:
             backbone_state = _move_to_cpu(self._unwrap_backbone().state_dict())
         else:
@@ -285,6 +289,7 @@ class GenMolCpGRPOPolicy:
 
         if self.model.ema:
             checkpoint['ema'] = _move_to_cpu(self.model.ema.state_dict())
+        stamp_checkpoint_variant(checkpoint, UNIMODAL_VARIANT)
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(checkpoint, path)
