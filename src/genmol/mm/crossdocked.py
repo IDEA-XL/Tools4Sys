@@ -153,8 +153,15 @@ def smiles_to_safe(smiles):
             'safe-mol is required to build the CrossDocked multimodal manifest'
         ) from exc
 
-    converter = sf.SAFEConverter(slicer=None)
-    return converter.encoder(smiles, allow_empty=False)
+    try:
+        converter = sf.SAFEConverter(ignore_stereo=True)
+        safe_string = converter.encoder(smiles, allow_empty=True)
+    except Exception as exc:
+        raise ValueError(f'SAFE conversion failed: {exc}') from exc
+
+    if not str(safe_string).strip():
+        raise ValueError('SAFE conversion failed: empty SAFE string')
+    return str(safe_string).strip()
 
 
 def build_manifest_entry(entry, source_index, split, max_total_positions):
