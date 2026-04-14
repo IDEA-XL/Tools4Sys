@@ -238,14 +238,37 @@ def iter_crossdocked_entries(lmdb_path):
     try:
         with env.begin(write=False) as txn:
             num_examples_raw = txn.get(b'num_examples')
-            if num_examples_raw is None:
-                raise ValueError(f'CrossDocked LMDB is missing num_examples: {lmdb_path}')
-            num_examples = int(num_examples_raw.decode('utf-8'))
-            for index in range(num_examples):
-                payload = txn.get(str(index).encode('utf-8'))
-                if payload is None:
-                    raise ValueError(f'CrossDocked LMDB is missing entry index {index}')
-                yield index, pickle.loads(payload)
+            if num_examples_raw is not None:
+                num_examples = int(num_examples_raw.decode('utf-8'))
+                for index in range(num_examples):
+                    payload = txn.get(str(index).encode('utf-8'))
+                    if payload is None:
+                        raise ValueError(f'CrossDocked LMDB is missing entry index {index}')
+                    yield index, pickle.loads(payload)
+                return
+
+            cursor = txn.cursor()
+            found_numeric_key = False
+            for raw_key, payload in cursor:
+                try:
+                    decoded_key = raw_key.decode('utf-8')
+                except UnicodeDecodeError as exc:
+                    raise ValueError(
+                        'CrossDocked LMDB is missing num_examples and contains a non-UTF8 key: '
+                        f'{raw_key!r}'
+                    ) from exc
+                if not decoded_key.isdigit():
+                    raise ValueError(
+                        'CrossDocked LMDB is missing num_examples and contains a non-numeric key: '
+                        f'{decoded_key!r}'
+                    )
+                found_numeric_key = True
+                yield int(decoded_key), pickle.loads(payload)
+            if not found_numeric_key:
+                raise ValueError(
+                    'CrossDocked LMDB contains no numeric sample keys and no num_examples metadata: '
+                    f'{lmdb_path}'
+                )
     finally:
         env.close()
 
