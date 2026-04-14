@@ -1,9 +1,39 @@
 import torch
 
 
+def _patch_biotite_filter_backbone_compat(biotite_structure):
+    if hasattr(biotite_structure, 'filter_backbone'):
+        return False
+
+    filter_peptide_backbone = getattr(biotite_structure, 'filter_peptide_backbone', None)
+    if filter_peptide_backbone is None:
+        available = sorted(name for name in dir(biotite_structure) if 'backbone' in name.lower())
+        raise ImportError(
+            'Official ESM-IF requires biotite.structure.filter_backbone, but the current biotite '
+            'installation does not provide it and no compatible filter_peptide_backbone shim is available. '
+            f'Available backbone helpers: {available}'
+        )
+
+    biotite_structure.filter_backbone = filter_peptide_backbone
+    return True
+
+
+def _ensure_biotite_esm_if_compat():
+    try:
+        import biotite.structure as biotite_structure
+    except ImportError as exc:
+        raise ImportError(
+            'Official ESM-IF dependencies are required for multimodal GenMol. '
+            'Install the multimodal extras before using pocket_prefix_mm.'
+        ) from exc
+
+    _patch_biotite_filter_backbone_compat(biotite_structure)
+
+
 class ESMPocketEncoder:
     def __init__(self, model_name='esm_if1_gvp4_t16_142M_UR50', device='cpu', freeze=True):
         try:
+            _ensure_biotite_esm_if_compat()
             import esm
             from esm.inverse_folding.util import get_encoder_output
         except ImportError as exc:
