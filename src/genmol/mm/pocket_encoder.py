@@ -53,13 +53,17 @@ class ESMPocketEncoder:
             for batch_idx, coords in enumerate(pocket_coords_batch):
                 if not torch.is_tensor(coords):
                     coords = torch.as_tensor(coords, dtype=torch.float32)
-                coords = coords.to(device=self.device, dtype=torch.float32)
+                coords = coords.to(dtype=torch.float32)
                 if coords.dim() != 3 or coords.size(1) != 3 or coords.size(2) != 3:
                     raise ValueError(
                         'Each pocket coordinate tensor must have shape [num_residues, 3, 3], '
                         f'got {list(coords.shape)} at batch index {batch_idx}'
                     )
-                encoded = self._get_encoder_output(self.model, self.alphabet, coords)
+                encoded = self._get_encoder_output(
+                    self.model,
+                    self.alphabet,
+                    coords.detach().cpu().numpy(),
+                )
                 if encoded.dim() != 2:
                     raise ValueError(
                         f'Expected ESM-IF encoder output to have shape [num_residues, embedding_dim], got {list(encoded.shape)}'
