@@ -37,6 +37,7 @@ _AA_INDEX_TO_SYMBOL = {
 class ManifestBuildStats:
     total_samples_scanned: int
     valid_samples: int
+    dropped_unassigned_split_samples: int
     dropped_overlength_samples: int
     dropped_malformed_pocket_samples: int
     dropped_safe_conversion_samples: int
@@ -277,6 +278,7 @@ def build_crossdocked_manifest(lmdb_path, split_path, max_total_positions):
     split_map = load_crossdocked_split_map(split_path)
     entries = []
     total_samples_scanned = 0
+    dropped_unassigned_split_samples = 0
     dropped_overlength_samples = 0
     dropped_malformed_pocket_samples = 0
     dropped_safe_conversion_samples = 0
@@ -285,7 +287,8 @@ def build_crossdocked_manifest(lmdb_path, split_path, max_total_positions):
         total_samples_scanned += 1
         split = split_map.get(source_index)
         if split is None:
-            raise ValueError(f'CrossDocked split file is missing source index {source_index}')
+            dropped_unassigned_split_samples += 1
+            continue
         try:
             manifest_entry = build_manifest_entry(
                 entry=raw_entry,
@@ -310,6 +313,7 @@ def build_crossdocked_manifest(lmdb_path, split_path, max_total_positions):
     stats = ManifestBuildStats(
         total_samples_scanned=total_samples_scanned,
         valid_samples=len(entries),
+        dropped_unassigned_split_samples=dropped_unassigned_split_samples,
         dropped_overlength_samples=dropped_overlength_samples,
         dropped_malformed_pocket_samples=dropped_malformed_pocket_samples,
         dropped_safe_conversion_samples=dropped_safe_conversion_samples,
