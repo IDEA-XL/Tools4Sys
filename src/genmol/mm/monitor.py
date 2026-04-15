@@ -3,14 +3,19 @@ import torch
 
 
 class CUDAMemoryMonitor(L.pytorch.callbacks.Callback):
-    def __init__(self, enforce_max_reserved_ratio=None):
+    def __init__(self, enforce_max_reserved_ratio=None, enabled=True):
         self.enforce_max_reserved_ratio = enforce_max_reserved_ratio
+        self.enabled = bool(enabled)
 
     def on_train_start(self, trainer, pl_module):
+        if not self.enabled:
+            return
         if trainer.strategy.root_device.type == 'cuda':
             torch.cuda.reset_peak_memory_stats(trainer.strategy.root_device)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if not self.enabled:
+            return
         device = trainer.strategy.root_device
         if device.type != 'cuda':
             return
