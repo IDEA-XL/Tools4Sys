@@ -39,16 +39,20 @@ def train(config):
     callbacks = [hydra.utils.instantiate(config.callback)]
     if config.get('memory_monitor') is not None and bool(config.memory_monitor.get('enabled', False)):
         callbacks.append(hydra.utils.instantiate(config.memory_monitor))
-    trainer = hydra.utils.instantiate(
-        config.trainer,
-        default_root_dir=os.getcwd(),
-        callbacks=callbacks,
-        strategy=hydra.utils.instantiate(
+    world_size = int(config.trainer.devices) * int(config.trainer.num_nodes)
+    strategy = 'auto'
+    if world_size > 1:
+        strategy = hydra.utils.instantiate(
             {
                 '_target_': 'lightning.pytorch.strategies.DDPStrategy',
                 'find_unused_parameters': False,
             }
-        ),
+        )
+    trainer = hydra.utils.instantiate(
+        config.trainer,
+        default_root_dir=os.getcwd(),
+        callbacks=callbacks,
+        strategy=strategy,
         logger=wandb_logger,
         enable_progress_bar=True,
     )
