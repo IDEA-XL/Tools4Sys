@@ -15,8 +15,8 @@ REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_NAME=${CONFIG_NAME:-base_pocket_prefix_8gpu}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
-if [[ -z "${WANDB_API_KEY:-}" ]]; then
-  echo "WANDB_API_KEY is required" >&2
+if [[ -z "${WANDB_API_KEY:-}" ]] && [[ ! -f "${HOME}/.netrc" ]]; then
+  echo "WANDB_API_KEY or existing wandb login (~/.netrc) is required" >&2
   exit 1
 fi
 
@@ -28,6 +28,10 @@ conda activate genmol
 export PATH=/opt/gridview/slurm/bin:$PATH
 export PYTHONPATH=${REPO_DIR}/src
 export TOKENIZERS_PARALLELISM=false
+
+if [[ -n "${WANDB_API_KEY:-}" ]]; then
+  wandb login --relogin "${WANDB_API_KEY}" >/dev/null 2>&1 || true
+fi
 
 mkdir -p /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_supervised_8gpu/logs
 
