@@ -57,6 +57,7 @@ class ProGen2TrainConfig:
     top_p: float = 0.95
     temperature: float = 0.8
     reward_calibration_size: int = 4096
+    reward_calibration_prompt_batch_size: int = 8
     rewards: dict = field(default_factory=dict)
 
 
@@ -75,6 +76,7 @@ def load_config(path):
         'supergroup_num_groups',
         'max_new_tokens',
         'reward_calibration_size',
+        'reward_calibration_prompt_batch_size',
     ]
     float_fields = [
         'learning_rate',
@@ -120,6 +122,8 @@ def load_config(path):
         raise ValueError('group_advantage_weight must be in [0, 1]')
     if not config.rewards:
         raise ValueError('rewards config is required')
+    if config.reward_calibration_prompt_batch_size <= 0:
+        raise ValueError('reward_calibration_prompt_batch_size must be positive')
     return config
 
 
@@ -224,8 +228,16 @@ class ProGen2SGRPOTrainer:
     def _calibration_sequences(self):
         remaining = int(self.config.reward_calibration_size)
         collected = []
+        calibration_cursor = 0
+        prompt_batch_size = int(self.config.reward_calibration_prompt_batch_size)
+        logger.info(
+            'Starting reward calibration: target_sequences=%d prompt_batch_size=%d',
+            remaining,
+            prompt_batch_size,
+        )
         while remaining > 0:
-            prompts = _cycle_prompt_batch(self.prompts, min(len(self.prompts), remaining), len(collected))
+            prompts = _cycle_prompt_batch(self.prompts, min(prompt_batch_size, remaining), calibration_cursor)
+            calibration_cursor = (calibration_cursor + len(prompts)) % len(self.prompts)
             rollout = self.policy.generate_rollouts(
                 prompts,
                 num_return_sequences=1,
@@ -237,13 +249,20 @@ class ProGen2SGRPOTrainer:
             valid = [sequence for sequence in rollout.protein_sequences if sequence]
             collected.extend(valid)
             remaining = int(self.config.reward_calibration_size) - len(collected)
+            logger.info(
+                'Reward calibration progress: collected=%d remaining=%d',
+                len(collected),
+                max(remaining, 0),
+            )
         return collected[: self.config.reward_calibration_size]
 
     def calibrate(self):
         calibration = None
         if self.accelerator.is_main_process:
             calibration_sequences = self._calibration_sequences()
+            logger.info('Scoring reward calibration statistics on %d sequences', len(calibration_sequences))
             calibration = self.reward_model.calibrate(calibration_sequences)
+            logger.info('Reward calibration complete')
         payload = [calibration]
         if self.accelerator.num_processes > 1 and dist.is_available() and dist.is_initialized():
             dist.broadcast_object_list(payload, src=0)
@@ -346,9 +365,11 @@ class ProGen2SGRPOTrainer:
 
     def train(self):
         os.makedirs(self.output_dir, exist_ok=True)
+        logger.info('Starting ProGen2 SGRPO training in %s', self.output_dir)
         self.calibrate()
 
         for step_idx in range(self.config.max_steps):
+            logger.info('Starting train step %d/%d', step_idx + 1, self.config.max_steps)
             prompts = self._next_prompt_batch()
             rollout = self.policy.generate_rollouts(
                 prompts,

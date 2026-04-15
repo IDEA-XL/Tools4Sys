@@ -28,7 +28,8 @@ group_advantage_weight: 0.5
 max_new_tokens: 64
 top_p: 0.95
 temperature: 0.8
-reward_calibration_size: 64
+reward_calibration_size: 8
+reward_calibration_prompt_batch_size: 8
 rewards:
   naturalness:
     model_name: esm2_t33_650M_UR50D
