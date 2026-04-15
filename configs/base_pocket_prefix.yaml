@@ -61,7 +61,7 @@ model:
   torch_dtype: 'float32'
   type_vocab_size: 2
   use_cache: True
-  vocab_size: 1880
+  vocab_size: 1882
 
 conditioning:
   max_total_positions: 256

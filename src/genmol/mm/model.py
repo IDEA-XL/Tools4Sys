@@ -41,6 +41,13 @@ class PocketPrefixGenMol(L.LightningModule):
         self.mask_index = self.tokenizer.mask_token_id
         self.bos_index = self.tokenizer.bos_token_id
         self.eos_index = self.tokenizer.eos_token_id
+        tokenizer_vocab_size = int(self.tokenizer.vocab_size)
+        configured_vocab_size = int(self.config.model.vocab_size)
+        if configured_vocab_size != tokenizer_vocab_size:
+            raise ValueError(
+                'pocket_prefix_mm config.model.vocab_size must match tokenizer.vocab_size: '
+                f'{configured_vocab_size} vs {tokenizer_vocab_size}'
+            )
 
         self.backbone = BertForMaskedLM(BertConfig.from_dict(dict(self.config.model)))
         self.pocket_encoder = ESMPocketEncoder(
@@ -248,4 +255,3 @@ class PocketPrefixGenMol(L.LightningModule):
         if not backbone_state:
             raise ValueError(f'No backbone parameters found in unimodal checkpoint: {checkpoint_path}')
         self.backbone.load_state_dict(backbone_state, strict=True)
-
