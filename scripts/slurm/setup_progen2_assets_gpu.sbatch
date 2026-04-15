@@ -15,12 +15,12 @@ REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 PROGEN2_OUT_DIR=${PROGEN2_OUT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official}
 TEMBERTURE_OUT_DIR=${TEMBERTURE_OUT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official}
 PROTEINSOL_OUT_DIR=${PROTEINSOL_OUT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official}
+PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
 export PATH=/opt/gridview/slurm/bin:$PATH
-export PYTHONPATH=${REPO_DIR}/src
 export TOKENIZERS_PARALLELISM=false
 
 mkdir -p /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/logs
@@ -35,16 +35,9 @@ export https_proxy=http://127.0.0.1:7897
 export HTTP_PROXY=${http_proxy}
 export HTTPS_PROXY=${https_proxy}
 
-python - <<'PY'
-import importlib.util
-import subprocess
-import sys
-
-if importlib.util.find_spec('adapters') is None:
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'adapters'])
-PY
-
 cd "${REPO_DIR}"
+python scripts/setup_progen2_python_overlay.py --overlay-dir "${PYTHON_OVERLAY_DIR}"
+export PYTHONPATH=${PYTHON_OVERLAY_DIR}:${REPO_DIR}/src
 python scripts/setup_progen2_official.py --output-dir "${PROGEN2_OUT_DIR}" --model progen2-small
 python scripts/setup_temberture_official.py --output-dir "${TEMBERTURE_OUT_DIR}"
 python scripts/setup_proteinsol_official.py --output-dir "${PROTEINSOL_OUT_DIR}"

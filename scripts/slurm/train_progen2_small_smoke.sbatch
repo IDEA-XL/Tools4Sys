@@ -13,6 +13,7 @@ set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/genmol/configs/progen2_sgrpo_small_smoke.yaml}
+PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
 export WANDB_PROJECT="${WANDB_PROJECT:-genmol}"
@@ -21,7 +22,6 @@ export WANDB_NAME="${WANDB_NAME:-progen2-sgrpo-small-smoke}"
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
 export PATH=/opt/gridview/slurm/bin:$PATH
-export PYTHONPATH=${REPO_DIR}/src
 export TOKENIZERS_PARALLELISM=false
 
 if [[ -n "${WANDB_API_KEY:-}" ]]; then
@@ -39,6 +39,13 @@ export http_proxy=http://127.0.0.1:7897
 export https_proxy=http://127.0.0.1:7897
 export HTTP_PROXY=${http_proxy}
 export HTTPS_PROXY=${https_proxy}
+
+if [[ ! -d "${PYTHON_OVERLAY_DIR}" ]]; then
+  echo "Missing ProGen2 python overlay: ${PYTHON_OVERLAY_DIR}" >&2
+  exit 1
+fi
+
+export PYTHONPATH=${PYTHON_OVERLAY_DIR}:${REPO_DIR}/src
 
 cd "${REPO_DIR}"
 
