@@ -6,8 +6,8 @@
 #SBATCH --mem=256G
 #SBATCH -t 12:00:00
 #SBATCH -J mmgen8gsmk
-#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_supervised_8gpu_smoke/logs/train_%j.out
-#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_supervised_8gpu_smoke/logs/train_%j.err
+#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/genmol/slurm_mmgen8gsmk_%j.out
+#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/genmol/slurm_mmgen8gsmk_%j.err
 
 set -euo pipefail
 

@@ -6,8 +6,8 @@
 #SBATCH --mem=128G
 #SBATCH -t 12:00:00
 #SBATCH -J progen2smk
-#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/logs/train_%j.out
-#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/logs/train_%j.err
+#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/genmol/slurm_progen2smk_%j.out
+#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/genmol/slurm_progen2smk_%j.err
 
 set -euo pipefail
 
