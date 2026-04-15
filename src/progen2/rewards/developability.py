@@ -1,52 +1,116 @@
-import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from __future__ import annotations
 
-from progen2.rewards.common import iter_chunks, release_model, validate_batch_size
+import csv
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from progen2.rewards.common import validate_batch_size
 from progen2.rewards.liability import liability_reward
+
+
+def _resolve_proteinsol_root(model_name_or_path):
+    root = Path(model_name_or_path).expanduser().resolve()
+    candidates = [root, root / 'protein-sol-sequence-prediction-software']
+    for candidate in candidates:
+        if (candidate / 'multiple_prediction_wrapper_export.sh').is_file():
+            return candidate
+    raise ValueError(
+        'Protein-Sol model_name_or_path must point to the extracted official Protein-Sol software root '
+        f'or its parent directory; missing multiple_prediction_wrapper_export.sh under {root}'
+    )
+
+
+def _parse_scaled_sol_scores(prediction_path):
+    rows = []
+    with open(prediction_path, newline='') as handle:
+        reader = csv.reader(handle)
+        for row in reader:
+            if len(row) >= 4 and row[0] == 'SEQUENCE PREDICTIONS':
+                rows.append(float(row[3]))
+    if not rows:
+        raise ValueError(f'Protein-Sol produced no SEQUENCE PREDICTIONS rows in {prediction_path}')
+    return rows
 
 
 class ProteinSolScorer:
     def __init__(self, model_name_or_path, tokenizer_name_or_path=None, device='cpu', batch_size=16):
+        if tokenizer_name_or_path is not None:
+            raise ValueError('Protein-Sol uses the official CLI bundle; tokenizer_name_or_path must be omitted')
+        if device not in {'cpu', 'cuda'}:
+            raise ValueError(f'Protein-Sol device must be cpu or cuda, got {device!r}')
         if not model_name_or_path:
             raise ValueError('Protein-Sol model_name_or_path is required')
-        self.device = torch.device(device)
         self.batch_size = validate_batch_size(batch_size, field_name='developability.batch_size')
-        self.model_name_or_path = str(model_name_or_path)
-        tokenizer_name_or_path = tokenizer_name_or_path or model_name_or_path
-        self.tokenizer_name_or_path = str(tokenizer_name_or_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name_or_path)
-        self.model = None
+        self.bundle_root = _resolve_proteinsol_root(model_name_or_path)
+        self._workspace = None
+        self._workspace_root = None
 
-    def _ensure_loaded(self):
-        if self.model is None:
-            self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name_or_path)
-            self.model.eval()
-        self.model.to(self.device)
+    def _ensure_workspace(self):
+        if self._workspace_root is not None:
+            return
+        workspace = tempfile.TemporaryDirectory(prefix='proteinsol_')
+        destination = Path(workspace.name) / 'protein-sol-sequence-prediction-software'
+        shutil.copytree(self.bundle_root, destination)
+        self._workspace = workspace
+        self._workspace_root = destination
 
     def release(self):
-        release_model(self.model, self.device)
+        return
 
-    @torch.no_grad()
+    def _write_fasta(self, sequences):
+        fasta_path = self._workspace_root / 'batch.fasta'
+        with open(fasta_path, 'w') as handle:
+            for idx, sequence in enumerate(sequences):
+                if not sequence:
+                    raise ValueError('Protein-Sol sequences must be non-empty')
+                handle.write(f'>seq_{idx}\n{sequence}\n')
+        return fasta_path
+
+    def _clear_previous_outputs(self):
+        for name in [
+            'batch.fasta',
+            'batch.fasta_ORIGINAL',
+            'seq_prediction.txt',
+            'seq_composition.txt',
+            'run.log',
+            'blah.txt',
+        ]:
+            path = self._workspace_root / name
+            if path.exists():
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+
     def score_raw(self, sequences):
         if not sequences:
             raise ValueError('sequences must be non-empty')
-        self._ensure_loaded()
+        self._ensure_workspace()
         outputs = []
-        for chunk in iter_chunks(sequences, self.batch_size):
-            batch = self.tokenizer(
-                chunk,
-                return_tensors='pt',
-                padding=True,
-                truncation=True,
+        for sequence in sequences:
+            self._clear_previous_outputs()
+            fasta_path = self._write_fasta([sequence])
+            result = subprocess.run(
+                ['bash', 'multiple_prediction_wrapper_export.sh', fasta_path.name],
+                cwd=self._workspace_root,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-            batch = {key: value.to(self.device) for key, value in batch.items()}
-            logits = self.model(**batch).logits
-            if logits.dim() != 2 or logits.size(1) != 1:
-                raise ValueError(
-                    'Protein-Sol scorer expects a single scalar score per sequence, '
-                    f'got shape {list(logits.shape)}'
+            if result.returncode != 0:
+                raise RuntimeError(
+                    'Protein-Sol scoring failed with non-zero exit status '
+                    f'{result.returncode}: stdout={result.stdout!r} stderr={result.stderr!r}'
                 )
-            outputs.extend(logits[:, 0].detach().cpu().tolist())
+            chunk_scores = _parse_scaled_sol_scores(self._workspace_root / 'seq_prediction.txt')
+            if len(chunk_scores) != 1:
+                raise RuntimeError(
+                    'Protein-Sol returned a different number of scores than expected for a single input: '
+                    f'{len(chunk_scores)} != 1'
+                )
+            outputs.extend(chunk_scores)
         return outputs
 
 
