@@ -35,7 +35,7 @@ class ESMPocketEncoder:
         try:
             _ensure_biotite_esm_if_compat()
             import esm
-            from esm.inverse_folding.util import get_encoder_output
+            from esm.inverse_folding.util import CoordBatchConverter
         except ImportError as exc:
             raise ImportError(
                 'Official ESM-IF dependencies are required for multimodal GenMol. '
@@ -48,7 +48,7 @@ class ESMPocketEncoder:
 
         self.model_name = model_name
         self.model, self.alphabet = model_loader()
-        self._get_encoder_output = get_encoder_output
+        self._batch_converter = CoordBatchConverter(self.alphabet)
         self.device = torch.device(device)
         self.model.eval()
         self.model.to(self.device)
@@ -89,14 +89,26 @@ class ESMPocketEncoder:
                         'Each pocket coordinate tensor must have shape [num_residues, 3, 3], '
                         f'got {list(coords.shape)} at batch index {batch_idx}'
                     )
-                encoded = self._get_encoder_output(
-                    self.model,
-                    self.alphabet,
-                    coords.detach().cpu().numpy(),
+                batch = [(coords.detach().cpu().numpy(), None, None)]
+                batch_coords, confidence, _, _, padding_mask = self._batch_converter(
+                    batch,
+                    device=self.device,
                 )
+                encoder_out = self.model.encoder.forward(
+                    batch_coords,
+                    padding_mask,
+                    confidence,
+                    return_all_hiddens=False,
+                )
+                encoded = encoder_out['encoder_out'][0][1:-1, 0]
                 if encoded.dim() != 2:
                     raise ValueError(
                         f'Expected ESM-IF encoder output to have shape [num_residues, embedding_dim], got {list(encoded.shape)}'
+                    )
+                if encoded.device != self.device:
+                    raise ValueError(
+                        'ESM-IF encoder output device mismatch: '
+                        f'expected {self.device}, got {encoded.device}'
                     )
                 outputs.append(encoded.detach())
         return outputs
