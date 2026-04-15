@@ -63,6 +63,38 @@ class ProGen2TrainConfig:
 def load_config(path):
     with open(path) as handle:
         raw = yaml.safe_load(handle)
+    int_fields = [
+        'seed',
+        'per_device_prompt_batch_size',
+        'gradient_accumulation_steps',
+        'max_steps',
+        'logging_steps',
+        'save_steps',
+        'save_total_limit',
+        'num_generations',
+        'supergroup_num_groups',
+        'max_new_tokens',
+        'reward_calibration_size',
+    ]
+    float_fields = [
+        'learning_rate',
+        'adam_beta1',
+        'adam_beta2',
+        'adam_eps',
+        'weight_decay',
+        'max_grad_norm',
+        'beta',
+        'epsilon',
+        'group_advantage_weight',
+        'top_p',
+        'temperature',
+    ]
+    for field_name in int_fields:
+        if field_name in raw and raw[field_name] is not None:
+            raw[field_name] = int(raw[field_name])
+    for field_name in float_fields:
+        if field_name in raw and raw[field_name] is not None:
+            raw[field_name] = float(raw[field_name])
     config = ProGen2TrainConfig(**raw)
     if config.model_variant != PROGEN2_SGRPO_VARIANT:
         raise ValueError(
