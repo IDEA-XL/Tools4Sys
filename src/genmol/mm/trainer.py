@@ -241,14 +241,8 @@ class PocketPrefixCpGRPOTrainer:
             weight_decay=config.weight_decay,
         )
         scheduler = build_scheduler(optimizer, config)
-        (
-            self.policy.model.backbone,
-            self.policy.model.projector,
-            self.optimizer,
-            self.scheduler,
-        ) = self.accelerator.prepare(
-            self.policy.model.backbone,
-            self.policy.model.projector,
+        self.policy.model, self.optimizer, self.scheduler = self.accelerator.prepare(
+            self.policy.model,
             optimizer,
             scheduler,
         )
@@ -914,13 +908,9 @@ class PocketPrefixCpGRPOTrainer:
         return TrainResult(metrics=self._last_train_metrics or {})
 
     def evaluate(self):
-        current_backbone_state = self.policy.model.backbone.training
-        current_projector_state = self.policy.model.projector.training
         self._metrics['eval'] = defaultdict(list)
         self._textual_logs['eval'] = []
-        self.policy.model.backbone.eval()
-        self.policy.model.projector.eval()
-        try:
+        with self.policy.eval_mode():
             inputs, metadata = self._generate_and_score_completions(mode='eval')
             for iteration_idx in range(self.config.num_iterations):
                 self._compute_loss(
@@ -930,9 +920,6 @@ class PocketPrefixCpGRPOTrainer:
                     requires_grad=False,
                 )
             self._record_optimizer_metrics('eval', grad_norm=float('nan'), lr=self.scheduler.get_last_lr()[0])
-        finally:
-            self.policy.model.backbone.train(current_backbone_state)
-            self.policy.model.projector.train(current_projector_state)
         return self._consume_logged_metrics('eval', step=self.global_step, buffer_cycle=metadata['buffer_cycle'])
 
     def log_metrics(self, split, metrics):

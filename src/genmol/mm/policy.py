@@ -157,13 +157,17 @@ class PocketPrefixCpGRPOPolicy:
         if not trainable:
             self.freeze()
 
+    def _root_model(self):
+        return _unwrap_module(self.model)
+
     def freeze(self):
-        self.model.eval()
-        for parameter in itertools.chain(self.model.backbone.parameters(), self.model.projector.parameters()):
+        model = self._root_model()
+        model.eval()
+        for parameter in itertools.chain(model.backbone.parameters(), model.projector.parameters()):
             parameter.requires_grad = False
 
     def train(self):
-        self.model.train()
+        self._root_model().train()
 
     @property
     def autocast_context(self):
@@ -174,17 +178,18 @@ class PocketPrefixCpGRPOPolicy:
         return torch.autocast(device_type='cuda', dtype=torch.bfloat16)
 
     def _unwrap_backbone(self):
-        return _unwrap_module(self.model.backbone)
+        return _unwrap_module(self._root_model().backbone)
 
     def _unwrap_projector(self):
-        return _unwrap_module(self.model.projector)
+        return _unwrap_module(self._root_model().projector)
 
     def trainable_parameters(self):
         return itertools.chain(self._unwrap_backbone().parameters(), self._unwrap_projector().parameters())
 
     def update_ema(self):
-        if self.model.ema:
-            self.model.ema.update(self.trainable_parameters())
+        model = self._root_model()
+        if model.ema:
+            model.ema.update(self.trainable_parameters())
 
     def enable_gradient_checkpointing(self, gradient_checkpointing_kwargs=None):
         kwargs = gradient_checkpointing_kwargs or {}
@@ -192,7 +197,7 @@ class PocketPrefixCpGRPOPolicy:
             self._unwrap_backbone().gradient_checkpointing_enable(gradient_checkpointing_kwargs=kwargs)
 
     def get_pocket_raw_embeddings(self, pocket_coords):
-        encoded = self.model.encode_pocket_batch(pocket_coords)
+        encoded = self._root_model().encode_pocket_batch(pocket_coords)
         return pad_prefix_embeddings(encoded, device=self.device, dtype=torch.float32)
 
     def sync_from(self, other_policy, alpha):
@@ -213,8 +218,9 @@ class PocketPrefixCpGRPOPolicy:
 
     @contextmanager
     def eval_mode(self):
-        backbone = self.model.backbone
-        projector = self.model.projector
+        model = self._root_model()
+        backbone = model.backbone
+        projector = model.projector
         was_backbone_training = backbone.training
         was_projector_training = projector.training
         backbone.eval()
@@ -229,7 +235,7 @@ class PocketPrefixCpGRPOPolicy:
         input_ids = input_ids.clone()
         attention_mask = input_ids != self.pad_index
         with self.autocast_context:
-            logits = self.model.forward_conditioned_logits_from_padded_raw_pocket(
+            logits = self._root_model().forward_conditioned_logits_from_padded_raw_pocket(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 pocket_raw_embeddings=pocket_raw_embeddings,
@@ -265,7 +271,7 @@ class PocketPrefixCpGRPOPolicy:
         )
 
     def _decode_safe_strings(self, token_ids):
-        return self.model.tokenizer.batch_decode(token_ids, skip_special_tokens=True)
+        return self._root_model().tokenizer.batch_decode(token_ids, skip_special_tokens=True)
 
     def _decode_smiles(self, safe_strings):
         smiles_list = []
@@ -306,6 +312,7 @@ class PocketPrefixCpGRPOPolicy:
 
         with self.eval_mode():
             with torch.no_grad():
+                mdlm = self._root_model().mdlm
                 for start in range(0, len(specs), generation_batch_size):
                     chunk_specs = specs[start:start + generation_batch_size]
                     chunk_size = len(chunk_specs)
@@ -326,10 +333,10 @@ class PocketPrefixCpGRPOPolicy:
                         completion_mask[row_idx, 1:spec.add_seq_len + 1] = True
 
                     x = token_ids
-                    num_steps = max(self.model.mdlm.get_num_steps_confidence(x), 2)
+                    num_steps = max(mdlm.get_num_steps_confidence(x), 2)
                     for step_idx in range(num_steps):
                         logits = self.forward_logits(x, chunk_pocket_embeddings, chunk_pocket_mask)
-                        x = self.model.mdlm.step_confidence(
+                        x = mdlm.step_confidence(
                             logits,
                             x,
                             step_idx,
@@ -358,9 +365,10 @@ class PocketPrefixCpGRPOPolicy:
         )
 
     def load_ema_state(self, ema_state):
-        if self.model.ema and ema_state is not None:
-            self.model.ema.load_state_dict(ema_state)
-            self.model.ema.move_shadow_params_to_device(self.device)
+        model = self._root_model()
+        if model.ema and ema_state is not None:
+            model.ema.load_state_dict(ema_state)
+            model.ema.move_shadow_params_to_device(self.device)
 
     def load_trainable_state_dict(self, state_dict):
         backbone_state = {}
@@ -386,27 +394,19 @@ class PocketPrefixCpGRPOPolicy:
         require_multimodal_checkpoint(checkpoint, self.checkpoint_path)
 
         if accelerator is None:
-            backbone_state = _move_to_cpu(self._unwrap_backbone().state_dict())
-            projector_state = _move_to_cpu(self._unwrap_projector().state_dict())
+            model_state = _move_to_cpu(self._root_model().state_dict())
         else:
-            backbone_state = _move_to_cpu(accelerator.get_state_dict(self.model.backbone))
-            projector_state = _move_to_cpu(accelerator.get_state_dict(self.model.projector))
+            model_state = _move_to_cpu(accelerator.get_state_dict(self.model))
 
-        model_state = _move_to_cpu(self.model.state_dict())
-        checkpoint['state_dict'] = {}
-        for key, value in model_state.items():
-            if key.startswith('backbone.') or key.startswith('projector.'):
-                continue
-            checkpoint['state_dict'][key] = value
-        checkpoint['state_dict'].update({f'backbone.{key}': value for key, value in backbone_state.items()})
-        checkpoint['state_dict'].update({f'projector.{key}': value for key, value in projector_state.items()})
+        checkpoint['state_dict'] = model_state
         checkpoint['global_step'] = int(step)
         checkpoint['epoch'] = 0
         checkpoint['optimizer_states'] = []
         checkpoint['lr_schedulers'] = []
 
-        if self.model.ema:
-            checkpoint['ema'] = _move_to_cpu(self.model.ema.state_dict())
+        model = self._root_model()
+        if model.ema:
+            checkpoint['ema'] = _move_to_cpu(model.ema.state_dict())
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(checkpoint, path)
