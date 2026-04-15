@@ -7,6 +7,7 @@ from bionemo.moco.distributions.prior import DiscreteMaskedPrior
 from bionemo.moco.distributions.time import UniformTimeDistribution
 from bionemo.moco.interpolants import MDLM
 from bionemo.moco.schedules.noise.continuous_noise_transforms import LogLinearExpNoiseTransform
+from torch.nn.parallel import DistributedDataParallel
 from transformers import BertForMaskedLM
 from transformers.models.bert.configuration_bert import BertConfig
 
@@ -149,8 +150,16 @@ class PocketPrefixGenMol(L.LightningModule):
         if self.ema:
             self.ema.update(self._ema_parameters())
 
+    @staticmethod
+    def _unwrap_module(module):
+        if isinstance(module, DistributedDataParallel):
+            module = module.module
+        while hasattr(module, 'module'):
+            module = module.module
+        return module
+
     def _token_embeddings(self, input_ids):
-        embedding_layer = self.backbone.get_input_embeddings()
+        embedding_layer = self._unwrap_module(self.backbone).get_input_embeddings()
         return embedding_layer(input_ids)
 
     def encode_pocket_batch(self, pocket_coords):
