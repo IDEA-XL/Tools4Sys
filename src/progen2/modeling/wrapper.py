@@ -29,7 +29,7 @@ class OfficialProGen2CausalLM:
         official_code_dir,
         checkpoint_dir,
         tokenizer_path,
-        checkpoint_subdir='float16',
+        checkpoint_subdir=None,
         device='cpu',
         use_fp16=True,
     ):

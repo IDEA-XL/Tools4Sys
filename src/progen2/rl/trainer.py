@@ -28,7 +28,7 @@ class ProGen2TrainConfig:
     tokenizer_path: str
     init_checkpoint_dir: str
     ref_checkpoint_dir: str | None = None
-    checkpoint_subdir: str | None = 'float16'
+    checkpoint_subdir: str | None = None
     output_dir: str | None = None
     overwrite_output_dir: bool = False
     seed: int = 42
