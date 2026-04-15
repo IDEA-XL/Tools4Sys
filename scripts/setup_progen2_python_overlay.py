@@ -1,4 +1,5 @@
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,8 @@ def main():
     args = parser.parse_args()
 
     overlay_dir = Path(args.overlay_dir).expanduser().resolve()
+    if overlay_dir.exists():
+        shutil.rmtree(overlay_dir)
     overlay_dir.mkdir(parents=True, exist_ok=True)
 
     command = [
@@ -24,6 +27,7 @@ def main():
         'pip',
         'install',
         '--upgrade',
+        '--no-deps',
         '--target',
         str(overlay_dir),
         *OVERLAY_PACKAGES,

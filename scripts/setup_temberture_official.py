@@ -35,7 +35,7 @@ def _download_path(path, output_root):
     payload = _fetch_json(path)
     if isinstance(payload, dict):
         if payload['type'] != 'file':
-            raise ValueError(f'Expected file payload for {path}, got {payload['type']!r}')
+            raise ValueError(f"Expected file payload for {path}, got {payload['type']!r}")
         destination = output_root / payload['path']
         _download_file(payload['download_url'], destination)
         return
@@ -46,7 +46,9 @@ def _download_path(path, output_root):
         elif item['type'] == 'dir':
             _download_path(item['path'], output_root)
         else:
-            raise ValueError(f'Unsupported TemBERTure repo item type {item['type']!r} for {item['path']}')
+            raise ValueError(
+                f"Unsupported TemBERTure repo item type {item['type']!r} for {item['path']}"
+            )
 
 
 def main():
