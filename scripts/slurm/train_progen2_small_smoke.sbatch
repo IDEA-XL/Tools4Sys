@@ -15,11 +15,6 @@ REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/genmol/configs/progen2_sgrpo_small_smoke.yaml}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
-if [[ -z "${WANDB_API_KEY:-}" ]] && [[ ! -f "${HOME}/.netrc" ]]; then
-  echo "WANDB_API_KEY or existing wandb login (~/.netrc) is required" >&2
-  exit 1
-fi
-
 export WANDB_PROJECT="${WANDB_PROJECT:-genmol}"
 export WANDB_NAME="${WANDB_NAME:-progen2-sgrpo-small-smoke}"
 

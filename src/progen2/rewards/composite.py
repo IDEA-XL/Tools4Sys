@@ -28,26 +28,38 @@ def _scale_quantile(raw_values, q10, q90):
 class CompositeProteinReward:
     def __init__(self, config, device='cpu'):
         self.device = torch.device(device)
+        naturalness_cfg = dict(config['naturalness'])
+        foldability_cfg = dict(config.get('foldability', {}))
+        stability_cfg = dict(config['stability'])
+        developability_cfg = dict(config['developability'])
         self.naturalness = ESM2NaturalnessScorer(
-            model_name=str(config['naturalness']['model_name']),
-            device=self.device,
+            model_name=str(naturalness_cfg['model_name']),
+            device=naturalness_cfg.get('device', self.device),
+            batch_size=naturalness_cfg.get('batch_size', 8),
         )
-        self.foldability = ESMFoldFoldabilityScorer(device=self.device)
+        self.foldability = ESMFoldFoldabilityScorer(
+            device=foldability_cfg.get('device', self.device),
+            batch_size=foldability_cfg.get('batch_size', 1),
+        )
         self.stability = TemBERTureTmScorer(
-            model_name_or_path=str(config['stability']['model_name_or_path']),
-            tokenizer_name_or_path=config['stability'].get('tokenizer_name_or_path'),
-            device=self.device,
+            model_name_or_path=str(stability_cfg['model_name_or_path']),
+            tokenizer_name_or_path=stability_cfg.get('tokenizer_name_or_path'),
+            device=stability_cfg.get('device', self.device),
+            batch_size=stability_cfg.get('batch_size', 16),
         )
         self.developability = ProteinSolScorer(
-            model_name_or_path=str(config['developability']['model_name_or_path']),
-            tokenizer_name_or_path=config['developability'].get('tokenizer_name_or_path'),
-            device=self.device,
+            model_name_or_path=str(developability_cfg['model_name_or_path']),
+            tokenizer_name_or_path=developability_cfg.get('tokenizer_name_or_path'),
+            device=developability_cfg.get('device', self.device),
+            batch_size=developability_cfg.get('batch_size', 16),
         )
         self.calibration = None
 
     def calibrate(self, sequences):
         nat_raw = self.naturalness.score_raw(sequences)
+        self.naturalness.release()
         stab_raw = self.stability.score_raw(sequences)
+        self.stability.release()
         nat_q10, nat_q90 = _quantiles(nat_raw)
         stab_q10, stab_q90 = _quantiles(stab_raw)
         self.calibration = {
@@ -62,9 +74,13 @@ class CompositeProteinReward:
         if self.calibration is None:
             raise RuntimeError('CompositeProteinReward.calibrate must be called before score')
         nat_raw = self.naturalness.score_raw(sequences)
+        self.naturalness.release()
         fold = self.foldability.score_raw(sequences)
+        self.foldability.release()
         stab_raw = self.stability.score_raw(sequences)
+        self.stability.release()
         dev_raw = self.developability.score_raw(sequences)
+        self.developability.release()
 
         nat = _scale_quantile(
             nat_raw,

@@ -32,9 +32,18 @@ reward_calibration_size: 64
 rewards:
   naturalness:
     model_name: esm2_t33_650M_UR50D
+    device: cuda
+    batch_size: 4
+  foldability:
+    device: cuda
+    batch_size: 1
   stability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_tm
     tokenizer_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_tm
+    device: cuda
+    batch_size: 8
   developability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol
     tokenizer_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol
+    device: cuda
+    batch_size: 8
