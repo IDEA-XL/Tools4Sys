@@ -41,11 +41,11 @@ class PocketPrefixGenMol(L.LightningModule):
         self.mask_index = self.tokenizer.mask_token_id
         self.bos_index = self.tokenizer.bos_token_id
         self.eos_index = self.tokenizer.eos_token_id
-        tokenizer_vocab_size = int(self.tokenizer.vocab_size)
+        tokenizer_vocab_size = int(len(self.tokenizer))
         configured_vocab_size = int(self.config.model.vocab_size)
         if configured_vocab_size != tokenizer_vocab_size:
             raise ValueError(
-                'pocket_prefix_mm config.model.vocab_size must match tokenizer.vocab_size: '
+                'pocket_prefix_mm config.model.vocab_size must match total tokenizer size len(tokenizer): '
                 f'{configured_vocab_size} vs {tokenizer_vocab_size}'
             )
 
@@ -78,7 +78,7 @@ class PocketPrefixGenMol(L.LightningModule):
             time_distribution = AntitheticUniformTimeDistribution(sampling_eps=self.config.training.sampling_eps)
         else:
             time_distribution = UniformTimeDistribution()
-        prior = DiscreteMaskedPrior(num_classes=self.tokenizer.vocab_size, mask_dim=self.mask_index)
+        prior = DiscreteMaskedPrior(num_classes=tokenizer_vocab_size, mask_dim=self.mask_index)
         noise_schedule = LogLinearExpNoiseTransform()
         self.mdlm = MDLM(
             time_distribution=time_distribution,
