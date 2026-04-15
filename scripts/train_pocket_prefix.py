@@ -36,10 +36,13 @@ def train(config):
         model.load_backbone_from_unimodal_checkpoint(str(config.multimodal.init_unimodal_ckpt))
 
     train_dataloader = get_multimodal_dataloader(config, split=str(config.multimodal_data.split), shuffle=True)
+    callbacks = [hydra.utils.instantiate(config.callback)]
+    if config.get('memory_monitor') is not None and bool(config.memory_monitor.get('enabled', False)):
+        callbacks.append(hydra.utils.instantiate(config.memory_monitor))
     trainer = hydra.utils.instantiate(
         config.trainer,
         default_root_dir=os.getcwd(),
-        callbacks=[hydra.utils.instantiate(config.callback)],
+        callbacks=callbacks,
         strategy=hydra.utils.instantiate(
             {
                 '_target_': 'lightning.pytorch.strategies.DDPStrategy',

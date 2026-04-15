@@ -72,12 +72,15 @@ def get_multimodal_dataloader(config, split=None, shuffle=None):
     if shuffle is None:
         shuffle = dataset_split == 'train'
 
-    return torch.utils.data.DataLoader(
-        dataset,
-        batch_size=int(config.loader.batch_size),
-        collate_fn=collator,
-        num_workers=int(config.loader.num_workers),
-        pin_memory=bool(config.loader.pin_memory),
-        shuffle=bool(shuffle),
-        persistent_workers=bool(config.loader.num_workers > 0),
-    )
+    dataloader_kwargs = {
+        'dataset': dataset,
+        'batch_size': int(config.loader.batch_size),
+        'collate_fn': collator,
+        'num_workers': int(config.loader.num_workers),
+        'pin_memory': bool(config.loader.pin_memory),
+        'shuffle': bool(shuffle),
+        'persistent_workers': bool(config.loader.get('persistent_workers', config.loader.num_workers > 0)),
+    }
+    if int(config.loader.num_workers) > 0 and config.loader.get('prefetch_factor') is not None:
+        dataloader_kwargs['prefetch_factor'] = int(config.loader.prefetch_factor)
+    return torch.utils.data.DataLoader(**dataloader_kwargs)

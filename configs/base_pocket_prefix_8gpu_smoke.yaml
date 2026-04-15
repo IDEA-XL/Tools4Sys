@@ -1,0 +1,41 @@
+hydra:
+  run:
+    dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_supervised_8gpu_smoke/${now:%Y%m%d_%H%M%S}
+  job:
+    chdir: True
+
+defaults:
+  - base_pocket_prefix_tune_1gpu
+  - _self_
+
+wandb:
+  project: genmol
+  name: ${oc.env:WANDB_NAME,pocket-prefix-supervised-8gpu-smoke}
+
+loader:
+  batch_size: ${oc.env:PER_DEVICE_BATCH_SIZE,32}
+  global_batch_size: ${eval:${.batch_size} * ${trainer.devices} * ${trainer.num_nodes}}
+  num_workers: ${oc.env:NUM_WORKERS,8}
+  pin_memory: True
+  persistent_workers: True
+  prefetch_factor: ${oc.env:PREFETCH_FACTOR,4}
+
+trainer:
+  _target_: lightning.Trainer
+  accelerator: cuda
+  num_nodes: 1
+  devices: 8
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  precision: bf16
+  max_steps: 50
+  log_every_n_steps: 1
+
+callback:
+  _target_: lightning.pytorch.callbacks.ModelCheckpoint
+  dirpath: ${cwd:}/checkpoints
+  filename: '{step}'
+  save_top_k: -1
+  auto_insert_metric_name: False
+  enable_version_counter: False
+  every_n_train_steps: 25
