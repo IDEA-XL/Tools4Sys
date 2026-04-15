@@ -72,15 +72,29 @@ def get_multimodal_dataloader(config, split=None, shuffle=None):
     if shuffle is None:
         shuffle = dataset_split == 'train'
 
+    loader_num_workers = int(config.loader.num_workers)
+    persistent_workers_raw = config.loader.get('persistent_workers')
+    if persistent_workers_raw is None:
+        persistent_workers = loader_num_workers > 0
+    elif isinstance(persistent_workers_raw, bool):
+        persistent_workers = persistent_workers_raw
+    elif str(persistent_workers_raw).lower() in {'true', 'false'}:
+        persistent_workers = str(persistent_workers_raw).lower() == 'true'
+    else:
+        raise ValueError(
+            'loader.persistent_workers must be a boolean or boolean-like string, '
+            f'got {persistent_workers_raw!r}'
+        )
+
     dataloader_kwargs = {
         'dataset': dataset,
         'batch_size': int(config.loader.batch_size),
         'collate_fn': collator,
-        'num_workers': int(config.loader.num_workers),
+        'num_workers': loader_num_workers,
         'pin_memory': bool(config.loader.pin_memory),
         'shuffle': bool(shuffle),
-        'persistent_workers': bool(config.loader.get('persistent_workers', config.loader.num_workers > 0)),
+        'persistent_workers': persistent_workers,
     }
-    if int(config.loader.num_workers) > 0 and config.loader.get('prefetch_factor') is not None:
+    if loader_num_workers > 0 and config.loader.get('prefetch_factor') is not None:
         dataloader_kwargs['prefetch_factor'] = int(config.loader.prefetch_factor)
     return torch.utils.data.DataLoader(**dataloader_kwargs)
