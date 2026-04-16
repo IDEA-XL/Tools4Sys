@@ -282,14 +282,15 @@ class CrossDockedDockingEvaluator:
         molecules[0].write('pdbqt', str(ligand_pdbqt_path), overwrite=True)
 
     def _convert_ligand_to_vina_pdbqt(self, ligand_sdf_path, ligand_pdbqt_path):
+        from rdkit import Chem
         from meeko import MoleculePreparation
-        from openbabel import pybel
 
-        molecules = list(pybel.readfile('sdf', str(ligand_sdf_path)))
+        supplier = Chem.SDMolSupplier(str(ligand_sdf_path), removeHs=False)
+        molecules = [mol for mol in supplier if mol is not None]
         if not molecules:
             raise RuntimeError(f'Failed to read generated ligand SDF: {ligand_sdf_path}')
         preparator = MoleculePreparation()
-        preparator.prepare(molecules[0].OBMol)
+        preparator.prepare(molecules[0])
         preparator.write_pdbqt_file(str(ligand_pdbqt_path))
         if not ligand_pdbqt_path.exists():
             raise RuntimeError(f'Failed to create ligand pdbqt: {ligand_pdbqt_path}')

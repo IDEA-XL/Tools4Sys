@@ -295,8 +295,8 @@ def evaluate_experiment(config, experiment, device, selected_entries, specs, eva
                 'unknown docking failure',
             )
             raise RuntimeError(
-                'Docking evaluation produced zero successful dockings; the current manifest split and '
-                f'crossdocked_root are not aligned for docking. First docking error: {first_error}'
+                'Docking evaluation produced zero successful dockings. '
+                f'First docking error: {first_error}'
             )
         return summary, rows
     finally:
