@@ -44,7 +44,12 @@ fi
 conda activate "${EVAL_CONDA_PREFIX}"
 
 python -m pip install --upgrade pip
-python -m pip install vina meeko pdb2pqr git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3
+python -m pip install vina meeko pdb2pqr gdown git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3
+
+if ! command -v gdown >/dev/null 2>&1; then
+  echo "gdown not found after installation in ${EVAL_CONDA_PREFIX}" >&2
+  exit 1
+fi
 
 if [[ ! -f "${DOWNLOAD_DIR}/test_set.zip" ]]; then
   gdown --folder "${TEST_SET_FOLDER_URL}" -O "${DOWNLOAD_DIR}"
