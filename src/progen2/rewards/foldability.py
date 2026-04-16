@@ -1,3 +1,4 @@
+import importlib
 import sys
 import types
 
@@ -39,24 +40,14 @@ def _ensure_openfold_deepspeed_compat():
     deepspeed.utils.is_initialized = deepspeed.comm.is_initialized
 
 
-def _ensure_openfold_attention_core_compat():
-    if 'attn_core_inplace_cuda' in sys.modules:
-        return
-    shim = types.ModuleType('attn_core_inplace_cuda')
-
-    def forward_(attention_logits, rows, cols):
-        del rows, cols
-        attention_logits.copy_(torch.softmax(attention_logits, dim=-1))
-
-    def backward_(*args, **kwargs):
+def _require_openfold_attention_core_extension():
+    try:
+        importlib.import_module('attn_core_inplace_cuda')
+    except ImportError as exc:
         raise RuntimeError(
-            'attn_core_inplace_cuda backward is unavailable in the ProGen2 foldability shim; '
-            'this path is intended for no-grad ESMFold inference only'
-        )
-
-    shim.forward_ = forward_
-    shim.backward_ = backward_
-    sys.modules['attn_core_inplace_cuda'] = shim
+            'ESMFold foldability scoring requires the compiled OpenFold attention extension '
+            'attn_core_inplace_cuda to be preinstalled and importable from the runtime PYTHONPATH'
+        ) from exc
 
 
 class ESMFoldFoldabilityScorer:
@@ -67,7 +58,7 @@ class ESMFoldFoldabilityScorer:
             raise ImportError('esm is required for ESMFold foldability scoring') from exc
         _ensure_openfold_lightning_compat()
         _ensure_openfold_deepspeed_compat()
-        _ensure_openfold_attention_core_compat()
+        _require_openfold_attention_core_extension()
         try:
             import openfold  # noqa: F401
         except ImportError as exc:

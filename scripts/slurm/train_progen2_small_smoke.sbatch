@@ -59,9 +59,24 @@ if [[ ! -d "${PYTHON_OVERLAY_DIR}/openfold" ]]; then
   echo "Missing preprovisioned openfold package under overlay: ${PYTHON_OVERLAY_DIR}/openfold" >&2
   exit 1
 fi
+if ! compgen -G "${PYTHON_OVERLAY_DIR}/attn_core_inplace_cuda*.so" >/dev/null; then
+  echo "Missing compiled OpenFold attention extension under overlay: ${PYTHON_OVERLAY_DIR}/attn_core_inplace_cuda*.so" >&2
+  exit 1
+fi
 
 export PYTHONPATH=${PYTHON_OVERLAY_DIR}:${REPO_DIR}/src
 
 cd "${REPO_DIR}"
+
+python - <<'PY'
+import importlib
+import os
+import sys
+
+overlay_dir = os.environ['PYTHON_OVERLAY_DIR']
+sys.path.insert(0, overlay_dir)
+module = importlib.import_module('attn_core_inplace_cuda')
+print(module.__file__)
+PY
 
 python scripts/train_progen2_sgrpo.py "${CONFIG_PATH}"

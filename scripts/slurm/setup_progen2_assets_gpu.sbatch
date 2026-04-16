@@ -16,6 +16,7 @@ PROGEN2_OUT_DIR=${PROGEN2_OUT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/ru
 TEMBERTURE_OUT_DIR=${TEMBERTURE_OUT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official}
 PROTEINSOL_OUT_DIR=${PROTEINSOL_OUT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official}
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
+OPENFOLD_SOURCE_DIR=${OPENFOLD_SOURCE_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/openfold_official}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
@@ -37,6 +38,7 @@ export HTTPS_PROXY=${https_proxy}
 
 cd "${REPO_DIR}"
 python scripts/setup_progen2_python_overlay.py --overlay-dir "${PYTHON_OVERLAY_DIR}"
+python scripts/setup_openfold_extension.py --source-dir "${OPENFOLD_SOURCE_DIR}" --overlay-dir "${PYTHON_OVERLAY_DIR}"
 export PYTHONPATH=${PYTHON_OVERLAY_DIR}:${REPO_DIR}/src
 python scripts/setup_progen2_official.py --output-dir "${PROGEN2_OUT_DIR}" --model progen2-small
 python scripts/setup_temberture_official.py --output-dir "${TEMBERTURE_OUT_DIR}"
