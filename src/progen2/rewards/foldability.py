@@ -24,6 +24,26 @@ def _ensure_openfold_lightning_compat():
     sys.modules['pytorch_lightning.utilities.seed'] = shim
 
 
+def _ensure_openfold_attention_core_compat():
+    if 'attn_core_inplace_cuda' in sys.modules:
+        return
+    shim = types.ModuleType('attn_core_inplace_cuda')
+
+    def forward_(attention_logits, rows, cols):
+        del rows, cols
+        attention_logits.copy_(torch.softmax(attention_logits, dim=-1))
+
+    def backward_(*args, **kwargs):
+        raise RuntimeError(
+            'attn_core_inplace_cuda backward is unavailable in the ProGen2 foldability shim; '
+            'this path is intended for no-grad ESMFold inference only'
+        )
+
+    shim.forward_ = forward_
+    shim.backward_ = backward_
+    sys.modules['attn_core_inplace_cuda'] = shim
+
+
 class ESMFoldFoldabilityScorer:
     def __init__(self, device='cpu', batch_size=1):
         try:
@@ -31,6 +51,7 @@ class ESMFoldFoldabilityScorer:
         except ImportError as exc:
             raise ImportError('esm is required for ESMFold foldability scoring') from exc
         _ensure_openfold_lightning_compat()
+        _ensure_openfold_attention_core_compat()
         try:
             import openfold  # noqa: F401
         except ImportError as exc:
