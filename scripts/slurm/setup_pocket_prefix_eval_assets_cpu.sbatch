@@ -46,7 +46,7 @@ conda activate "${EVAL_CONDA_PREFIX}"
 export PYTHONNOUSERSITE=1
 
 python -m pip install --upgrade pip
-python -m pip install vina meeko pdb2pqr git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3
+python -m pip install vina meeko pdb2pqr gemmi git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3
 python -m pip install --ignore-installed --no-user gdown
 
 if ! python -c "import gdown; print(gdown.__file__)" >/dev/null 2>&1; then
