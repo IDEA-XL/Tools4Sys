@@ -1,6 +1,27 @@
+import sys
+import types
+
 import torch
 
 from progen2.rewards.common import iter_chunks, release_model, validate_batch_size
+
+
+def _ensure_openfold_lightning_compat():
+    try:
+        from pytorch_lightning.utilities.seed import seed_everything  # noqa: F401
+        return
+    except ImportError:
+        pass
+    try:
+        from lightning_fabric.utilities.seed import seed_everything as lf_seed_everything
+    except ImportError as exc:
+        raise RuntimeError(
+            'ESMFold foldability scoring requires a seed_everything implementation from either '
+            'pytorch_lightning.utilities.seed or lightning_fabric.utilities.seed'
+        ) from exc
+    shim = types.ModuleType('pytorch_lightning.utilities.seed')
+    shim.seed_everything = lf_seed_everything
+    sys.modules['pytorch_lightning.utilities.seed'] = shim
 
 
 class ESMFoldFoldabilityScorer:
@@ -9,6 +30,7 @@ class ESMFoldFoldabilityScorer:
             import esm
         except ImportError as exc:
             raise ImportError('esm is required for ESMFold foldability scoring') from exc
+        _ensure_openfold_lightning_compat()
         try:
             import openfold  # noqa: F401
         except ImportError as exc:
