@@ -42,17 +42,19 @@ if [[ ! -d "${EVAL_CONDA_PREFIX}" ]]; then
 fi
 
 conda activate "${EVAL_CONDA_PREFIX}"
+export PYTHONNOUSERSITE=1
 
 python -m pip install --upgrade pip
-python -m pip install vina meeko pdb2pqr gdown git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3
+python -m pip install vina meeko pdb2pqr git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3
+python -m pip install --ignore-installed --no-user gdown
 
-if ! command -v gdown >/dev/null 2>&1; then
-  echo "gdown not found after installation in ${EVAL_CONDA_PREFIX}" >&2
+if ! python -c "import gdown; print(gdown.__file__)" >/dev/null 2>&1; then
+  echo "gdown import failed inside ${EVAL_CONDA_PREFIX}" >&2
   exit 1
 fi
 
 if [[ ! -f "${DOWNLOAD_DIR}/test_set.zip" ]]; then
-  gdown --folder "${TEST_SET_FOLDER_URL}" -O "${DOWNLOAD_DIR}"
+  python -m gdown --folder "${TEST_SET_FOLDER_URL}" -O "${DOWNLOAD_DIR}"
 fi
 
 if [[ ! -f "${DOWNLOAD_DIR}/test_set.zip" ]]; then
