@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from progen2.rewards.common import validate_batch_size
+from progen2.rewards.common import iter_chunks, validate_batch_size
 from progen2.rewards.liability import liability_reward
 
 
@@ -108,9 +108,9 @@ class ProteinSolScorer:
             raise ValueError('sequences must be non-empty')
         self._ensure_workspace()
         outputs = []
-        for sequence in sequences:
+        for chunk in iter_chunks(sequences, self.batch_size):
             self._clear_previous_outputs()
-            fasta_path = self._write_fasta([sequence])
+            fasta_path = self._write_fasta(chunk)
             result = subprocess.run(
                 ['bash', 'multiple_prediction_wrapper_export.sh', fasta_path.name],
                 cwd=self._workspace_root,
@@ -124,10 +124,10 @@ class ProteinSolScorer:
                     f'{result.returncode}: stdout={result.stdout!r} stderr={result.stderr!r}'
                 )
             chunk_scores = _parse_scaled_sol_scores(self._workspace_root / 'seq_prediction.txt')
-            if len(chunk_scores) != 1:
+            if len(chunk_scores) != len(chunk):
                 raise RuntimeError(
-                    'Protein-Sol returned a different number of scores than expected for a single input: '
-                    f'{len(chunk_scores)} != 1'
+                    'Protein-Sol returned a different number of scores than inputs for the current chunk: '
+                    f'{len(chunk_scores)} != {len(chunk)}'
                 )
             outputs.extend(chunk_scores)
         return outputs

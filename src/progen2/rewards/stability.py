@@ -155,7 +155,6 @@ class TemBERTureTmScorer:
             return
         for replica in self.replicas:
             replica.release()
-        self.replicas = None
 
     @torch.no_grad()
     def score_raw(self, sequences):
