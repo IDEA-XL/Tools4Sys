@@ -13,7 +13,8 @@ RUN_ROOT=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval
 EVAL_CONDA_PREFIX=${EVAL_CONDA_PREFIX:-${RUN_ROOT}/conda_env}
 DOWNLOAD_DIR=${DOWNLOAD_DIR:-${RUN_ROOT}/downloads}
 TEST_SET_ROOT=${TEST_SET_ROOT:-${RUN_ROOT}/test_set}
-TEST_SET_FOLDER_URL=${TEST_SET_FOLDER_URL:-https://drive.google.com/drive/folders/1j21cc7-97TedKh_El5E34yI8o5ckI7eK}
+TEST_SET_FILE_ID=${TEST_SET_FILE_ID:-1kfDqOxXKVS69VDNbyflSVDlBuR4t5iyW}
+TEST_SET_ZIP_PATH=${TEST_SET_ZIP_PATH:-${DOWNLOAD_DIR}/test_set.zip}
 BASE_ENV_PREFIX=/public/home/xinwuye/miniconda/envs/genmol
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
@@ -53,18 +54,18 @@ if ! python -c "import gdown; print(gdown.__file__)" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "${DOWNLOAD_DIR}/test_set.zip" ]]; then
-  python -m gdown --folder "${TEST_SET_FOLDER_URL}" -O "${DOWNLOAD_DIR}"
+if [[ ! -f "${TEST_SET_ZIP_PATH}" ]]; then
+  python -m gdown "https://drive.google.com/uc?id=${TEST_SET_FILE_ID}" -O "${TEST_SET_ZIP_PATH}"
 fi
 
-if [[ ! -f "${DOWNLOAD_DIR}/test_set.zip" ]]; then
-  echo "Missing downloaded test_set.zip under ${DOWNLOAD_DIR}" >&2
+if [[ ! -f "${TEST_SET_ZIP_PATH}" ]]; then
+  echo "Missing downloaded test_set.zip at ${TEST_SET_ZIP_PATH}" >&2
   find "${DOWNLOAD_DIR}" -maxdepth 2 -type f | sort >&2 || true
   exit 1
 fi
 
 if [[ ! -f "${TEST_SET_ROOT}/.unpacked.ok" ]]; then
-  unzip -q -o "${DOWNLOAD_DIR}/test_set.zip" -d "${TEST_SET_ROOT}"
+  unzip -q -o "${TEST_SET_ZIP_PATH}" -d "${TEST_SET_ROOT}"
   touch "${TEST_SET_ROOT}/.unpacked.ok"
 fi
 
