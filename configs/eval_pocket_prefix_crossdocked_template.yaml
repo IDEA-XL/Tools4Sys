@@ -1,0 +1,19 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_template/pocket_prefix_crossdocked_template.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_template/pocket_prefix_crossdocked_template.json
+output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_template/pocket_prefix_crossdocked_template.rows.jsonl
+seed: 42
+bf16: true
+device: cuda
+manifest_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix/data/gdrive_exact_only/crossdocked_pocket10_pocket_prefix_manifest.pt
+split: test
+num_pockets: null
+generation_batch_size: 1024
+generation_temperature: 1.0
+randomness: 0.3
+min_add_len: 60
+max_completion_length: null
+length_path: null
+experiments:
+  - name: pocket_prefix_model
+    display_name: Pocket Prefix Model
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/REPLACE_WITH_REAL_POCKET_PREFIX_CHECKPOINT/model.ckpt
