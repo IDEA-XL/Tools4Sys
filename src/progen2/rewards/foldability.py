@@ -9,6 +9,13 @@ class ESMFoldFoldabilityScorer:
             import esm
         except ImportError as exc:
             raise ImportError('esm is required for ESMFold foldability scoring') from exc
+        try:
+            import openfold  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                'ESMFold foldability scoring requires the openfold package to be preinstalled '
+                'and importable from the runtime PYTHONPATH before starting ProGen2 SGRPO'
+            ) from exc
 
         self.esm = esm
         self.device = torch.device(device)

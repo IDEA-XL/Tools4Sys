@@ -40,6 +40,7 @@ rewards:
     batch_size: 1
   stability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official
+    base_model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd
     device: cuda
     batch_size: 8
   developability:

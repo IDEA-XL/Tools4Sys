@@ -32,12 +32,37 @@ def _resolve_temberture_root(model_name_or_path):
     )
 
 
+def _resolve_local_protbert_root(model_name_or_path):
+    if not model_name_or_path:
+        raise ValueError(
+            'TemBERTure requires an explicit local ProtBERT directory via '
+            'stability.base_model_name_or_path; remote Hugging Face model IDs are not allowed'
+        )
+    root = Path(model_name_or_path).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f'ProtBERT directory not found: {root}')
+    required_files = [
+        'config.json',
+        'pytorch_model.bin',
+        'vocab.txt',
+        'tokenizer_config.json',
+        'special_tokens_map.json',
+    ]
+    missing = [name for name in required_files if not (root / name).is_file()]
+    if missing:
+        raise ValueError(
+            'ProtBERT directory is incomplete; expected files missing under '
+            f'{root}: {missing}'
+        )
+    return root
+
+
 class _TemBERTureReplica:
-    def __init__(self, replica_dir, *, device, batch_size, base_model_name):
+    def __init__(self, replica_dir, *, device, batch_size, base_model_path):
         self.device = torch.device(device)
         self.batch_size = validate_batch_size(batch_size, field_name='stability.batch_size')
         self.replica_dir = Path(replica_dir).resolve()
-        self.base_model_name = str(base_model_name)
+        self.base_model_path = str(base_model_path)
         if not self.replica_dir.is_dir():
             raise ValueError(f'TemBERTure replica directory not found: {self.replica_dir}')
         adapter_dir = self.replica_dir / 'AdapterBERT_adapter'
@@ -48,7 +73,7 @@ class _TemBERTureReplica:
             raise ValueError(f'TemBERTure head directory not found: {head_dir}')
 
         BertAdapterModel = _import_adapter_model()
-        self.model = BertAdapterModel.from_pretrained(self.base_model_name)
+        self.model = BertAdapterModel.from_pretrained(self.base_model_path)
         self.model.load_adapter(str(adapter_dir), with_head=True)
         self.model.load_head(str(head_dir))
         self.model.set_active_adapters(['AdapterBERT_adapter'])
@@ -58,7 +83,7 @@ class _TemBERTureReplica:
         if hasattr(self.model, 'bert') and hasattr(self.model.bert, 'prompt_tuning'):
             self.model.bert.prompt_tuning = nn.Identity()
         self.model.eval()
-        self.tokenizer = BertTokenizer.from_pretrained(self.base_model_name)
+        self.tokenizer = BertTokenizer.from_pretrained(self.base_model_path)
 
     @torch.no_grad()
     def score_raw(self, sequences):
@@ -91,7 +116,8 @@ class TemBERTureTmScorer:
         tokenizer_name_or_path=None,
         device='cpu',
         batch_size=16,
-        base_model_name='Rostlab/prot_bert_bfd',
+        base_model_name_or_path=None,
+        base_model_name=None,
         replicas=None,
     ):
         if tokenizer_name_or_path is not None:
@@ -101,7 +127,8 @@ class TemBERTureTmScorer:
         self.device = torch.device(device)
         self.batch_size = validate_batch_size(batch_size, field_name='stability.batch_size')
         self.root_dir = _resolve_temberture_root(model_name_or_path)
-        self.base_model_name = str(base_model_name)
+        base_model_root = base_model_name_or_path if base_model_name_or_path is not None else base_model_name
+        self.base_model_path = _resolve_local_protbert_root(base_model_root)
         self.replica_names = list(replicas or ['replica1', 'replica2', 'replica3'])
         if not self.replica_names:
             raise ValueError('TemBERTure replicas must be non-empty')
@@ -118,7 +145,7 @@ class TemBERTureTmScorer:
                     replica_dir,
                     device=self.device,
                     batch_size=self.batch_size,
-                    base_model_name=self.base_model_name,
+                    base_model_path=self.base_model_path,
                 )
             )
         self.replicas = loaded

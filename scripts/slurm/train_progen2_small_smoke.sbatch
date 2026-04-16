@@ -14,6 +14,7 @@ set -euo pipefail
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/genmol/configs/progen2_sgrpo_small_smoke.yaml}
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
+PROTBERT_DIR=${PROTBERT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
 export WANDB_PROJECT="${WANDB_PROJECT:-genmol}"
@@ -42,6 +43,20 @@ export HTTPS_PROXY=${https_proxy}
 
 if [[ ! -d "${PYTHON_OVERLAY_DIR}" ]]; then
   echo "Missing ProGen2 python overlay: ${PYTHON_OVERLAY_DIR}" >&2
+  exit 1
+fi
+if [[ ! -d "${PROTBERT_DIR}" ]]; then
+  echo "Missing preprovisioned ProtBERT directory: ${PROTBERT_DIR}" >&2
+  exit 1
+fi
+for required_file in config.json pytorch_model.bin vocab.txt tokenizer_config.json special_tokens_map.json; do
+  if [[ ! -f "${PROTBERT_DIR}/${required_file}" ]]; then
+    echo "Incomplete ProtBERT directory: missing ${PROTBERT_DIR}/${required_file}" >&2
+    exit 1
+  fi
+done
+if [[ ! -d "${PYTHON_OVERLAY_DIR}/openfold" ]]; then
+  echo "Missing preprovisioned openfold package under overlay: ${PYTHON_OVERLAY_DIR}/openfold" >&2
   exit 1
 fi
 

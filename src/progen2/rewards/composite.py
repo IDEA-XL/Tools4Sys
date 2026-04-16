@@ -46,6 +46,7 @@ class CompositeProteinReward:
             tokenizer_name_or_path=stability_cfg.get('tokenizer_name_or_path'),
             device=stability_cfg.get('device', self.device),
             batch_size=stability_cfg.get('batch_size', 16),
+            base_model_name_or_path=stability_cfg.get('base_model_name_or_path'),
         )
         self.developability = ProteinSolScorer(
             model_name_or_path=str(developability_cfg['model_name_or_path']),
