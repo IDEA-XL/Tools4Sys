@@ -245,38 +245,23 @@ def iter_crossdocked_entries(lmdb_path):
     env = _open_lmdb(lmdb_path)
     try:
         with env.begin(write=False) as txn:
-            num_examples_raw = txn.get(b'num_examples')
-            if num_examples_raw is not None:
-                num_examples = int(num_examples_raw.decode('utf-8'))
-                for index in range(num_examples):
-                    payload = txn.get(str(index).encode('utf-8'))
-                    if payload is None:
-                        raise ValueError(f'CrossDocked LMDB is missing entry index {index}')
-                    yield index, pickle.loads(payload)
-                return
-
             cursor = txn.cursor()
             found_numeric_key = False
+            dataset_index = 0
             for raw_key, payload in cursor:
                 try:
                     decoded_key = raw_key.decode('utf-8')
                 except UnicodeDecodeError as exc:
-                    raise ValueError(
-                        'CrossDocked LMDB is missing num_examples and contains a non-UTF8 key: '
-                        f'{raw_key!r}'
-                    ) from exc
+                    raise ValueError(f'CrossDocked LMDB contains a non-UTF8 key: {raw_key!r}') from exc
+                if decoded_key == 'num_examples':
+                    continue
                 if not decoded_key.isdigit():
-                    raise ValueError(
-                        'CrossDocked LMDB is missing num_examples and contains a non-numeric key: '
-                        f'{decoded_key!r}'
-                    )
+                    raise ValueError(f'CrossDocked LMDB contains a non-numeric sample key: {decoded_key!r}')
                 found_numeric_key = True
-                yield int(decoded_key), pickle.loads(payload)
+                yield dataset_index, int(decoded_key), pickle.loads(payload)
+                dataset_index += 1
             if not found_numeric_key:
-                raise ValueError(
-                    'CrossDocked LMDB contains no numeric sample keys and no num_examples metadata: '
-                    f'{lmdb_path}'
-                )
+                raise ValueError(f'CrossDocked LMDB contains no numeric sample keys: {lmdb_path}')
     finally:
         env.close()
 
@@ -290,19 +275,20 @@ def build_crossdocked_manifest(lmdb_path, split_path, max_total_positions):
     dropped_malformed_pocket_samples = 0
     dropped_safe_conversion_samples = 0
 
-    for source_index, raw_entry in iter_crossdocked_entries(lmdb_path):
+    for dataset_index, lmdb_key, raw_entry in iter_crossdocked_entries(lmdb_path):
         total_samples_scanned += 1
-        split = split_map.get(source_index)
+        split = split_map.get(dataset_index)
         if split is None:
             dropped_unassigned_split_samples += 1
             continue
         try:
             manifest_entry = build_manifest_entry(
                 entry=raw_entry,
-                source_index=source_index,
+                source_index=dataset_index,
                 split=split,
                 max_total_positions=max_total_positions,
             )
+            manifest_entry['lmdb_key'] = int(lmdb_key)
         except ImportError:
             raise
         except Exception as exc:

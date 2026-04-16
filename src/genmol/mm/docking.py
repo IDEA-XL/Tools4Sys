@@ -56,45 +56,46 @@ def summarize_docking_records(records):
     if len(modes) != 1:
         raise ValueError(f'Expected a single docking mode per summary, got {sorted(modes)}')
     mode = next(iter(modes))
+    successful_records = [record for record in records if record.is_success]
     summary = {
         'docking_mode': mode,
         'docking_success_fraction': float(sum(1.0 if record.is_success else 0.0 for record in records) / len(records)),
-        'num_docked': int(sum(1 for record in records if record.is_success)),
+        'num_docked': int(len(successful_records)),
     }
     if mode == 'qvina':
-        scores = [record.dock_affinity for record in records]
+        scores = [record.dock_affinity for record in successful_records]
         if any(score is None for score in scores):
             raise ValueError('qvina records must populate dock_affinity')
         summary.update(
             {
-                'qvina_mean': float(sum(float(score) for score in scores) / len(scores)),
-                'qvina_median': _median(scores),
+                'qvina_mean': float('nan') if not scores else float(sum(float(score) for score in scores) / len(scores)),
+                'qvina_median': float('nan') if not scores else _median(scores),
             }
         )
         return summary
 
-    score_only = [record.score_only_affinity for record in records]
-    minimize = [record.minimize_affinity for record in records]
+    score_only = [record.score_only_affinity for record in successful_records]
+    minimize = [record.minimize_affinity for record in successful_records]
     if any(score is None for score in score_only):
         raise ValueError(f'{mode} records must populate score_only_affinity')
     if any(score is None for score in minimize):
         raise ValueError(f'{mode} records must populate minimize_affinity')
     summary.update(
         {
-            'vina_score_mean': float(sum(float(score) for score in score_only) / len(score_only)),
-            'vina_score_median': _median(score_only),
-            'vina_min_mean': float(sum(float(score) for score in minimize) / len(minimize)),
-            'vina_min_median': _median(minimize),
+            'vina_score_mean': float('nan') if not score_only else float(sum(float(score) for score in score_only) / len(score_only)),
+            'vina_score_median': float('nan') if not score_only else _median(score_only),
+            'vina_min_mean': float('nan') if not minimize else float(sum(float(score) for score in minimize) / len(minimize)),
+            'vina_min_median': float('nan') if not minimize else _median(minimize),
         }
     )
     if mode == 'vina_dock':
-        dock = [record.dock_affinity for record in records]
+        dock = [record.dock_affinity for record in successful_records]
         if any(score is None for score in dock):
             raise ValueError('vina_dock records must populate dock_affinity')
         summary.update(
             {
-                'vina_dock_mean': float(sum(float(score) for score in dock) / len(dock)),
-                'vina_dock_median': _median(dock),
+                'vina_dock_mean': float('nan') if not dock else float(sum(float(score) for score in dock) / len(dock)),
+                'vina_dock_median': float('nan') if not dock else _median(dock),
             }
         )
     return summary

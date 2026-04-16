@@ -242,7 +242,8 @@ def _build_markdown(config, results):
             'Column notes:',
             '- Docking runs on one generated molecule per selected pocket.',
             '- Receptors are resolved with the same rule as TargetDiff: `dirname(ligand_filename) / (basename(ligand_filename)[:10] + ".pdb")` under `crossdocked_root`.',
-            '- `Docking Success` is the fraction of samples whose docking run completed and returned the expected affinity fields. Failures are scored as `99.9` in the aggregated affinity metrics.',
+            '- `Docking Success` is the fraction of samples whose docking run completed and returned the expected affinity fields.',
+            '- Docking affinity means and medians are computed over successful dockings only, matching the official TargetDiff evaluation semantics.',
             '- Docking boxes follow the TargetDiff implementation: center and box size are derived from the generated ligand conformer, not from the native ligand geometry.',
             '- `Official Validity`, `Official Uniqueness`, `Official Quality`, and `Official Diversity` match the implementations used in the official GenMol de novo / fragment-constrained scripts.',
             '- `Official Quality` is the fraction of generated outputs that are valid, unique, satisfy `QED >= 0.6`, and satisfy `SA <= 4`.',
@@ -288,6 +289,15 @@ def evaluate_experiment(config, experiment, device, selected_entries, specs, eva
             **official_metrics,
             **reward_metrics,
         }
+        if docking_metrics is not None and float(docking_metrics['docking_success_fraction']) <= 0.0:
+            first_error = next(
+                (row.get('docking_error') for row in rows if row.get('docking_error')),
+                'unknown docking failure',
+            )
+            raise RuntimeError(
+                'Docking evaluation produced zero successful dockings; the current manifest split and '
+                f'crossdocked_root are not aligned for docking. First docking error: {first_error}'
+            )
         return summary, rows
     finally:
         del policy
