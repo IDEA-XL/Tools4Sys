@@ -2,6 +2,7 @@ import math
 import random
 from dataclasses import asdict
 
+from genmol.mm.docking import summarize_docking_records
 from genmol.rl.reward import MolecularReward
 
 
@@ -97,49 +98,80 @@ def select_manifest_entries(entries, num_pockets, seed):
     return rng.sample(list(entries), num_pockets)
 
 
-def build_rows(entries, specs, rollout, reward_records):
+def build_rows(entries, specs, rollout, reward_records, docking_records=None):
     if not (len(entries) == len(specs) == len(rollout.safe_strings) == len(rollout.smiles) == len(reward_records)):
         raise ValueError(
             'Row payload lengths must match: '
             f'entries={len(entries)} specs={len(specs)} safe={len(rollout.safe_strings)} '
             f'smiles={len(rollout.smiles)} records={len(reward_records)}'
         )
+    if docking_records is not None and len(docking_records) != len(entries):
+        raise ValueError(f'docking_records length mismatch: {len(docking_records)} vs {len(entries)}')
 
     rows = []
-    for entry, spec, safe_string, smiles, record in zip(entries, specs, rollout.safe_strings, rollout.smiles, reward_records):
-        rows.append(
-            {
-                'source_index': int(entry['source_index']),
-                'split': entry['split'],
-                'protein_filename': entry.get('protein_filename'),
-                'ligand_filename': entry.get('ligand_filename'),
-                'residue_count': int(entry['residue_count']),
-                'ligand_smiles': entry.get('ligand_smiles'),
-                'spec': asdict(spec),
-                'safe': safe_string,
-                'smiles': smiles,
-                'reward': float(record.reward),
-                'is_valid': bool(record.is_valid),
-                'alert_hit': bool(record.alert_hit),
-                'qed': record.qed,
-                'sa': record.sa,
-                'sa_score': record.sa_score,
-                'soft_reward': record.soft_reward,
-            }
-        )
+    for row_idx, (entry, spec, safe_string, smiles, record) in enumerate(
+        zip(entries, specs, rollout.safe_strings, rollout.smiles, reward_records)
+    ):
+        row = {
+            'source_index': int(entry['source_index']),
+            'split': entry['split'],
+            'protein_filename': entry.get('protein_filename'),
+            'ligand_filename': entry.get('ligand_filename'),
+            'residue_count': int(entry['residue_count']),
+            'ligand_smiles': entry.get('ligand_smiles'),
+            'spec': asdict(spec),
+            'safe': safe_string,
+            'smiles': smiles,
+            'reward': float(record.reward),
+            'is_valid': bool(record.is_valid),
+            'alert_hit': bool(record.alert_hit),
+            'qed': record.qed,
+            'sa': record.sa,
+            'sa_score': record.sa_score,
+            'soft_reward': record.soft_reward,
+        }
+        if docking_records is not None:
+            docking_record = docking_records[row_idx]
+            row.update(
+                {
+                    'docking_score': float(docking_record.score),
+                    'docking_is_success': bool(docking_record.is_success),
+                    'docking_error': docking_record.error,
+                    'receptor_pdb_path': docking_record.receptor_pdb_path,
+                    'receptor_pdbqt_path': docking_record.receptor_pdbqt_path,
+                    'native_ligand_path': docking_record.native_ligand_path,
+                    'docking_center_x': float(docking_record.center_x),
+                    'docking_center_y': float(docking_record.center_y),
+                    'docking_center_z': float(docking_record.center_z),
+                    'docking_size_x': float(docking_record.size_x),
+                    'docking_size_y': float(docking_record.size_y),
+                    'docking_size_z': float(docking_record.size_z),
+                }
+            )
+        rows.append(row)
     return rows
 
 
 class PocketPrefixEvaluationKernel:
-    def __init__(self, metric_suite=None, reward_model=None):
+    def __init__(self, metric_suite=None, reward_model=None, docking_model=None):
         self.metric_suite = OfficialMoleculeMetricSuite() if metric_suite is None else metric_suite
         self.reward_model = MolecularReward() if reward_model is None else reward_model
+        self.docking_model = docking_model
 
     def close(self):
         self.reward_model.close()
+        if self.docking_model is not None:
+            self.docking_model.close()
 
-    def summarize(self, smiles_list):
+    def summarize(self, smiles_list, entries=None):
         official_metrics = self.metric_suite.summarize(smiles_list)
         reward_records = self.reward_model.score(smiles_list)
         reward_metrics = summarize_reward_records(reward_records)
-        return official_metrics, reward_metrics, reward_records
+        docking_metrics = None
+        docking_records = None
+        if self.docking_model is not None:
+            if entries is None:
+                raise ValueError('entries must be provided when docking_model is enabled')
+            docking_records = self.docking_model.score(entries=entries, smiles_list=smiles_list)
+            docking_metrics = summarize_docking_records(docking_records)
+        return official_metrics, reward_metrics, reward_records, docking_metrics, docking_records

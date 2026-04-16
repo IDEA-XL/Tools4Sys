@@ -13,6 +13,7 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from genmol.mm.crossdocked import load_crossdocked_manifest
+from genmol.mm.docking import CrossDockedDockingEvaluator
 from genmol.mm.evaluation import PocketPrefixEvaluationKernel, build_rows, select_manifest_entries
 from genmol.mm.policy import PocketPrefixCpGRPOPolicy
 from genmol.rl.specs import sample_group_specs
@@ -46,6 +47,16 @@ class EvalConfig:
     min_add_len: int = 60
     max_completion_length: int | None = None
     length_path: str | None = None
+    crossdocked_root: str = ''
+    qvina_path: str = os.path.join(os.path.realpath('.'), 'scripts', 'exps', 'lead', 'docking', 'qvina02')
+    docking_cache_dir: str | None = None
+    docking_exhaustiveness: int = 1
+    docking_num_cpu: int = 5
+    docking_num_modes: int = 10
+    docking_timeout_gen3d: int = 30
+    docking_timeout_dock: int = 100
+    docking_box_padding: float = 8.0
+    docking_min_box_size: float = 18.0
     experiments: list[EvalExperimentConfig] | None = None
 
 
@@ -92,6 +103,22 @@ def load_config(path):
         raise ValueError('randomness must be positive')
     if config.min_add_len <= 0:
         raise ValueError('min_add_len must be positive')
+    if not config.crossdocked_root:
+        raise ValueError('crossdocked_root is required for docking evaluation')
+    if not os.path.isdir(config.crossdocked_root):
+        raise NotADirectoryError(f'crossdocked_root is not a directory: {config.crossdocked_root}')
+    if not os.path.exists(config.qvina_path):
+        raise FileNotFoundError(f'qvina_path not found: {config.qvina_path}')
+    if config.docking_exhaustiveness <= 0:
+        raise ValueError('docking_exhaustiveness must be positive')
+    if config.docking_num_cpu <= 0:
+        raise ValueError('docking_num_cpu must be positive')
+    if config.docking_num_modes <= 0:
+        raise ValueError('docking_num_modes must be positive')
+    if config.docking_box_padding <= 0:
+        raise ValueError('docking_box_padding must be positive')
+    if config.docking_min_box_size <= 0:
+        raise ValueError('docking_min_box_size must be positive')
     if config.experiments is None or not config.experiments:
         raise ValueError('experiments must be non-empty')
     for experiment in config.experiments:
@@ -124,9 +151,13 @@ def _build_markdown(config, results):
         f'- `randomness`: `{config.randomness}`',
         f'- `min_add_len`: `{config.min_add_len}`',
         f'- `max_completion_length`: `{config.max_completion_length}`',
+        f'- `crossdocked_root`: `{config.crossdocked_root}`',
+        f'- `qvina_path`: `{config.qvina_path}`',
+        f'- `docking_box_padding`: `{config.docking_box_padding}`',
+        f'- `docking_min_box_size`: `{config.docking_min_box_size}`',
         '',
-        '| Model | Samples | Official Validity | Official Uniqueness | Official Quality | Official Diversity | QED | SA | Reward Mean | Alert Hit Rate | SA Score | Soft Reward |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        '| Model | Samples | Docking Mean | Docking Median | Docking Success | Official Validity | Official Uniqueness | Official Quality | Official Diversity | QED | SA | Reward Mean | Alert Hit Rate | SA Score | Soft Reward |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ]
     for row in results:
         lines.append(
@@ -135,6 +166,9 @@ def _build_markdown(config, results):
                 [
                     row['display_name'],
                     str(int(row['num_samples'])),
+                    _format_metric(row['docking_score_mean']),
+                    _format_metric(row['docking_score_median']),
+                    _format_metric(row['docking_success_fraction']),
                     _format_metric(row['official_validity']),
                     _format_metric(row['official_uniqueness']),
                     _format_metric(row['official_quality']),
@@ -153,13 +187,16 @@ def _build_markdown(config, results):
         [
             '',
             'Column notes:',
+            '- `Docking Mean` and `Docking Median` are qvina scores over one generated molecule per selected pocket. Failures are scored as `99.9`, matching the existing lead-optimization docking implementation in this repo.',
+            '- `Docking Success` is the fraction of samples whose qvina run completed and returned at least one affinity.',
+            '- Docking boxes are derived from the native ligand SDF for each CrossDocked pair. This is an implementation assumption for the CrossDocked pocket-conditioned setting because the repo does not ship a pre-existing per-pocket docking box implementation.',
             '- `Official Validity`, `Official Uniqueness`, `Official Quality`, and `Official Diversity` match the implementations used in the official GenMol de novo / fragment-constrained scripts.',
             '- `Official Quality` is the fraction of generated outputs that are valid, unique, satisfy `QED >= 0.6`, and satisfy `SA <= 4`.',
             '- `QED` and `SA` are the means over the unique valid set used by the official metric computation.',
             '- `Reward Mean`, `Alert Hit Rate`, `SA Score`, and `Soft Reward` are auxiliary diagnostics from the current training reward implementation.',
             '',
         ]
-    )
+        )
     return '\n'.join(lines)
 
 
@@ -182,14 +219,18 @@ def evaluate_experiment(config, experiment, device, selected_entries, specs, eva
             generation_batch_size=min(config.generation_batch_size, len(selected_entries)),
             seed=config.seed,
         )
-        official_metrics, reward_metrics, reward_records = evaluation_kernel.summarize(rollout.smiles)
-        rows = build_rows(selected_entries, specs, rollout, reward_records)
+        official_metrics, reward_metrics, reward_records, docking_metrics, docking_records = evaluation_kernel.summarize(
+            rollout.smiles,
+            entries=selected_entries,
+        )
+        rows = build_rows(selected_entries, specs, rollout, reward_records, docking_records=docking_records)
         summary = {
             'experiment': experiment.name,
             'display_name': _display_name(experiment),
             'checkpoint_path': experiment.checkpoint_path,
             'split': config.split,
             'num_samples': len(rows),
+            **(docking_metrics or {}),
             **official_metrics,
             **reward_metrics,
         }
@@ -221,7 +262,25 @@ def main():
         length_path=config.length_path,
     )
 
-    evaluation_kernel = PocketPrefixEvaluationKernel()
+    docking_cache_dir = config.docking_cache_dir
+    if docking_cache_dir is None:
+        json_root, _ = os.path.splitext(config.output_json_path)
+        docking_cache_dir = json_root + '.docking_cache'
+
+    evaluation_kernel = PocketPrefixEvaluationKernel(
+        docking_model=CrossDockedDockingEvaluator(
+            crossdocked_root=config.crossdocked_root,
+            qvina_path=config.qvina_path,
+            cache_dir=docking_cache_dir,
+            exhaustiveness=config.docking_exhaustiveness,
+            num_cpu_dock=config.docking_num_cpu,
+            num_modes=config.docking_num_modes,
+            timeout_gen3d=config.docking_timeout_gen3d,
+            timeout_dock=config.docking_timeout_dock,
+            box_padding=config.docking_box_padding,
+            min_box_size=config.docking_min_box_size,
+        )
+    )
     try:
         results = []
         all_rows = []

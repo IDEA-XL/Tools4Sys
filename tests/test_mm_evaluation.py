@@ -1,3 +1,4 @@
+from genmol.mm.docking import DockingRecord, summarize_docking_records
 from genmol.mm.evaluation import OfficialMoleculeMetricSuite, order_preserving_unique, select_manifest_entries
 
 
@@ -41,3 +42,41 @@ def test_official_molecule_metric_suite_matches_expected_denovo_logic():
     assert summary['official_diversity'] == 0.25
     assert summary['official_qed_mean'] == 0.6
     assert summary['official_sa_mean'] == 4.0
+
+
+def test_summarize_docking_records_uses_repo_failure_sentinel():
+    records = [
+        DockingRecord(
+            score=-8.5,
+            is_success=True,
+            error=None,
+            receptor_pdb_path='rec_a.pdb',
+            receptor_pdbqt_path='rec_a.pdbqt',
+            native_ligand_path='lig_a.sdf',
+            center_x=1.0,
+            center_y=2.0,
+            center_z=3.0,
+            size_x=18.0,
+            size_y=19.0,
+            size_z=20.0,
+        ),
+        DockingRecord(
+            score=99.9,
+            is_success=False,
+            error='dock failed',
+            receptor_pdb_path='rec_b.pdb',
+            receptor_pdbqt_path='rec_b.pdbqt',
+            native_ligand_path='lig_b.sdf',
+            center_x=1.0,
+            center_y=2.0,
+            center_z=3.0,
+            size_x=18.0,
+            size_y=19.0,
+            size_z=20.0,
+        ),
+    ]
+    summary = summarize_docking_records(records)
+    assert summary['num_docked'] == 1
+    assert summary['docking_success_fraction'] == 0.5
+    assert summary['docking_score_mean'] == 45.7
+    assert summary['docking_score_median'] == 45.7
