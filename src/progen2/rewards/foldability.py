@@ -24,6 +24,21 @@ def _ensure_openfold_lightning_compat():
     sys.modules['pytorch_lightning.utilities.seed'] = shim
 
 
+def _ensure_openfold_deepspeed_compat():
+    try:
+        import deepspeed
+    except ImportError:
+        return
+    if hasattr(deepspeed.utils, 'is_initialized'):
+        return
+    if not hasattr(deepspeed, 'comm') or not hasattr(deepspeed.comm, 'is_initialized'):
+        raise RuntimeError(
+            'OpenFold compatibility requires deepspeed.comm.is_initialized when '
+            'deepspeed.utils.is_initialized is unavailable'
+        )
+    deepspeed.utils.is_initialized = deepspeed.comm.is_initialized
+
+
 def _ensure_openfold_attention_core_compat():
     if 'attn_core_inplace_cuda' in sys.modules:
         return
@@ -51,6 +66,7 @@ class ESMFoldFoldabilityScorer:
         except ImportError as exc:
             raise ImportError('esm is required for ESMFold foldability scoring') from exc
         _ensure_openfold_lightning_compat()
+        _ensure_openfold_deepspeed_compat()
         _ensure_openfold_attention_core_compat()
         try:
             import openfold  # noqa: F401
