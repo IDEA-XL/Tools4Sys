@@ -21,7 +21,7 @@ if [[ -z "${WANDB_API_KEY:-}" ]] && [[ ! -f "${HOME}/.netrc" ]]; then
 fi
 
 export WANDB_PROJECT="${WANDB_PROJECT:-genmol}"
-export WANDB_NAME="${WANDB_NAME:-pocket-prefix-supervised-8gpu}"
+export WANDB_NAME="${WANDB_NAME:-pocket-prefix-supervised-8gpu-bs384}"
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol

@@ -10,10 +10,10 @@ defaults:
 
 wandb:
   project: genmol
-  name: ${oc.env:WANDB_NAME,pocket-prefix-supervised-8gpu}
+  name: ${oc.env:WANDB_NAME,pocket-prefix-supervised-8gpu-bs384}
 
 loader:
-  batch_size: ${oc.env:PER_DEVICE_BATCH_SIZE,32}
+  batch_size: ${oc.env:PER_DEVICE_BATCH_SIZE,384}
   global_batch_size: ${eval:${.batch_size} * ${trainer.devices} * ${trainer.num_nodes}}
   num_workers: ${oc.env:NUM_WORKERS,8}
   pin_memory: True
@@ -39,3 +39,8 @@ callback:
   auto_insert_metric_name: False
   enable_version_counter: False
   every_n_train_steps: 500
+
+memory_monitor:
+  _target_: genmol.mm.monitor.CUDAMemoryMonitor
+  enabled: True
+  enforce_max_reserved_ratio: null
