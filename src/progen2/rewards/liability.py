@@ -1,6 +1,8 @@
 import math
 from collections import Counter
 
+from progen2.rewards.common import validate_protein_sequence
+
 
 HYDROPHOBIC_RESIDUES = frozenset({'A', 'V', 'I', 'L', 'M', 'F', 'W', 'Y'})
 KYTE_DOOLITTLE = {
@@ -29,20 +31,8 @@ KYTE_DOOLITTLE = {
 
 def _clip01(value):
     return max(0.0, min(1.0, float(value)))
-
-
-def _validate_sequence(sequence):
-    sequence = str(sequence).strip().upper()
-    if not sequence:
-        raise ValueError('protein sequence must be non-empty')
-    invalid = sorted(set(sequence) - set(KYTE_DOOLITTLE))
-    if invalid:
-        raise ValueError(f'protein sequence contains unsupported residues: {invalid}')
-    return sequence
-
-
 def tm_like_indicator(sequence):
-    sequence = _validate_sequence(sequence)
+    sequence = validate_protein_sequence(sequence)
     if len(sequence) < 19:
         return 0.0
     scores = []
@@ -54,7 +44,7 @@ def tm_like_indicator(sequence):
 
 
 def low_complexity_indicator(sequence):
-    sequence = _validate_sequence(sequence)
+    sequence = validate_protein_sequence(sequence)
     counts = Counter(sequence)
     total = float(len(sequence))
     entropy = 0.0
@@ -66,7 +56,7 @@ def low_complexity_indicator(sequence):
 
 
 def hydrophobic_run_indicator(sequence):
-    sequence = _validate_sequence(sequence)
+    sequence = validate_protein_sequence(sequence)
     longest = 0
     current = 0
     for residue in sequence:
@@ -79,7 +69,7 @@ def hydrophobic_run_indicator(sequence):
 
 
 def cys_outlier_indicator(sequence):
-    sequence = _validate_sequence(sequence)
+    sequence = validate_protein_sequence(sequence)
     cys_fraction = sequence.count('C') / float(len(sequence))
     return _clip01((cys_fraction - 0.05) / (0.12 - 0.05))
 

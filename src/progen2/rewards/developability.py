@@ -34,6 +34,25 @@ def _parse_scaled_sol_scores(prediction_path):
     return rows
 
 
+def score_developability_components(proteinsol_scores, sequences):
+    if len(proteinsol_scores) != len(sequences):
+        raise ValueError('proteinsol_scores length must match sequences length')
+    solubility = []
+    liability = []
+    developability = []
+    for raw_score, sequence in zip(proteinsol_scores, sequences):
+        sol = max(0.0, min(1.0, float(raw_score)))
+        liab = float(liability_reward(sequence))
+        solubility.append(sol)
+        liability.append(liab)
+        developability.append(0.8 * sol + 0.2 * liab)
+    return {
+        'solubility': solubility,
+        'liability_reward': liability,
+        'developability': developability,
+    }
+
+
 class ProteinSolScorer:
     def __init__(self, model_name_or_path, tokenizer_name_or_path=None, device='cpu', batch_size=16):
         if tokenizer_name_or_path is not None:
@@ -115,11 +134,4 @@ class ProteinSolScorer:
 
 
 def developability_reward(proteinsol_scores, sequences):
-    if len(proteinsol_scores) != len(sequences):
-        raise ValueError('proteinsol_scores length must match sequences length')
-    outputs = []
-    for raw_score, sequence in zip(proteinsol_scores, sequences):
-        sol = max(0.0, min(1.0, float(raw_score)))
-        liab = float(liability_reward(sequence))
-        outputs.append(0.8 * sol + 0.2 * liab)
-    return outputs
+    return score_developability_components(proteinsol_scores, sequences)['developability']

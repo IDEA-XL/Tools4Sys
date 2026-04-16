@@ -1,6 +1,6 @@
 import torch
 
-from progen2.rewards.developability import ProteinSolScorer, developability_reward
+from progen2.rewards.developability import ProteinSolScorer, score_developability_components
 from progen2.rewards.foldability import ESMFoldFoldabilityScorer
 from progen2.rewards.naturalness import ESM2NaturalnessScorer
 from progen2.rewards.stability import TemBERTureTmScorer
@@ -72,6 +72,10 @@ class CompositeProteinReward:
         return dict(self.calibration)
 
     def score(self, sequences):
+        details, metrics = self.score_details(sequences)
+        return details['total'], metrics
+
+    def score_details(self, sequences):
         if self.calibration is None:
             raise RuntimeError('CompositeProteinReward.calibrate must be called before score')
         nat_raw = self.naturalness.score_raw(sequences)
@@ -93,7 +97,8 @@ class CompositeProteinReward:
             self.calibration['stability_q10'],
             self.calibration['stability_q90'],
         )
-        dev = developability_reward(dev_raw, sequences)
+        developability_components = score_developability_components(dev_raw, sequences)
+        dev = developability_components['developability']
 
         total = []
         for idx in range(len(sequences)):
@@ -104,11 +109,24 @@ class CompositeProteinReward:
                 + 0.25 * dev[idx]
             )
 
+        details = {
+            'naturalness_raw': nat_raw,
+            'naturalness': nat,
+            'foldability': fold,
+            'stability_raw': stab_raw,
+            'stability': stab,
+            'solubility': developability_components['solubility'],
+            'liability_reward': developability_components['liability_reward'],
+            'developability': dev,
+            'total': total,
+        }
         metrics = {
             'reward_nat_mean': float(torch.tensor(nat, dtype=torch.float32).mean().item()),
             'reward_fold_mean': float(torch.tensor(fold, dtype=torch.float32).mean().item()),
             'reward_stab_mean': float(torch.tensor(stab, dtype=torch.float32).mean().item()),
             'reward_dev_mean': float(torch.tensor(dev, dtype=torch.float32).mean().item()),
+            'reward_sol_mean': float(torch.tensor(developability_components['solubility'], dtype=torch.float32).mean().item()),
+            'reward_liability_mean': float(torch.tensor(developability_components['liability_reward'], dtype=torch.float32).mean().item()),
             'reward_total_mean': float(torch.tensor(total, dtype=torch.float32).mean().item()),
         }
-        return total, metrics
+        return details, metrics

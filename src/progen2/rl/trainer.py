@@ -216,6 +216,8 @@ class ProGen2SGRPOTrainer:
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
         self.global_step = 0
+        self._cuda_run_max_reserved = 0
+        self._cuda_run_max_allocated = 0
 
         if config.report_to:
             init_kwargs = {}
@@ -373,6 +375,8 @@ class ProGen2SGRPOTrainer:
 
         for step_idx in range(self.config.max_steps):
             logger.info('Starting train step %d/%d', step_idx + 1, self.config.max_steps)
+            if self.device.type == 'cuda':
+                torch.cuda.reset_peak_memory_stats(self.device)
             prompts = self._next_prompt_batch()
             rollout = self.policy.generate_rollouts(
                 prompts,
@@ -437,6 +441,24 @@ class ProGen2SGRPOTrainer:
                 **{key: float(value) for key, value in advantage_metrics.items()},
                 **{key: float(value.item() if hasattr(value, 'item') else value) for key, value in loss_metrics.items()},
             }
+            if self.device.type == 'cuda':
+                total_memory = float(torch.cuda.get_device_properties(self.device).total_memory)
+                step_peak_reserved = int(torch.cuda.max_memory_reserved(self.device))
+                step_peak_allocated = int(torch.cuda.max_memory_allocated(self.device))
+                self._cuda_run_max_reserved = max(self._cuda_run_max_reserved, step_peak_reserved)
+                self._cuda_run_max_allocated = max(self._cuda_run_max_allocated, step_peak_allocated)
+                metrics.update(
+                    {
+                        'cuda_step_max_reserved_gib': float(step_peak_reserved / (1024 ** 3)),
+                        'cuda_step_max_reserved_ratio': float(step_peak_reserved / total_memory),
+                        'cuda_step_max_allocated_gib': float(step_peak_allocated / (1024 ** 3)),
+                        'cuda_step_max_allocated_ratio': float(step_peak_allocated / total_memory),
+                        'cuda_run_max_reserved_gib': float(self._cuda_run_max_reserved / (1024 ** 3)),
+                        'cuda_run_max_reserved_ratio': float(self._cuda_run_max_reserved / total_memory),
+                        'cuda_run_max_allocated_gib': float(self._cuda_run_max_allocated / (1024 ** 3)),
+                        'cuda_run_max_allocated_ratio': float(self._cuda_run_max_allocated / total_memory),
+                    }
+                )
             if self.global_step % self.config.logging_steps == 0:
                 self._log(metrics)
             if self.global_step % self.config.save_steps == 0:
