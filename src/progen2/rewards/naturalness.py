@@ -1,6 +1,12 @@
+import logging
+from pathlib import Path
+
 import torch
 
 from progen2.rewards.common import iter_chunks, release_model, validate_batch_size
+
+
+logger = logging.getLogger(__name__)
 
 
 class ESM2NaturalnessScorer:
@@ -20,10 +26,28 @@ class ESM2NaturalnessScorer:
         self.alphabet = None
         self.batch_converter = None
 
+    def _cached_checkpoint_path(self):
+        return Path(torch.hub.get_dir()) / 'checkpoints' / f'{self.model_name}.pt'
+
+    def _load_model(self):
+        loader = getattr(self.esm.pretrained, self.model_name)
+        return loader()
+
     def _ensure_loaded(self):
         if self.model is None:
-            loader = getattr(self.esm.pretrained, self.model_name)
-            self.model, self.alphabet = loader()
+            try:
+                self.model, self.alphabet = self._load_model()
+            except OSError as exc:
+                cache_path = self._cached_checkpoint_path()
+                if not cache_path.exists():
+                    raise
+                logger.warning(
+                    'Removing corrupted ESM2 checkpoint cache and retrying once: %s (%s)',
+                    cache_path,
+                    exc,
+                )
+                cache_path.unlink()
+                self.model, self.alphabet = self._load_model()
             self.model.eval()
             self.batch_converter = self.alphabet.get_batch_converter()
         self.model.to(self.device)
