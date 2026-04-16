@@ -16,7 +16,7 @@ OPENFOLD_SOURCE_DIR=${OPENFOLD_SOURCE_DIR:-/public/home/xinwuye/ai4s-tool-joint-
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 CUDA_TOOLCHAIN_DIR=${CUDA_TOOLCHAIN_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/cuda_toolchain_cu124}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
-CUDA_CUSPARSE_HEADER=${CUDA_TOOLCHAIN_DIR}/targets/x86_64-linux/include/cusparse.h
+CUDA_CUSPARSE_HEADER=${CUDA_TOOLCHAIN_DIR}/include/cusparse.h
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
