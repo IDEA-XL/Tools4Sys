@@ -13,9 +13,14 @@ set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/genmol/configs/eval_pocket_prefix_crossdocked_template.yaml}
+EVAL_CONDA_PREFIX=${EVAL_CONDA_PREFIX:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/conda_env}
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-conda activate genmol
+if [[ ! -d "${EVAL_CONDA_PREFIX}" ]]; then
+  echo "Missing evaluation conda env: ${EVAL_CONDA_PREFIX}" >&2
+  exit 1
+fi
+conda activate "${EVAL_CONDA_PREFIX}"
 export PATH=/opt/gridview/slurm/bin:$PATH
 export TOKENIZERS_PARALLELISM=false
 
