@@ -1,4 +1,4 @@
-from genmol.mm.docking import DockingRecord, summarize_docking_records
+from genmol.mm.docking import DockingRecord, protein_relative_path_from_ligand_filename, summarize_docking_records
 from genmol.mm.evaluation import OfficialMoleculeMetricSuite, order_preserving_unique, select_manifest_entries
 
 
@@ -44,39 +44,54 @@ def test_official_molecule_metric_suite_matches_expected_denovo_logic():
     assert summary['official_sa_mean'] == 4.0
 
 
-def test_summarize_docking_records_uses_repo_failure_sentinel():
+def test_protein_relative_path_from_ligand_filename_matches_targetdiff_rule():
+    ligand_filename = 'FA11_HUMAN_388_625_0/4y8x_A_rec_4x6p_3yu_lig_tt_docked_6.sdf'
+    assert protein_relative_path_from_ligand_filename(ligand_filename) == 'FA11_HUMAN_388_625_0/4y8x_A_rec.pdb'
+
+
+def test_summarize_docking_records_vina_score_uses_repo_failure_sentinel():
     records = [
         DockingRecord(
-            score=-8.5,
+            mode='vina_score',
             is_success=True,
             error=None,
             receptor_pdb_path='rec_a.pdb',
             receptor_pdbqt_path='rec_a.pdbqt',
-            native_ligand_path='lig_a.sdf',
+            ligand_sdf_path='lig_a.sdf',
+            ligand_pdbqt_path='lig_a.pdbqt',
             center_x=1.0,
             center_y=2.0,
             center_z=3.0,
             size_x=18.0,
             size_y=19.0,
             size_z=20.0,
+            score_only_affinity=-8.5,
+            minimize_affinity=-8.0,
+            dock_affinity=None,
         ),
         DockingRecord(
-            score=99.9,
+            mode='vina_score',
             is_success=False,
             error='dock failed',
             receptor_pdb_path='rec_b.pdb',
             receptor_pdbqt_path='rec_b.pdbqt',
-            native_ligand_path='lig_b.sdf',
+            ligand_sdf_path='lig_b.sdf',
+            ligand_pdbqt_path='lig_b.pdbqt',
             center_x=1.0,
             center_y=2.0,
             center_z=3.0,
             size_x=18.0,
             size_y=19.0,
             size_z=20.0,
+            score_only_affinity=99.9,
+            minimize_affinity=99.9,
+            dock_affinity=None,
         ),
     ]
     summary = summarize_docking_records(records)
     assert summary['num_docked'] == 1
     assert summary['docking_success_fraction'] == 0.5
-    assert summary['docking_score_mean'] == 45.7
-    assert summary['docking_score_median'] == 45.7
+    assert summary['vina_score_mean'] == 45.7
+    assert summary['vina_score_median'] == 45.7
+    assert summary['vina_min_mean'] == 45.95
+    assert summary['vina_min_median'] == 45.95

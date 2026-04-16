@@ -134,18 +134,22 @@ def build_rows(entries, specs, rollout, reward_records, docking_records=None):
             docking_record = docking_records[row_idx]
             row.update(
                 {
-                    'docking_score': float(docking_record.score),
+                    'docking_mode': docking_record.mode,
                     'docking_is_success': bool(docking_record.is_success),
                     'docking_error': docking_record.error,
                     'receptor_pdb_path': docking_record.receptor_pdb_path,
                     'receptor_pdbqt_path': docking_record.receptor_pdbqt_path,
-                    'native_ligand_path': docking_record.native_ligand_path,
+                    'ligand_sdf_path': docking_record.ligand_sdf_path,
+                    'ligand_pdbqt_path': docking_record.ligand_pdbqt_path,
                     'docking_center_x': float(docking_record.center_x),
                     'docking_center_y': float(docking_record.center_y),
                     'docking_center_z': float(docking_record.center_z),
                     'docking_size_x': float(docking_record.size_x),
                     'docking_size_y': float(docking_record.size_y),
                     'docking_size_z': float(docking_record.size_z),
+                    'score_only_affinity': docking_record.score_only_affinity,
+                    'minimize_affinity': docking_record.minimize_affinity,
+                    'dock_affinity': docking_record.dock_affinity,
                 }
             )
         rows.append(row)

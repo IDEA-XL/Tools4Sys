@@ -30,13 +30,49 @@ def validate_overlay_dir(overlay_dir: Path):
         raise NotADirectoryError(f'Python overlay path is not a directory: {overlay_dir}')
 
 
+def replace_required(path: Path, old: str, new: str, description: str):
+    original = path.read_text()
+    if old not in original:
+        raise RuntimeError(f'Expected {description} token not found in {path}')
+    path.write_text(original.replace(old, new))
+
+
 def patch_source_tree(build_root: Path):
     setup_path = build_root / 'setup.py'
-    original = setup_path.read_text()
-    if "'-std=c++14'" not in original:
-        raise RuntimeError(f'Expected OpenFold setup.py to request -std=c++14, but did not find that token in {setup_path}')
-    patched = original.replace("'-std=c++14'", "'-std=c++17'")
-    setup_path.write_text(patched)
+    replace_required(
+        setup_path,
+        "'-std=c++14'",
+        "'-std=c++17'",
+        'OpenFold setup.py -std=c++14',
+    )
+
+    seed_path = build_root / 'openfold' / 'utils' / 'seed.py'
+    replace_required(
+        seed_path,
+        'from pytorch_lightning.utilities.seed import seed_everything\n',
+        "try:\n"
+        "    from pytorch_lightning.utilities.seed import seed_everything\n"
+        "except ImportError:\n"
+        "    from lightning_fabric.utilities.seed import seed_everything\n",
+        'OpenFold seed_everything import',
+    )
+
+    primitives_path = build_root / 'openfold' / 'model' / 'primitives.py'
+    replace_required(
+        primitives_path,
+        "if(deepspeed_is_installed):\n"
+        "    import deepspeed\n",
+        "if(deepspeed_is_installed):\n"
+        "    import deepspeed\n"
+        "    if not hasattr(deepspeed.utils, 'is_initialized'):\n"
+        "        if hasattr(deepspeed, 'comm') and hasattr(deepspeed.comm, 'is_initialized'):\n"
+        "            deepspeed.utils.is_initialized = deepspeed.comm.is_initialized\n"
+        "        else:\n"
+        "            raise RuntimeError(\n"
+        "                'OpenFold requires deepspeed.utils.is_initialized or deepspeed.comm.is_initialized'\n"
+        "            )\n",
+        'OpenFold deepspeed initialization guard',
+    )
 
 
 def build_extension(source_dir: Path, work_dir: Path):

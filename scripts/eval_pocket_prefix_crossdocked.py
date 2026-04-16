@@ -13,7 +13,7 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from genmol.mm.crossdocked import load_crossdocked_manifest
-from genmol.mm.docking import CrossDockedDockingEvaluator
+from genmol.mm.docking import CrossDockedDockingEvaluator, SUPPORTED_DOCKING_MODES
 from genmol.mm.evaluation import PocketPrefixEvaluationKernel, build_rows, select_manifest_entries
 from genmol.mm.policy import PocketPrefixCpGRPOPolicy
 from genmol.rl.specs import sample_group_specs
@@ -48,15 +48,16 @@ class EvalConfig:
     max_completion_length: int | None = None
     length_path: str | None = None
     crossdocked_root: str = ''
-    qvina_path: str = os.path.join(os.path.realpath('.'), 'scripts', 'exps', 'lead', 'docking', 'qvina02')
+    docking_mode: str = 'vina_score'
+    qvina_path: str | None = os.path.join(os.path.realpath('.'), 'scripts', 'exps', 'lead', 'docking', 'qvina02')
     docking_cache_dir: str | None = None
-    docking_exhaustiveness: int = 1
+    docking_exhaustiveness: int = 8
     docking_num_cpu: int = 5
     docking_num_modes: int = 10
     docking_timeout_gen3d: int = 30
     docking_timeout_dock: int = 100
-    docking_box_padding: float = 8.0
-    docking_min_box_size: float = 18.0
+    docking_size_factor: float | None = 1.0
+    docking_buffer: float = 5.0
     experiments: list[EvalExperimentConfig] | None = None
 
 
@@ -107,18 +108,23 @@ def load_config(path):
         raise ValueError('crossdocked_root is required for docking evaluation')
     if not os.path.isdir(config.crossdocked_root):
         raise NotADirectoryError(f'crossdocked_root is not a directory: {config.crossdocked_root}')
-    if not os.path.exists(config.qvina_path):
-        raise FileNotFoundError(f'qvina_path not found: {config.qvina_path}')
+    if config.docking_mode not in SUPPORTED_DOCKING_MODES:
+        raise ValueError(f'docking_mode must be one of {SUPPORTED_DOCKING_MODES}, got {config.docking_mode!r}')
+    if config.docking_mode == 'qvina':
+        if not config.qvina_path:
+            raise ValueError('qvina_path is required when docking_mode=qvina')
+        if not os.path.exists(config.qvina_path):
+            raise FileNotFoundError(f'qvina_path not found: {config.qvina_path}')
     if config.docking_exhaustiveness <= 0:
         raise ValueError('docking_exhaustiveness must be positive')
     if config.docking_num_cpu <= 0:
         raise ValueError('docking_num_cpu must be positive')
     if config.docking_num_modes <= 0:
         raise ValueError('docking_num_modes must be positive')
-    if config.docking_box_padding <= 0:
-        raise ValueError('docking_box_padding must be positive')
-    if config.docking_min_box_size <= 0:
-        raise ValueError('docking_min_box_size must be positive')
+    if config.docking_size_factor is not None and config.docking_size_factor <= 0:
+        raise ValueError('docking_size_factor must be positive when provided')
+    if config.docking_buffer < 0:
+        raise ValueError('docking_buffer must be non-negative')
     if config.experiments is None or not config.experiments:
         raise ValueError('experiments must be non-empty')
     for experiment in config.experiments:
@@ -139,7 +145,50 @@ def _display_name(experiment):
     return experiment.display_name or experiment.name
 
 
+def _docking_header_columns(config):
+    if config.docking_mode == 'qvina':
+        return ['QVina Mean', 'QVina Median', 'Docking Success']
+    if config.docking_mode == 'vina_score':
+        return ['Vina Score Mean', 'Vina Score Median', 'Vina Min Mean', 'Vina Min Median', 'Docking Success']
+    return [
+        'Vina Score Mean',
+        'Vina Score Median',
+        'Vina Min Mean',
+        'Vina Min Median',
+        'Vina Dock Mean',
+        'Vina Dock Median',
+        'Docking Success',
+    ]
+
+
+def _docking_row_values(config, row):
+    if config.docking_mode == 'qvina':
+        return [
+            _format_metric(row['qvina_mean']),
+            _format_metric(row['qvina_median']),
+            _format_metric(row['docking_success_fraction']),
+        ]
+    if config.docking_mode == 'vina_score':
+        return [
+            _format_metric(row['vina_score_mean']),
+            _format_metric(row['vina_score_median']),
+            _format_metric(row['vina_min_mean']),
+            _format_metric(row['vina_min_median']),
+            _format_metric(row['docking_success_fraction']),
+        ]
+    return [
+        _format_metric(row['vina_score_mean']),
+        _format_metric(row['vina_score_median']),
+        _format_metric(row['vina_min_mean']),
+        _format_metric(row['vina_min_median']),
+        _format_metric(row['vina_dock_mean']),
+        _format_metric(row['vina_dock_median']),
+        _format_metric(row['docking_success_fraction']),
+    ]
+
+
 def _build_markdown(config, results):
+    docking_columns = _docking_header_columns(config)
     lines = [
         '# Pocket Prefix CrossDocked Evaluation',
         '',
@@ -152,12 +201,18 @@ def _build_markdown(config, results):
         f'- `min_add_len`: `{config.min_add_len}`',
         f'- `max_completion_length`: `{config.max_completion_length}`',
         f'- `crossdocked_root`: `{config.crossdocked_root}`',
+        f'- `docking_mode`: `{config.docking_mode}`',
         f'- `qvina_path`: `{config.qvina_path}`',
-        f'- `docking_box_padding`: `{config.docking_box_padding}`',
-        f'- `docking_min_box_size`: `{config.docking_min_box_size}`',
+        f'- `docking_size_factor`: `{config.docking_size_factor}`',
+        f'- `docking_buffer`: `{config.docking_buffer}`',
         '',
-        '| Model | Samples | Docking Mean | Docking Median | Docking Success | Official Validity | Official Uniqueness | Official Quality | Official Diversity | QED | SA | Reward Mean | Alert Hit Rate | SA Score | Soft Reward |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        '| '
+        + ' | '.join(
+            ['Model', 'Samples', *docking_columns, 'Official Validity', 'Official Uniqueness', 'Official Quality',
+             'Official Diversity', 'QED', 'SA', 'Reward Mean', 'Alert Hit Rate', 'SA Score', 'Soft Reward']
+        )
+        + ' |',
+        '| ' + ' | '.join(['---'] * (2 + len(docking_columns) + 10)) + ' |',
     ]
     for row in results:
         lines.append(
@@ -166,9 +221,7 @@ def _build_markdown(config, results):
                 [
                     row['display_name'],
                     str(int(row['num_samples'])),
-                    _format_metric(row['docking_score_mean']),
-                    _format_metric(row['docking_score_median']),
-                    _format_metric(row['docking_success_fraction']),
+                    *_docking_row_values(config, row),
                     _format_metric(row['official_validity']),
                     _format_metric(row['official_uniqueness']),
                     _format_metric(row['official_quality']),
@@ -187,9 +240,10 @@ def _build_markdown(config, results):
         [
             '',
             'Column notes:',
-            '- `Docking Mean` and `Docking Median` are qvina scores over one generated molecule per selected pocket. Failures are scored as `99.9`, matching the existing lead-optimization docking implementation in this repo.',
-            '- `Docking Success` is the fraction of samples whose qvina run completed and returned at least one affinity.',
-            '- Docking boxes are derived from the native ligand SDF for each CrossDocked pair. This is an implementation assumption for the CrossDocked pocket-conditioned setting because the repo does not ship a pre-existing per-pocket docking box implementation.',
+            '- Docking runs on one generated molecule per selected pocket.',
+            '- Receptors are resolved with the same rule as TargetDiff: `dirname(ligand_filename) / (basename(ligand_filename)[:10] + ".pdb")` under `crossdocked_root`.',
+            '- `Docking Success` is the fraction of samples whose docking run completed and returned the expected affinity fields. Failures are scored as `99.9` in the aggregated affinity metrics.',
+            '- Docking boxes follow the TargetDiff implementation: center and box size are derived from the generated ligand conformer, not from the native ligand geometry.',
             '- `Official Validity`, `Official Uniqueness`, `Official Quality`, and `Official Diversity` match the implementations used in the official GenMol de novo / fragment-constrained scripts.',
             '- `Official Quality` is the fraction of generated outputs that are valid, unique, satisfy `QED >= 0.6`, and satisfy `SA <= 4`.',
             '- `QED` and `SA` are the means over the unique valid set used by the official metric computation.',
@@ -270,6 +324,7 @@ def main():
     evaluation_kernel = PocketPrefixEvaluationKernel(
         docking_model=CrossDockedDockingEvaluator(
             crossdocked_root=config.crossdocked_root,
+            docking_mode=config.docking_mode,
             qvina_path=config.qvina_path,
             cache_dir=docking_cache_dir,
             exhaustiveness=config.docking_exhaustiveness,
@@ -277,8 +332,8 @@ def main():
             num_modes=config.docking_num_modes,
             timeout_gen3d=config.docking_timeout_gen3d,
             timeout_dock=config.docking_timeout_dock,
-            box_padding=config.docking_box_padding,
-            min_box_size=config.docking_min_box_size,
+            size_factor=config.docking_size_factor,
+            buffer=config.docking_buffer,
         )
     )
     try:
