@@ -31,12 +31,14 @@ class OfficialProGen2CausalLM:
         tokenizer_path,
         checkpoint_subdir=None,
         device='cpu',
-        use_fp16=True,
+        use_fp16=False,
+        autocast_dtype=None,
     ):
         self.device = torch.device(device)
         self.official_code_dir = str(official_code_dir)
         self.checkpoint_dir = resolve_checkpoint_load_dir(checkpoint_dir, checkpoint_subdir)
         self.tokenizer = OfficialProGen2Tokenizer(tokenizer_path)
+        self.autocast_dtype = autocast_dtype
 
         model_cls = get_progen_model_class(self.official_code_dir)
         load_kwargs = {'low_cpu_mem_usage': True}
@@ -55,9 +57,9 @@ class OfficialProGen2CausalLM:
 
     @property
     def autocast_context(self):
-        if self.device.type != 'cuda':
+        if self.device.type != 'cuda' or self.autocast_dtype is None:
             return nullcontext()
-        return torch.autocast(device_type='cuda', dtype=torch.float16)
+        return torch.autocast(device_type='cuda', dtype=self.autocast_dtype)
 
     def train(self):
         self._root_model().train()

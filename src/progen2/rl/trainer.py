@@ -157,6 +157,7 @@ class ProGen2SGRPOTrainer:
     def __init__(self, config, output_dir):
         self.config = config
         self.output_dir = output_dir
+        self.autocast_dtype = torch.bfloat16 if config.bf16 else None
         self.accelerator = Accelerator(
             step_scheduler_with_optimizer=False,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
@@ -181,7 +182,8 @@ class ProGen2SGRPOTrainer:
                 tokenizer_path=config.tokenizer_path,
                 checkpoint_subdir=config.checkpoint_subdir,
                 device=self.device,
-                use_fp16=not config.bf16,
+                use_fp16=False,
+                autocast_dtype=self.autocast_dtype,
             ),
             trainable=True,
         )
@@ -192,7 +194,8 @@ class ProGen2SGRPOTrainer:
                 tokenizer_path=config.tokenizer_path,
                 checkpoint_subdir=config.checkpoint_subdir,
                 device=self.device,
-                use_fp16=not config.bf16,
+                use_fp16=False,
+                autocast_dtype=self.autocast_dtype,
             ),
             trainable=False,
         )
