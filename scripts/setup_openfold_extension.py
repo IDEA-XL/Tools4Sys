@@ -65,6 +65,7 @@ def install_overlay(build_root: Path, extension_path: Path, overlay_dir: Path):
 def verify_overlay(overlay_dir: Path):
     sys.path.insert(0, str(overlay_dir))
     try:
+        import torch  # noqa: F401
         module = importlib.import_module('attn_core_inplace_cuda')
         importlib.import_module('openfold')
     finally:
