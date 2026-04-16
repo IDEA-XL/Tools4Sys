@@ -30,9 +30,19 @@ def validate_overlay_dir(overlay_dir: Path):
         raise NotADirectoryError(f'Python overlay path is not a directory: {overlay_dir}')
 
 
+def patch_source_tree(build_root: Path):
+    setup_path = build_root / 'setup.py'
+    original = setup_path.read_text()
+    if "'-std=c++14'" not in original:
+        raise RuntimeError(f'Expected OpenFold setup.py to request -std=c++14, but did not find that token in {setup_path}')
+    patched = original.replace("'-std=c++14'", "'-std=c++17'")
+    setup_path.write_text(patched)
+
+
 def build_extension(source_dir: Path, work_dir: Path):
     build_root = work_dir / 'openfold_build'
     shutil.copytree(source_dir, build_root)
+    patch_source_tree(build_root)
     subprocess.check_call([sys.executable, 'setup.py', 'build_ext', '--inplace'], cwd=build_root)
     matches = sorted(build_root.glob('attn_core_inplace_cuda*.so'))
     if not matches:

@@ -16,6 +16,7 @@ OPENFOLD_SOURCE_DIR=${OPENFOLD_SOURCE_DIR:-/public/home/xinwuye/ai4s-tool-joint-
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 CUDA_TOOLCHAIN_DIR=${CUDA_TOOLCHAIN_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/cuda_toolchain_cu124}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
+CUDA_CUSPARSE_HEADER=${CUDA_TOOLCHAIN_DIR}/targets/x86_64-linux/include/cusparse.h
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
@@ -34,16 +35,17 @@ export https_proxy=http://127.0.0.1:7897
 export HTTP_PROXY=${http_proxy}
 export HTTPS_PROXY=${https_proxy}
 
-if [[ ! -x "${CUDA_TOOLCHAIN_DIR}/bin/nvcc" ]]; then
-  conda create -y -p "${CUDA_TOOLCHAIN_DIR}" -c nvidia/label/cuda-12.4.1 cuda-nvcc cuda-cudart-dev
+if [[ ! -x "${CUDA_TOOLCHAIN_DIR}/bin/nvcc" || ! -f "${CUDA_CUSPARSE_HEADER}" ]]; then
+  rm -rf "${CUDA_TOOLCHAIN_DIR}"
+  conda create -y -p "${CUDA_TOOLCHAIN_DIR}" -c nvidia/label/cuda-12.4.1 cuda-nvcc cuda-cudart-dev cuda-libraries-dev
 fi
 
 export CUDA_HOME="${CUDA_TOOLCHAIN_DIR}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/targets/x86_64-linux/lib:${LD_LIBRARY_PATH:-}"
 
-if [[ ! -x "${CUDA_HOME}/bin/nvcc" ]]; then
-  echo "CUDA toolchain prefix does not provide a valid nvcc: ${CUDA_HOME}/bin/nvcc" >&2
+if [[ ! -x "${CUDA_HOME}/bin/nvcc" || ! -f "${CUDA_CUSPARSE_HEADER}" ]]; then
+  echo "CUDA toolchain prefix is incomplete: nvcc=${CUDA_HOME}/bin/nvcc cusparse=${CUDA_CUSPARSE_HEADER}" >&2
   exit 1
 fi
 
