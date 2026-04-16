@@ -1,0 +1,30 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_500ckpt/pocket_prefix_crossdocked_500ckpt.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_500ckpt/pocket_prefix_crossdocked_500ckpt.json
+output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_500ckpt/pocket_prefix_crossdocked_500ckpt.rows.jsonl
+seed: 42
+bf16: true
+device: cuda
+manifest_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix/data/gdrive_exact_only/crossdocked_pocket10_pocket_prefix_manifest.pt
+split: test
+num_pockets: null
+generation_batch_size: 1024
+generation_temperature: 1.0
+randomness: 0.3
+min_add_len: 60
+max_completion_length: null
+length_path: null
+crossdocked_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/test_set
+docking_mode: vina_score
+qvina_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/scripts/exps/lead/docking/qvina02
+docking_cache_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_500ckpt/docking_cache
+docking_exhaustiveness: 8
+docking_num_cpu: 5
+docking_num_modes: 10
+docking_timeout_gen3d: 30
+docking_timeout_dock: 100
+docking_size_factor: 1.0
+docking_buffer: 5.0
+experiments:
+  - name: pocket_prefix_500ckpt
+    display_name: Pocket Prefix 500.ckpt
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_supervised_8gpu/20260416_151741/checkpoints/500.ckpt
