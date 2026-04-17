@@ -14,7 +14,9 @@ min_add_len: 60
 max_completion_length: null
 length_path: null
 crossdocked_root: /public/home/xinwuye/REPLACE_WITH_CROSSDOCKED_RAW_ROOT
-docking_mode: vina_score
+docking_modes:
+  - vina_score
+  - qvina
 qvina_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/scripts/exps/lead/docking/qvina02
 docking_cache_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_template/docking_cache
 docking_exhaustiveness: 8
@@ -22,8 +24,7 @@ docking_num_cpu: 5
 docking_num_modes: 10
 docking_timeout_gen3d: 30
 docking_timeout_dock: 100
-docking_size_factor: 1.0
-docking_buffer: 5.0
+docking_box_size: [20.0, 20.0, 20.0]
 experiments:
   - name: pocket_prefix_model
     display_name: Pocket Prefix Model

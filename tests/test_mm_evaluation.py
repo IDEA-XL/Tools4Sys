@@ -49,7 +49,7 @@ def test_protein_relative_path_from_ligand_filename_matches_targetdiff_rule():
     assert protein_relative_path_from_ligand_filename(ligand_filename) == 'FA11_HUMAN_388_625_0/4y8x_A_rec.pdb'
 
 
-def test_summarize_docking_records_vina_score_uses_repo_failure_sentinel():
+def test_summarize_docking_records_vina_score_uses_successful_dockings_only():
     records = [
         DockingRecord(
             mode='vina_score',
@@ -91,7 +91,7 @@ def test_summarize_docking_records_vina_score_uses_repo_failure_sentinel():
     summary = summarize_docking_records(records)
     assert summary['num_docked'] == 1
     assert summary['docking_success_fraction'] == 0.5
-    assert summary['vina_score_mean'] == 45.7
-    assert summary['vina_score_median'] == 45.7
-    assert summary['vina_min_mean'] == 45.95
-    assert summary['vina_min_median'] == 45.95
+    assert summary['vina_score_mean'] == -8.5
+    assert summary['vina_score_median'] == -8.5
+    assert summary['vina_min_mean'] == -8.0
+    assert summary['vina_min_median'] == -8.0

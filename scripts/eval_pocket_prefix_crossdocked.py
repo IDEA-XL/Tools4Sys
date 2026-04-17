@@ -13,7 +13,7 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from genmol.mm.crossdocked import load_crossdocked_manifest
-from genmol.mm.docking import CrossDockedDockingEvaluator, SUPPORTED_DOCKING_MODES
+from genmol.mm.docking import CrossDockedDockingEvaluator, SUPPORTED_DOCKING_MODES, summarize_docking_records
 from genmol.mm.evaluation import PocketPrefixEvaluationKernel, build_rows, select_manifest_entries
 from genmol.mm.policy import PocketPrefixCpGRPOPolicy
 from genmol.rl.specs import sample_group_specs
@@ -48,7 +48,7 @@ class EvalConfig:
     max_completion_length: int | None = None
     length_path: str | None = None
     crossdocked_root: str = ''
-    docking_mode: str = 'vina_score'
+    docking_modes: list[str] | None = None
     qvina_path: str | None = os.path.join(os.path.realpath('.'), 'scripts', 'exps', 'lead', 'docking', 'qvina02')
     docking_cache_dir: str | None = None
     docking_exhaustiveness: int = 8
@@ -56,8 +56,7 @@ class EvalConfig:
     docking_num_modes: int = 10
     docking_timeout_gen3d: int = 30
     docking_timeout_dock: int = 100
-    docking_size_factor: float | None = 1.0
-    docking_buffer: float = 5.0
+    docking_box_size: list[float] | None = None
     experiments: list[EvalExperimentConfig] | None = None
 
 
@@ -108,11 +107,23 @@ def load_config(path):
         raise ValueError('crossdocked_root is required for docking evaluation')
     if not os.path.isdir(config.crossdocked_root):
         raise NotADirectoryError(f'crossdocked_root is not a directory: {config.crossdocked_root}')
-    if config.docking_mode not in SUPPORTED_DOCKING_MODES:
-        raise ValueError(f'docking_mode must be one of {SUPPORTED_DOCKING_MODES}, got {config.docking_mode!r}')
-    if config.docking_mode == 'qvina':
+    if not config.docking_modes:
+        raise ValueError('docking_modes must be non-empty')
+    normalized_modes = []
+    for mode in config.docking_modes:
+        if mode not in SUPPORTED_DOCKING_MODES:
+            raise ValueError(f'docking_modes must be drawn from {SUPPORTED_DOCKING_MODES}, got {mode!r}')
+        if mode in normalized_modes:
+            raise ValueError(f'docking_modes must be unique, got duplicate {mode!r}')
+        normalized_modes.append(mode)
+    if 'vina_score' in normalized_modes and 'vina_dock' in normalized_modes:
+        raise ValueError('docking_modes cannot include both vina_score and vina_dock in the same report')
+    raw = dict(raw)
+    raw['docking_modes'] = normalized_modes
+    config = EvalConfig(experiments=experiments, **raw)
+    if 'qvina' in config.docking_modes:
         if not config.qvina_path:
-            raise ValueError('qvina_path is required when docking_mode=qvina')
+            raise ValueError('qvina_path is required when docking_modes includes qvina')
         if not os.path.exists(config.qvina_path):
             raise FileNotFoundError(f'qvina_path not found: {config.qvina_path}')
     if config.docking_exhaustiveness <= 0:
@@ -121,10 +132,12 @@ def load_config(path):
         raise ValueError('docking_num_cpu must be positive')
     if config.docking_num_modes <= 0:
         raise ValueError('docking_num_modes must be positive')
-    if config.docking_size_factor is not None and config.docking_size_factor <= 0:
-        raise ValueError('docking_size_factor must be positive when provided')
-    if config.docking_buffer < 0:
-        raise ValueError('docking_buffer must be non-negative')
+    if config.docking_box_size is None:
+        raise ValueError('docking_box_size is required')
+    if len(config.docking_box_size) != 3:
+        raise ValueError(f'docking_box_size must be length-3, got {config.docking_box_size!r}')
+    if any(float(value) <= 0.0 for value in config.docking_box_size):
+        raise ValueError(f'docking_box_size must be strictly positive, got {config.docking_box_size!r}')
     if config.experiments is None or not config.experiments:
         raise ValueError('experiments must be non-empty')
     for experiment in config.experiments:
@@ -146,45 +159,86 @@ def _display_name(experiment):
 
 
 def _docking_header_columns(config):
-    if config.docking_mode == 'qvina':
-        return ['QVina Mean', 'QVina Median', 'Docking Success']
-    if config.docking_mode == 'vina_score':
-        return ['Vina Score Mean', 'Vina Score Median', 'Vina Min Mean', 'Vina Min Median', 'Docking Success']
-    return [
-        'Vina Score Mean',
-        'Vina Score Median',
-        'Vina Min Mean',
-        'Vina Min Median',
-        'Vina Dock Mean',
-        'Vina Dock Median',
-        'Docking Success',
-    ]
+    columns = []
+    for mode in config.docking_modes:
+        if mode == 'vina_score':
+            columns.extend(
+                [
+                    'Vina Score Mean',
+                    'Vina Score Median',
+                    'Vina Min Mean',
+                    'Vina Min Median',
+                    'Vina Success',
+                ]
+            )
+        elif mode == 'vina_dock':
+            columns.extend(
+                [
+                    'Vina Score Mean',
+                    'Vina Score Median',
+                    'Vina Min Mean',
+                    'Vina Min Median',
+                    'Vina Dock Mean',
+                    'Vina Dock Median',
+                    'Vina Dock Success',
+                ]
+            )
+        elif mode == 'qvina':
+            columns.extend(['QVina Mean', 'QVina Median', 'QVina Success'])
+        else:
+            raise ValueError(f'Unsupported docking mode in header construction: {mode!r}')
+    return columns
 
 
 def _docking_row_values(config, row):
-    if config.docking_mode == 'qvina':
-        return [
-            _format_metric(row['qvina_mean']),
-            _format_metric(row['qvina_median']),
-            _format_metric(row['docking_success_fraction']),
-        ]
-    if config.docking_mode == 'vina_score':
-        return [
-            _format_metric(row['vina_score_mean']),
-            _format_metric(row['vina_score_median']),
-            _format_metric(row['vina_min_mean']),
-            _format_metric(row['vina_min_median']),
-            _format_metric(row['docking_success_fraction']),
-        ]
-    return [
-        _format_metric(row['vina_score_mean']),
-        _format_metric(row['vina_score_median']),
-        _format_metric(row['vina_min_mean']),
-        _format_metric(row['vina_min_median']),
-        _format_metric(row['vina_dock_mean']),
-        _format_metric(row['vina_dock_median']),
-        _format_metric(row['docking_success_fraction']),
-    ]
+    values = []
+    for mode in config.docking_modes:
+        success_key = f'{mode}_docking_success_fraction'
+        if mode == 'vina_score':
+            values.extend(
+                [
+                    _format_metric(row['vina_score_mean']),
+                    _format_metric(row['vina_score_median']),
+                    _format_metric(row['vina_min_mean']),
+                    _format_metric(row['vina_min_median']),
+                    _format_metric(row[success_key]),
+                ]
+            )
+        elif mode == 'vina_dock':
+            values.extend(
+                [
+                    _format_metric(row['vina_score_mean']),
+                    _format_metric(row['vina_score_median']),
+                    _format_metric(row['vina_min_mean']),
+                    _format_metric(row['vina_min_median']),
+                    _format_metric(row['vina_dock_mean']),
+                    _format_metric(row['vina_dock_median']),
+                    _format_metric(row[success_key]),
+                ]
+            )
+        elif mode == 'qvina':
+            values.extend(
+                [
+                    _format_metric(row['qvina_mean']),
+                    _format_metric(row['qvina_median']),
+                    _format_metric(row[success_key]),
+                ]
+            )
+        else:
+            raise ValueError(f'Unsupported docking mode in row construction: {mode!r}')
+    return values
+
+
+def _flatten_docking_metrics(mode, metrics):
+    flat = {}
+    for key, value in metrics.items():
+        if key == 'docking_mode':
+            continue
+        if key in {'docking_success_fraction', 'num_docked'}:
+            flat[f'{mode}_{key}'] = value
+        else:
+            flat[key] = value
+    return flat
 
 
 def _build_markdown(config, results):
@@ -201,10 +255,9 @@ def _build_markdown(config, results):
         f'- `min_add_len`: `{config.min_add_len}`',
         f'- `max_completion_length`: `{config.max_completion_length}`',
         f'- `crossdocked_root`: `{config.crossdocked_root}`',
-        f'- `docking_mode`: `{config.docking_mode}`',
+        f'- `docking_modes`: `{config.docking_modes}`',
         f'- `qvina_path`: `{config.qvina_path}`',
-        f'- `docking_size_factor`: `{config.docking_size_factor}`',
-        f'- `docking_buffer`: `{config.docking_buffer}`',
+        f'- `docking_box_size`: `{config.docking_box_size}`',
         '',
         '| '
         + ' | '.join(
@@ -242,9 +295,10 @@ def _build_markdown(config, results):
             'Column notes:',
             '- Docking runs on one generated molecule per selected pocket.',
             '- Receptors are resolved with the same rule as TargetDiff: `dirname(ligand_filename) / (basename(ligand_filename)[:10] + ".pdb")` under `crossdocked_root`.',
-            '- `Docking Success` is the fraction of samples whose docking run completed and returned the expected affinity fields.',
-            '- Docking affinity means and medians are computed over successful dockings only, matching the official TargetDiff evaluation semantics.',
-            '- Docking boxes follow the TargetDiff implementation: center and box size are derived from the generated ligand conformer, not from the native ligand geometry.',
+            '- Mode-specific success columns are the fractions of samples whose docking runs completed and returned the expected affinity fields.',
+            '- Docking affinity means and medians are computed over successful dockings only.',
+            '- Docking boxes follow the CAGenMol-style SMILES-only adaptation: center is the native ligand center of mass and box size is fixed.',
+            '- The current fixed box setting is an explicit evaluation convention, not a claim that it is identical to TargetDiff generated-pose docking.',
             '- `Official Validity`, `Official Uniqueness`, `Official Quality`, and `Official Diversity` match the implementations used in the official GenMol de novo / fragment-constrained scripts.',
             '- `Official Quality` is the fraction of generated outputs that are valid, unique, satisfy `QED >= 0.6`, and satisfy `SA <= 4`.',
             '- `QED` and `SA` are the means over the unique valid set used by the official metric computation.',
@@ -255,7 +309,7 @@ def _build_markdown(config, results):
     return '\n'.join(lines)
 
 
-def evaluate_experiment(config, experiment, device, selected_entries, specs, evaluation_kernel):
+def evaluate_experiment(config, experiment, device, selected_entries, specs, evaluation_kernel, docking_models):
     logger.info('Evaluating %s on %d pockets', experiment.name, len(selected_entries))
     policy = PocketPrefixCpGRPOPolicy(
         checkpoint_path=experiment.checkpoint_path,
@@ -274,30 +328,38 @@ def evaluate_experiment(config, experiment, device, selected_entries, specs, eva
             generation_batch_size=min(config.generation_batch_size, len(selected_entries)),
             seed=config.seed,
         )
-        official_metrics, reward_metrics, reward_records, docking_metrics, docking_records = evaluation_kernel.summarize(
-            rollout.smiles,
-            entries=selected_entries,
+        official_metrics, reward_metrics, reward_records, _, _ = evaluation_kernel.summarize(rollout.smiles)
+        docking_metrics_by_mode = {}
+        docking_records_by_mode = {}
+        for mode, docking_model in docking_models.items():
+            mode_records = docking_model.score(entries=selected_entries, smiles_list=rollout.smiles)
+            summarized = summarize_docking_records(mode_records)
+            if float(summarized['docking_success_fraction']) <= 0.0:
+                first_error = next((record.error for record in mode_records if record.error), 'unknown docking failure')
+                raise RuntimeError(
+                    f'Docking evaluation produced zero successful dockings for mode {mode!r}. '
+                    f'First docking error: {first_error}'
+                )
+            docking_metrics_by_mode[mode] = summarized
+            docking_records_by_mode[mode] = mode_records
+        rows = build_rows(
+            selected_entries,
+            specs,
+            rollout,
+            reward_records,
+            docking_records_by_mode=docking_records_by_mode,
         )
-        rows = build_rows(selected_entries, specs, rollout, reward_records, docking_records=docking_records)
         summary = {
             'experiment': experiment.name,
             'display_name': _display_name(experiment),
             'checkpoint_path': experiment.checkpoint_path,
             'split': config.split,
             'num_samples': len(rows),
-            **(docking_metrics or {}),
             **official_metrics,
             **reward_metrics,
         }
-        if docking_metrics is not None and float(docking_metrics['docking_success_fraction']) <= 0.0:
-            first_error = next(
-                (row.get('docking_error') for row in rows if row.get('docking_error')),
-                'unknown docking failure',
-            )
-            raise RuntimeError(
-                'Docking evaluation produced zero successful dockings. '
-                f'First docking error: {first_error}'
-            )
+        for mode in config.docking_modes:
+            summary.update(_flatten_docking_metrics(mode, docking_metrics_by_mode[mode]))
         return summary, rows
     finally:
         del policy
@@ -331,21 +393,22 @@ def main():
         json_root, _ = os.path.splitext(config.output_json_path)
         docking_cache_dir = json_root + '.docking_cache'
 
-    evaluation_kernel = PocketPrefixEvaluationKernel(
-        docking_model=CrossDockedDockingEvaluator(
+    evaluation_kernel = PocketPrefixEvaluationKernel()
+    docking_models = {
+        mode: CrossDockedDockingEvaluator(
             crossdocked_root=config.crossdocked_root,
-            docking_mode=config.docking_mode,
+            docking_mode=mode,
             qvina_path=config.qvina_path,
-            cache_dir=docking_cache_dir,
+            cache_dir=os.path.join(docking_cache_dir, mode),
             exhaustiveness=config.docking_exhaustiveness,
             num_cpu_dock=config.docking_num_cpu,
             num_modes=config.docking_num_modes,
             timeout_gen3d=config.docking_timeout_gen3d,
             timeout_dock=config.docking_timeout_dock,
-            size_factor=config.docking_size_factor,
-            buffer=config.docking_buffer,
+            box_size=config.docking_box_size,
         )
-    )
+        for mode in config.docking_modes
+    }
     try:
         results = []
         all_rows = []
@@ -357,6 +420,7 @@ def main():
                 selected_entries=selected_entries,
                 specs=specs,
                 evaluation_kernel=evaluation_kernel,
+                docking_models=docking_models,
             )
             results.append(summary)
             if config.output_rows_path is not None:
@@ -364,6 +428,8 @@ def main():
                     all_rows.append({'experiment': experiment.name, 'display_name': _display_name(experiment), **row})
     finally:
         evaluation_kernel.close()
+        for docking_model in docking_models.values():
+            docking_model.close()
 
     markdown = _build_markdown(config, results)
     _ensure_parent_dir(config.output_markdown_path)

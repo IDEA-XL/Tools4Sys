@@ -98,15 +98,19 @@ def select_manifest_entries(entries, num_pockets, seed):
     return rng.sample(list(entries), num_pockets)
 
 
-def build_rows(entries, specs, rollout, reward_records, docking_records=None):
+def build_rows(entries, specs, rollout, reward_records, docking_records_by_mode=None):
     if not (len(entries) == len(specs) == len(rollout.safe_strings) == len(rollout.smiles) == len(reward_records)):
         raise ValueError(
             'Row payload lengths must match: '
             f'entries={len(entries)} specs={len(specs)} safe={len(rollout.safe_strings)} '
             f'smiles={len(rollout.smiles)} records={len(reward_records)}'
         )
-    if docking_records is not None and len(docking_records) != len(entries):
-        raise ValueError(f'docking_records length mismatch: {len(docking_records)} vs {len(entries)}')
+    if docking_records_by_mode is not None:
+        for mode, docking_records in docking_records_by_mode.items():
+            if len(docking_records) != len(entries):
+                raise ValueError(
+                    f'docking_records length mismatch for mode {mode!r}: {len(docking_records)} vs {len(entries)}'
+                )
 
     rows = []
     for row_idx, (entry, spec, safe_string, smiles, record) in enumerate(
@@ -130,28 +134,29 @@ def build_rows(entries, specs, rollout, reward_records, docking_records=None):
             'sa_score': record.sa_score,
             'soft_reward': record.soft_reward,
         }
-        if docking_records is not None:
-            docking_record = docking_records[row_idx]
-            row.update(
-                {
-                    'docking_mode': docking_record.mode,
-                    'docking_is_success': bool(docking_record.is_success),
-                    'docking_error': docking_record.error,
-                    'receptor_pdb_path': docking_record.receptor_pdb_path,
-                    'receptor_pdbqt_path': docking_record.receptor_pdbqt_path,
-                    'ligand_sdf_path': docking_record.ligand_sdf_path,
-                    'ligand_pdbqt_path': docking_record.ligand_pdbqt_path,
-                    'docking_center_x': float(docking_record.center_x),
-                    'docking_center_y': float(docking_record.center_y),
-                    'docking_center_z': float(docking_record.center_z),
-                    'docking_size_x': float(docking_record.size_x),
-                    'docking_size_y': float(docking_record.size_y),
-                    'docking_size_z': float(docking_record.size_z),
-                    'score_only_affinity': docking_record.score_only_affinity,
-                    'minimize_affinity': docking_record.minimize_affinity,
-                    'dock_affinity': docking_record.dock_affinity,
-                }
-            )
+        if docking_records_by_mode is not None:
+            for mode, docking_records in docking_records_by_mode.items():
+                docking_record = docking_records[row_idx]
+                prefix = f'{mode}_'
+                row.update(
+                    {
+                        f'{prefix}is_success': bool(docking_record.is_success),
+                        f'{prefix}error': docking_record.error,
+                        f'{prefix}receptor_pdb_path': docking_record.receptor_pdb_path,
+                        f'{prefix}receptor_pdbqt_path': docking_record.receptor_pdbqt_path,
+                        f'{prefix}ligand_sdf_path': docking_record.ligand_sdf_path,
+                        f'{prefix}ligand_pdbqt_path': docking_record.ligand_pdbqt_path,
+                        f'{prefix}center_x': float(docking_record.center_x),
+                        f'{prefix}center_y': float(docking_record.center_y),
+                        f'{prefix}center_z': float(docking_record.center_z),
+                        f'{prefix}size_x': float(docking_record.size_x),
+                        f'{prefix}size_y': float(docking_record.size_y),
+                        f'{prefix}size_z': float(docking_record.size_z),
+                        f'{prefix}score_only_affinity': docking_record.score_only_affinity,
+                        f'{prefix}minimize_affinity': docking_record.minimize_affinity,
+                        f'{prefix}dock_affinity': docking_record.dock_affinity,
+                    }
+                )
         rows.append(row)
     return rows
 

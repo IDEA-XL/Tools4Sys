@@ -11,6 +11,7 @@ import numpy as np
 
 FAIL_AFFINITY = 99.9
 SUPPORTED_DOCKING_MODES = ('qvina', 'vina_score', 'vina_dock')
+DEFAULT_FIXED_BOX_SIZE = (20.0, 20.0, 20.0)
 
 
 @dataclass(frozen=True)
@@ -134,14 +135,27 @@ def _write_ligand_sdf(ligand_rdmol, ligand_sdf_path):
         writer.close()
 
 
-def _ligand_center_and_size(ligand_rdmol, size_factor, buffer):
-    pos = np.asarray(ligand_rdmol.GetConformer(0).GetPositions(), dtype=np.float32)
-    center = (pos.max(axis=0) + pos.min(axis=0)) / 2.0
-    if size_factor is None:
-        size = np.asarray([20.0, 20.0, 20.0], dtype=np.float32)
-    else:
-        size = (pos.max(axis=0) - pos.min(axis=0)) * float(size_factor) + float(buffer)
-    return center.astype(np.float32), size.astype(np.float32)
+def _ligand_center_of_mass(ligand_rdmol):
+    positions = np.asarray(ligand_rdmol.GetConformer(0).GetPositions(), dtype=np.float32)
+    if positions.ndim != 2 or positions.shape[1] != 3 or positions.shape[0] <= 0:
+        raise ValueError('ligand_rdmol must provide a non-empty 3D conformer')
+    masses = np.asarray([float(atom.GetMass()) for atom in ligand_rdmol.GetAtoms()], dtype=np.float32)
+    if masses.shape[0] != positions.shape[0]:
+        raise ValueError('atom masses must align with ligand coordinates')
+    total_mass = float(masses.sum())
+    if total_mass <= 0.0:
+        raise ValueError('ligand total mass must be positive')
+    center = (positions * masses[:, None]).sum(axis=0) / total_mass
+    return center.astype(np.float32)
+
+
+def _normalize_box_size(box_size):
+    size = np.asarray(box_size, dtype=np.float32)
+    if size.shape != (3,):
+        raise ValueError(f'box_size must be length-3, got shape {size.shape}')
+    if np.any(size <= 0):
+        raise ValueError(f'box_size must be strictly positive, got {size.tolist()}')
+    return size
 
 
 def _load_native_ligand_sdf(ligand_sdf_path):
@@ -166,8 +180,7 @@ class CrossDockedDockingEvaluator:
         num_modes=10,
         timeout_gen3d=30,
         timeout_dock=100,
-        size_factor=1.0,
-        buffer=5.0,
+        box_size=DEFAULT_FIXED_BOX_SIZE,
     ):
         self.crossdocked_root = Path(crossdocked_root).expanduser().resolve()
         self.docking_mode = str(docking_mode)
@@ -178,8 +191,7 @@ class CrossDockedDockingEvaluator:
         self.num_modes = int(num_modes)
         self.timeout_gen3d = int(timeout_gen3d)
         self.timeout_dock = int(timeout_dock)
-        self.size_factor = None if size_factor is None else float(size_factor)
-        self.buffer = float(buffer)
+        self.box_size = _normalize_box_size(box_size)
 
         if not self.crossdocked_root.exists():
             raise FileNotFoundError(f'crossdocked_root not found: {self.crossdocked_root}')
@@ -193,10 +205,6 @@ class CrossDockedDockingEvaluator:
             raise ValueError('num_cpu_dock must be positive')
         if self.num_modes <= 0:
             raise ValueError('num_modes must be positive')
-        if self.size_factor is not None and self.size_factor <= 0:
-            raise ValueError('size_factor must be positive when provided')
-        if self.buffer < 0:
-            raise ValueError('buffer must be non-negative')
 
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         _require_command('obabel')
@@ -432,7 +440,7 @@ class CrossDockedDockingEvaluator:
             ligand_sdf_path = None
             ligand_pdbqt_path = None
             center = np.asarray([float('nan'), float('nan'), float('nan')], dtype=np.float32)
-            size = np.asarray([float('nan'), float('nan'), float('nan')], dtype=np.float32)
+            size = self.box_size.copy()
 
             if smiles is None:
                 records.append(
@@ -453,10 +461,8 @@ class CrossDockedDockingEvaluator:
                 native_ligand_sdf_path = self._resolve_native_ligand_sdf_path(entry)
                 ligand_rdmol = _embed_ligand_from_smiles(smiles)
                 native_ligand_rdmol = _load_native_ligand_sdf(native_ligand_sdf_path)
-                if self.docking_mode == 'qvina':
-                    center, size = _ligand_center_and_size(native_ligand_rdmol, self.size_factor, 0.0)
-                else:
-                    center, size = _ligand_center_and_size(native_ligand_rdmol, self.size_factor, self.buffer)
+                center = _ligand_center_of_mass(native_ligand_rdmol)
+                size = self.box_size.copy()
 
                 with tempfile.TemporaryDirectory(prefix='crossdocked_dock_') as tmpdir:
                     tmpdir_path = Path(tmpdir)
