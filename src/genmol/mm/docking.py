@@ -144,6 +144,16 @@ def _ligand_center_and_size(ligand_rdmol, size_factor, buffer):
     return center.astype(np.float32), size.astype(np.float32)
 
 
+def _load_native_ligand_sdf(ligand_sdf_path):
+    from rdkit import Chem
+
+    supplier = Chem.SDMolSupplier(str(ligand_sdf_path), removeHs=False)
+    molecules = [mol for mol in supplier if mol is not None]
+    if not molecules:
+        raise RuntimeError(f'Failed to read native ligand SDF: {ligand_sdf_path}')
+    return molecules[0]
+
+
 class CrossDockedDockingEvaluator:
     def __init__(
         self,
@@ -225,6 +235,14 @@ class CrossDockedDockingEvaluator:
         if not receptor_pdb_path.exists():
             raise FileNotFoundError(f'Receptor file not found: {receptor_pdb_path}')
         return receptor_pdb_path
+
+    def _resolve_native_ligand_sdf_path(self, entry):
+        if 'ligand_filename' not in entry or entry['ligand_filename'] is None:
+            raise ValueError('Manifest entry is missing ligand_filename; docking requires ligand_filename')
+        ligand_sdf_path = self.crossdocked_root / str(entry['ligand_filename'])
+        if not ligand_sdf_path.exists():
+            raise FileNotFoundError(f'Native ligand file not found: {ligand_sdf_path}')
+        return ligand_sdf_path
 
     def _cached_receptor_path(self, receptor_pdb_path, suffix):
         relative = receptor_pdb_path.relative_to(self.crossdocked_root)
@@ -409,6 +427,7 @@ class CrossDockedDockingEvaluator:
         records = []
         for entry, smiles in zip(entries, smiles_list):
             receptor_pdb_path = None
+            native_ligand_sdf_path = None
             receptor_pdbqt_path = None
             ligand_sdf_path = None
             ligand_pdbqt_path = None
@@ -431,11 +450,13 @@ class CrossDockedDockingEvaluator:
 
             try:
                 receptor_pdb_path = self._resolve_receptor_pdb_path(entry)
+                native_ligand_sdf_path = self._resolve_native_ligand_sdf_path(entry)
                 ligand_rdmol = _embed_ligand_from_smiles(smiles)
+                native_ligand_rdmol = _load_native_ligand_sdf(native_ligand_sdf_path)
                 if self.docking_mode == 'qvina':
-                    center, size = _ligand_center_and_size(ligand_rdmol, self.size_factor, 0.0)
+                    center, size = _ligand_center_and_size(native_ligand_rdmol, self.size_factor, 0.0)
                 else:
-                    center, size = _ligand_center_and_size(ligand_rdmol, self.size_factor, self.buffer)
+                    center, size = _ligand_center_and_size(native_ligand_rdmol, self.size_factor, self.buffer)
 
                 with tempfile.TemporaryDirectory(prefix='crossdocked_dock_') as tmpdir:
                     tmpdir_path = Path(tmpdir)
