@@ -15,7 +15,7 @@ max_completion_length: null
 length_path: null
 crossdocked_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/test_set/test_set
 docking_modes:
-  - vina_score
+  - vina_dock
   - qvina
 qvina_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/scripts/exps/lead/docking/qvina02
 docking_cache_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_5500ckpt/docking_cache
