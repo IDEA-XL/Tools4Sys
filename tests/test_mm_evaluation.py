@@ -1,4 +1,14 @@
-from genmol.mm.docking import DockingRecord, protein_relative_path_from_ligand_filename, summarize_docking_records
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem import AllChem
+
+from genmol.mm.docking import (
+    DockingRecord,
+    _ligand_center_of_mass,
+    _translate_ligand_to_center,
+    protein_relative_path_from_ligand_filename,
+    summarize_docking_records,
+)
 from genmol.mm.evaluation import OfficialMoleculeMetricSuite, order_preserving_unique, select_manifest_entries
 
 
@@ -95,3 +105,12 @@ def test_summarize_docking_records_vina_score_uses_successful_dockings_only():
     assert summary['vina_score_median'] == -8.5
     assert summary['vina_min_mean'] == -8.0
     assert summary['vina_min_median'] == -8.0
+
+
+def test_translate_ligand_to_center_matches_requested_center():
+    mol = Chem.AddHs(Chem.MolFromSmiles('CCO'))
+    assert AllChem.EmbedMolecule(mol, randomSeed=0) == 0
+    target = np.asarray([10.0, -3.0, 5.5], dtype=np.float32)
+    moved = _translate_ligand_to_center(mol, target)
+    center = _ligand_center_of_mass(moved)
+    assert np.allclose(center, target, atol=1e-3)

@@ -158,6 +158,34 @@ def _normalize_box_size(box_size):
     return size
 
 
+def _translate_ligand_to_center(ligand_rdmol, target_center):
+    from rdkit.Geometry import Point3D
+
+    target_center = np.asarray(target_center, dtype=np.float32)
+    if target_center.shape != (3,):
+        raise ValueError(f'target_center must be length-3, got shape {target_center.shape}')
+    current_center = _ligand_center_of_mass(ligand_rdmol)
+    delta = target_center - current_center
+    conformer = ligand_rdmol.GetConformer(0)
+    for atom_idx in range(ligand_rdmol.GetNumAtoms()):
+        position = conformer.GetAtomPosition(atom_idx)
+        conformer.SetAtomPosition(
+            atom_idx,
+            Point3D(
+                float(position.x + delta[0]),
+                float(position.y + delta[1]),
+                float(position.z + delta[2]),
+            ),
+        )
+    translated_center = _ligand_center_of_mass(ligand_rdmol)
+    if not np.allclose(translated_center, target_center, atol=1e-3):
+        raise RuntimeError(
+            f'Failed to translate ligand conformer to target center: got {translated_center.tolist()} '
+            f'vs expected {target_center.tolist()}'
+        )
+    return ligand_rdmol
+
+
 def _load_native_ligand_sdf(ligand_sdf_path):
     from rdkit import Chem
 
@@ -463,6 +491,7 @@ class CrossDockedDockingEvaluator:
                 native_ligand_rdmol = _load_native_ligand_sdf(native_ligand_sdf_path)
                 center = _ligand_center_of_mass(native_ligand_rdmol)
                 size = self.box_size.copy()
+                ligand_rdmol = _translate_ligand_to_center(ligand_rdmol, center)
 
                 with tempfile.TemporaryDirectory(prefix='crossdocked_dock_') as tmpdir:
                     tmpdir_path = Path(tmpdir)
