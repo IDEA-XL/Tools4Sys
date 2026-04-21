@@ -22,7 +22,13 @@ from genmol.rl.cpgrpo import (
 )
 from genmol.rl.policy import GenMolCpGRPOPolicy
 from genmol.rl.reward import MolecularReward, compute_internal_diversity
-from genmol.rl.specs import deserialize_specs, expand_group_specs, sample_group_specs, serialize_specs
+from genmol.rl.specs import (
+    deserialize_specs,
+    expand_group_specs,
+    sample_group_specs,
+    sample_supergroup_shared_specs,
+    serialize_specs,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -462,14 +468,25 @@ class GenMolCpGRPOTrainer:
     def _generate_and_score_completions(self, mode):
         cycle_seed = self.config.seed + self.generation_cycle_idx * 10000
         if self.accelerator.is_main_process:
-            group_specs = sample_group_specs(
-                num_groups=self.num_groups_global,
-                generation_temperature=self.config.generation_temperature,
-                randomness=self.config.randomness,
-                min_add_len=self.config.min_add_len,
-                max_completion_length=self.config.max_completion_length,
-                seed=cycle_seed,
-            )
+            if self.config.rl_algorithm == 'coupled_sgrpo':
+                group_specs = sample_supergroup_shared_specs(
+                    num_groups=self.num_groups_global,
+                    supergroup_num_groups=self.config.supergroup_num_groups,
+                    generation_temperature=self.config.generation_temperature,
+                    randomness=self.config.randomness,
+                    min_add_len=self.config.min_add_len,
+                    max_completion_length=self.config.max_completion_length,
+                    seed=cycle_seed,
+                )
+            else:
+                group_specs = sample_group_specs(
+                    num_groups=self.num_groups_global,
+                    generation_temperature=self.config.generation_temperature,
+                    randomness=self.config.randomness,
+                    min_add_len=self.config.min_add_len,
+                    max_completion_length=self.config.max_completion_length,
+                    seed=cycle_seed,
+                )
         else:
             group_specs = []
 

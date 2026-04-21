@@ -5,14 +5,14 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH -t 48:00:00
-#SBATCH -J cpgrpo_8g1024
-#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs/cpgrpo_8g1024_%j.out
-#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs/cpgrpo_8g1024_%j.err
+#SBATCH -J cpgrpo_8g512
+#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs/cpgrpo_8g512_%j.out
+#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs/cpgrpo_8g512_%j.err
 
 set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
-CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yaml}
+CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml}
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
@@ -22,7 +22,7 @@ if [[ -z "${WANDB_API_KEY:-}" ]]; then
 fi
 
 export WANDB_PROJECT="${WANDB_PROJECT:-tools4sys}"
-export WANDB_NAME="${WANDB_NAME:-cpgrpo-8g-sgrpo-ng64-sg8-bs1024}"
+export WANDB_NAME="${WANDB_NAME:-cpgrpo-8g-ng512-bs1024-ni1}"
 
 source ~/miniconda/etc/profile.d/conda.sh
 conda activate genmol

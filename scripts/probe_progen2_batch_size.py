@@ -56,6 +56,13 @@ def _read_jsonl(path):
     return rows
 
 
+def _max_float_metric(rows, key):
+    values = [float(row[key]) for row in rows if key in row]
+    if not values:
+        return None
+    return max(values)
+
+
 def _looks_like_oom(stderr_text):
     lowered = stderr_text.lower()
     return (
@@ -76,8 +83,8 @@ def _build_markdown(summary):
         f"- `recommended_batch_size`: `{summary['recommended_batch_size']}`",
         f"- `recommendation_reason`: `{summary['recommendation_reason']}`",
         '',
-        '| Batch Size | Status | Steps | Peak Reserved GiB | Peak Reserved Ratio | Peak Allocated GiB | Peak Allocated Ratio | Output Dir |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- |',
+        '| Batch Size | Status | Steps | Peak Reserved GiB | Peak Reserved Ratio | Peak Allocated GiB | Peak Allocated Ratio | Rollout Peak Reserved GiB | Rollout Peak Reserved Ratio | Rollout Peak Allocated GiB | Rollout Peak Allocated Ratio | Reward Peak Reserved GiB | Reward Peak Reserved Ratio | Reward Peak Allocated GiB | Reward Peak Allocated Ratio | Training Peak Reserved GiB | Training Peak Reserved Ratio | Training Peak Allocated GiB | Training Peak Allocated Ratio | Output Dir |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ]
     for result in summary['results']:
         lines.append(
@@ -91,6 +98,18 @@ def _build_markdown(summary):
                     'nan' if result['max_reserved_ratio'] is None else f"{result['max_reserved_ratio']:.6f}",
                     'nan' if result['max_allocated_gib'] is None else f"{result['max_allocated_gib']:.6f}",
                     'nan' if result['max_allocated_ratio'] is None else f"{result['max_allocated_ratio']:.6f}",
+                    'nan' if result['rollout_max_reserved_gib'] is None else f"{result['rollout_max_reserved_gib']:.6f}",
+                    'nan' if result['rollout_max_reserved_ratio'] is None else f"{result['rollout_max_reserved_ratio']:.6f}",
+                    'nan' if result['rollout_max_allocated_gib'] is None else f"{result['rollout_max_allocated_gib']:.6f}",
+                    'nan' if result['rollout_max_allocated_ratio'] is None else f"{result['rollout_max_allocated_ratio']:.6f}",
+                    'nan' if result['reward_max_reserved_gib'] is None else f"{result['reward_max_reserved_gib']:.6f}",
+                    'nan' if result['reward_max_reserved_ratio'] is None else f"{result['reward_max_reserved_ratio']:.6f}",
+                    'nan' if result['reward_max_allocated_gib'] is None else f"{result['reward_max_allocated_gib']:.6f}",
+                    'nan' if result['reward_max_allocated_ratio'] is None else f"{result['reward_max_allocated_ratio']:.6f}",
+                    'nan' if result['training_max_reserved_gib'] is None else f"{result['training_max_reserved_gib']:.6f}",
+                    'nan' if result['training_max_reserved_ratio'] is None else f"{result['training_max_reserved_ratio']:.6f}",
+                    'nan' if result['training_max_allocated_gib'] is None else f"{result['training_max_allocated_gib']:.6f}",
+                    'nan' if result['training_max_allocated_ratio'] is None else f"{result['training_max_allocated_ratio']:.6f}",
                     result['output_dir'],
                 ]
             )
@@ -102,6 +121,11 @@ def _build_markdown(summary):
             'Column notes:',
             '- `Batch Size` is `per_device_prompt_batch_size`.',
             '- `Peak Reserved/Allocated` are the maximum CUDA memory metrics emitted by the trainer during the probe run.',
+            '- `Rollout Peak` is the phase that only covers autoregressive generation.',
+            '- `Reward Peak` covers rollout reward scoring, group reward scoring, and advantage computation.',
+            '- `Training Peak` covers old/ref/new logprob passes, loss, backward, and optimizer step.',
+            '- `Reserved` is allocator-reserved CUDA memory and may flatten across phases because the cache is retained.',
+            '- `Allocated` is live tensor memory and is usually the more informative per-phase working-set signal.',
             '- `Status=oom` means the subprocess failed with an explicit CUDA allocation error.',
             '- `recommended_batch_size` chooses the largest successful batch whose reserved ratio stays within the configured target. If none satisfy the target, it falls back to the largest successful batch and marks that explicitly.',
             '',
@@ -175,6 +199,18 @@ def main():
             'max_reserved_ratio': None,
             'max_allocated_gib': None,
             'max_allocated_ratio': None,
+            'rollout_max_reserved_gib': None,
+            'rollout_max_reserved_ratio': None,
+            'rollout_max_allocated_gib': None,
+            'rollout_max_allocated_ratio': None,
+            'reward_max_reserved_gib': None,
+            'reward_max_reserved_ratio': None,
+            'reward_max_allocated_gib': None,
+            'reward_max_allocated_ratio': None,
+            'training_max_reserved_gib': None,
+            'training_max_reserved_ratio': None,
+            'training_max_allocated_gib': None,
+            'training_max_allocated_ratio': None,
             'output_dir': run_dir,
             'stdout_path': stdout_path,
             'stderr_path': stderr_path,
@@ -184,26 +220,22 @@ def main():
             rows = _read_jsonl(metrics_path)
             state['steps_completed'] = len(rows)
             if rows:
-                state['max_reserved_gib'] = max(
-                    float(row['cuda_run_max_reserved_gib'])
-                    for row in rows
-                    if 'cuda_run_max_reserved_gib' in row
-                )
-                state['max_reserved_ratio'] = max(
-                    float(row['cuda_run_max_reserved_ratio'])
-                    for row in rows
-                    if 'cuda_run_max_reserved_ratio' in row
-                )
-                state['max_allocated_gib'] = max(
-                    float(row['cuda_run_max_allocated_gib'])
-                    for row in rows
-                    if 'cuda_run_max_allocated_gib' in row
-                )
-                state['max_allocated_ratio'] = max(
-                    float(row['cuda_run_max_allocated_ratio'])
-                    for row in rows
-                    if 'cuda_run_max_allocated_ratio' in row
-                )
+                state['max_reserved_gib'] = _max_float_metric(rows, 'cuda_run_max_reserved_gib')
+                state['max_reserved_ratio'] = _max_float_metric(rows, 'cuda_run_max_reserved_ratio')
+                state['max_allocated_gib'] = _max_float_metric(rows, 'cuda_run_max_allocated_gib')
+                state['max_allocated_ratio'] = _max_float_metric(rows, 'cuda_run_max_allocated_ratio')
+                state['rollout_max_reserved_gib'] = _max_float_metric(rows, 'cuda_rollout_run_max_reserved_gib')
+                state['rollout_max_reserved_ratio'] = _max_float_metric(rows, 'cuda_rollout_run_max_reserved_ratio')
+                state['rollout_max_allocated_gib'] = _max_float_metric(rows, 'cuda_rollout_run_max_allocated_gib')
+                state['rollout_max_allocated_ratio'] = _max_float_metric(rows, 'cuda_rollout_run_max_allocated_ratio')
+                state['reward_max_reserved_gib'] = _max_float_metric(rows, 'cuda_reward_run_max_reserved_gib')
+                state['reward_max_reserved_ratio'] = _max_float_metric(rows, 'cuda_reward_run_max_reserved_ratio')
+                state['reward_max_allocated_gib'] = _max_float_metric(rows, 'cuda_reward_run_max_allocated_gib')
+                state['reward_max_allocated_ratio'] = _max_float_metric(rows, 'cuda_reward_run_max_allocated_ratio')
+                state['training_max_reserved_gib'] = _max_float_metric(rows, 'cuda_training_run_max_reserved_gib')
+                state['training_max_reserved_ratio'] = _max_float_metric(rows, 'cuda_training_run_max_reserved_ratio')
+                state['training_max_allocated_gib'] = _max_float_metric(rows, 'cuda_training_run_max_allocated_gib')
+                state['training_max_allocated_ratio'] = _max_float_metric(rows, 'cuda_training_run_max_allocated_ratio')
 
         with open(stderr_path) as handle:
             stderr_text = handle.read()

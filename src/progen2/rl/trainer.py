@@ -244,6 +244,16 @@ class ProGen2SGRPOTrainer:
         self.global_step = 0
         self._cuda_run_max_reserved = 0
         self._cuda_run_max_allocated = 0
+        self._cuda_phase_run_max_reserved = {
+            'rollout': 0,
+            'reward': 0,
+            'training': 0,
+        }
+        self._cuda_phase_run_max_allocated = {
+            'rollout': 0,
+            'reward': 0,
+            'training': 0,
+        }
 
         if config.report_to:
             init_kwargs = {}
@@ -397,6 +407,49 @@ class ProGen2SGRPOTrainer:
         if self.config.report_to:
             self.accelerator.log(metrics, step=self.global_step)
 
+    def _reset_cuda_phase_peak(self):
+        if self.device.type != 'cuda':
+            return
+        torch.cuda.synchronize(self.device)
+        torch.cuda.reset_peak_memory_stats(self.device)
+
+    def _capture_cuda_phase_peak(self, phase_name):
+        if self.device.type != 'cuda':
+            raise RuntimeError('CUDA phase peak capture requires a CUDA device')
+        if phase_name not in self._cuda_phase_run_max_reserved:
+            raise ValueError(f'Unsupported CUDA phase name: {phase_name}')
+        torch.cuda.synchronize(self.device)
+        total_memory = float(torch.cuda.get_device_properties(self.device).total_memory)
+        step_peak_reserved = int(torch.cuda.max_memory_reserved(self.device))
+        step_peak_allocated = int(torch.cuda.max_memory_allocated(self.device))
+        self._cuda_phase_run_max_reserved[phase_name] = max(
+            self._cuda_phase_run_max_reserved[phase_name],
+            step_peak_reserved,
+        )
+        self._cuda_phase_run_max_allocated[phase_name] = max(
+            self._cuda_phase_run_max_allocated[phase_name],
+            step_peak_allocated,
+        )
+        metrics = {
+            f'cuda_{phase_name}_step_max_reserved_gib': float(step_peak_reserved / (1024 ** 3)),
+            f'cuda_{phase_name}_step_max_reserved_ratio': float(step_peak_reserved / total_memory),
+            f'cuda_{phase_name}_step_max_allocated_gib': float(step_peak_allocated / (1024 ** 3)),
+            f'cuda_{phase_name}_step_max_allocated_ratio': float(step_peak_allocated / total_memory),
+            f'cuda_{phase_name}_run_max_reserved_gib': float(
+                self._cuda_phase_run_max_reserved[phase_name] / (1024 ** 3)
+            ),
+            f'cuda_{phase_name}_run_max_reserved_ratio': float(
+                self._cuda_phase_run_max_reserved[phase_name] / total_memory
+            ),
+            f'cuda_{phase_name}_run_max_allocated_gib': float(
+                self._cuda_phase_run_max_allocated[phase_name] / (1024 ** 3)
+            ),
+            f'cuda_{phase_name}_run_max_allocated_ratio': float(
+                self._cuda_phase_run_max_allocated[phase_name] / total_memory
+            ),
+        }
+        return metrics, step_peak_reserved, step_peak_allocated
+
     def train(self):
         os.makedirs(self.output_dir, exist_ok=True)
         logger.info('Starting ProGen2 SGRPO training in %s', self.output_dir)
@@ -404,8 +457,18 @@ class ProGen2SGRPOTrainer:
 
         for step_idx in range(self.config.max_steps):
             logger.info('Starting train step %d/%d', step_idx + 1, self.config.max_steps)
+            rollout_phase_metrics = {}
+            reward_phase_metrics = {}
+            training_phase_metrics = {}
+            rollout_step_peak_reserved = 0
+            rollout_step_peak_allocated = 0
+            reward_step_peak_reserved = 0
+            reward_step_peak_allocated = 0
+            training_step_peak_reserved = 0
+            training_step_peak_allocated = 0
+
             if self.device.type == 'cuda':
-                torch.cuda.reset_peak_memory_stats(self.device)
+                self._reset_cuda_phase_peak()
             prompts = self._next_prompt_batch()
             rollout = self.policy.generate_rollouts(
                 prompts,
@@ -415,6 +478,13 @@ class ProGen2SGRPOTrainer:
                 temperature=self.config.temperature,
                 seed=self.config.seed + step_idx,
             )
+            if self.device.type == 'cuda':
+                rollout_phase_metrics, rollout_step_peak_reserved, rollout_step_peak_allocated = (
+                    self._capture_cuda_phase_peak('rollout')
+                )
+
+            if self.device.type == 'cuda':
+                self._reset_cuda_phase_peak()
             rollout_rewards, reward_metrics = self._score_rollout_rewards(
                 rollout.protein_sequences,
                 step_number=self.global_step + 1,
@@ -424,7 +494,13 @@ class ProGen2SGRPOTrainer:
                 rollout_rewards,
                 group_rewards,
             )
+            if self.device.type == 'cuda':
+                reward_phase_metrics, reward_step_peak_reserved, reward_step_peak_allocated = (
+                    self._capture_cuda_phase_peak('reward')
+                )
 
+            if self.device.type == 'cuda':
+                self._reset_cuda_phase_peak()
             with torch.no_grad():
                 old_log_probs, completion_mask = self.policy.per_token_logps(
                     rollout.full_token_ids,
@@ -460,6 +536,10 @@ class ProGen2SGRPOTrainer:
             self.accelerator.clip_grad_norm_(self.policy.model.trainable_parameters(), self.config.max_grad_norm)
             self.optimizer.step()
             self.scheduler.step()
+            if self.device.type == 'cuda':
+                training_phase_metrics, training_step_peak_reserved, training_step_peak_allocated = (
+                    self._capture_cuda_phase_peak('training')
+                )
 
             self.global_step += 1
             metrics = {
@@ -472,11 +552,22 @@ class ProGen2SGRPOTrainer:
                 **{key: float(value) for key, value in reward_metrics.items()},
                 **{key: float(value) for key, value in advantage_metrics.items()},
                 **{key: float(value.item() if hasattr(value, 'item') else value) for key, value in loss_metrics.items()},
+                **rollout_phase_metrics,
+                **reward_phase_metrics,
+                **training_phase_metrics,
             }
             if self.device.type == 'cuda':
                 total_memory = float(torch.cuda.get_device_properties(self.device).total_memory)
-                step_peak_reserved = int(torch.cuda.max_memory_reserved(self.device))
-                step_peak_allocated = int(torch.cuda.max_memory_allocated(self.device))
+                step_peak_reserved = max(
+                    rollout_step_peak_reserved,
+                    reward_step_peak_reserved,
+                    training_step_peak_reserved,
+                )
+                step_peak_allocated = max(
+                    rollout_step_peak_allocated,
+                    reward_step_peak_allocated,
+                    training_step_peak_allocated,
+                )
                 self._cuda_run_max_reserved = max(self._cuda_run_max_reserved, step_peak_reserved)
                 self._cuda_run_max_allocated = max(self._cuda_run_max_allocated, step_peak_allocated)
                 metrics.update(

@@ -1,0 +1,463 @@
+# SGRPO Main Results
+
+This directory is the repo-local index for the main `original` vs `GRPO` vs `SGRPO` comparison assets across:
+
+- `genmol de novo`
+- `mmgenmol`
+- `progen2`
+
+The intent is to keep three things in one place:
+
+1. the exact weight paths used in the comparison
+2. the exact training config paths used to produce those weights
+3. the output locations for diversity-property Pareto sweeps and their raw result files
+
+## Conventions
+
+- Config paths below are repo-root-relative inside the `genmol` git repo.
+- Checkpoint paths below are the current verified cluster absolute paths.
+- `Invocation` is recorded because several Slurm wrappers have their own default `CONFIG_PATH` or `CONFIG_NAME`; the required override is part of the actual experiment identity.
+- `Verified` means the path was confirmed from a repo config or an already-used run artifact.
+- `Partial` means an artifact exists, but it is not yet the locked main comparison asset.
+- `TODO` means the comparison asset is not selected or not generated yet.
+- Any unverifiable statement is explicitly labeled as an `Unverified assumption`.
+
+## Sweep Policy
+
+- `genmol de novo`: sweep `randomness = 0.1, 0.2, ..., 1.0`
+- `mmgenmol`: sweep `randomness = 0.1, 0.2, ..., 1.0`
+- `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
+
+For every family and every property curve, save:
+
+- raw sweep rows
+- aggregated summary JSON
+- rendered plot files
+
+Planned local layout under this directory:
+
+- `genmol-denovo/`
+- `mmgenmol/`
+- `progen2/`
+
+## GenMol De Novo
+
+### Original
+
+Status: `Verified`
+
+Checkpoint:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+```
+
+Training config:
+
+```text
+N/A in this repo for the current comparison campaign
+```
+
+Launch Script:
+
+```text
+N/A
+```
+
+Expected GPU Topology:
+
+```text
+N/A
+```
+
+Invocation:
+
+```text
+N/A
+```
+
+Notes:
+
+- This is the pretrained `GenMol v2` weight used as the original model baseline.
+
+### GRPO
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Notes:
+
+- Pending rerun after the supergroup-conditioning change.
+- The next intended GRPO config is `configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml`.
+
+### SGRPO
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Pending rerun after the supergroup-conditioning change.
+- The intended SGRPO config is `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yaml`.
+
+### Pareto Curves To Maintain
+
+- Core individual-property curves implied by the current de novo reward:
+- `diversity` vs `qed`
+- `diversity` vs `sa_score`
+
+## mmGenMol
+
+### Original
+
+Status: `Verified`
+
+Checkpoint:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_supervised_8gpu/20260416_151741/checkpoints/5500.ckpt
+```
+
+Training config:
+
+```text
+configs/base_pocket_prefix_8gpu.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_pocket_prefix_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_NAME=base_pocket_prefix_8gpu sbatch scripts/slurm/train_pocket_prefix_8gpu.sbatch
+```
+
+Notes:
+
+- This is the current original-model checkpoint selected for the comparison.
+- Existing evaluation config already points to this checkpoint:
+
+```text
+configs/eval_pocket_prefix_crossdocked_5500ckpt.yaml
+```
+
+### GRPO
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO: lock the main mmGenMol GRPO checkpoint for the comparison
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng256_bs512_lr5e-5_beta5e-3_ni1.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng256_bs512_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng256_bs512_lr5e-5_beta5e-3_ni1.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng256_bs512_ni1.sbatch
+```
+
+Notes:
+
+- Stable 1-GPU probe:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_probe_1gpu_ng256_bs512_lr5e-5_beta5e-3_ni1_20260421_220006
+```
+
+- Probe evidence:
+
+```text
+job 40942, 1 GPU, COMPLETED, 10 steps, no OOM
+```
+
+### SGRPO
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng32_sg8_bs512_lr5e-5_beta5e-3_gw09.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng32_sg8_bs512_gw09.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng32_sg8_bs512_lr5e-5_beta5e-3_gw09.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng32_sg8_bs512_gw09.sbatch
+```
+
+Notes:
+
+- Config family is defined to mirror de novo SGRPO with `num_generations=32`, `supergroup_num_groups=8`, `group_advantage_weight=0.9`, and `per_device_train_batch_size=512`.
+- Unverified assumption: `generation_batch_size` is also fixed to `512` to stay aligned with the current validated mm GRPO memory line.
+
+### Pareto Curves To Maintain
+
+- `diversity` vs `qed_mean`
+- `diversity` vs `sa_score_mean`
+- `diversity` vs `qvina_mean`
+- `diversity` vs `vina_dock_mean`
+
+## ProGen2
+
+### Original
+
+Status: `Verified`
+
+Checkpoint:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/checkpoints/progen2-small
+```
+
+Tokenizer:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/tokenizer.json
+```
+
+Training config:
+
+```text
+N/A in this repo for the current comparison campaign
+```
+
+Launch Script:
+
+```text
+N/A
+```
+
+Expected GPU Topology:
+
+```text
+N/A
+```
+
+Invocation:
+
+```text
+N/A
+```
+
+Notes:
+
+- This is the official `progen2-small` baseline asset.
+
+### GRPO
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+TODO
+```
+
+Launch Script:
+
+```text
+TODO
+```
+
+Expected GPU Topology:
+
+```text
+TODO
+```
+
+Invocation:
+
+```text
+TODO
+```
+
+Notes:
+
+- No verified ProGen2 `grpo` training run has been locked into this comparison index yet.
+
+### SGRPO
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+TODO
+```
+
+Launch Script:
+
+```text
+TODO
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+TODO
+```
+
+Notes:
+
+- Current main-result checkpoint and 8-GPU training config are not locked yet.
+- Verified 1-GPU probe conclusion:
+
+```text
+recommended per_device_prompt_batch_size = 64
+```
+
+- Supporting probe artifacts:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/recycle1_default_probe_v2/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/recycle1_bs64_10step_nos39/probe/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/fold_every4_bs64_10step_nos39/probe/summary.md
+```
+
+### Pareto Curves To Maintain
+
+- `diversity` vs `naturalness`
+- `diversity` vs `foldability`
+- `diversity` vs `stability`
+- `diversity` vs `developability`
+
+## Global Open Items
+
+- `genmol de novo`: missing the unified 3-way full-grid sweep result under this directory
+- `mmgenmol`: missing locked GRPO and SGRPO comparison checkpoints
+- `progen2`: missing GRPO checkpoint and final SGRPO checkpoint
+
+## Update Rule
+
+Whenever a new comparison asset is adopted, update this file immediately with:
+
+1. the checkpoint path
+2. the training config path
+3. the raw result file path
+4. the rendered plot path
+
+Do not overwrite a previously listed path silently. If a checkpoint selection changes, record the replacement explicitly in the relevant section.

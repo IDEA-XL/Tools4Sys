@@ -21,7 +21,13 @@ from genmol.rl.cpgrpo import (
     split_tensor_dict,
 )
 from genmol.rl.reward import MolecularReward, compute_internal_diversity
-from genmol.rl.specs import deserialize_specs, expand_group_specs, sample_group_specs, serialize_specs
+from genmol.rl.specs import (
+    deserialize_specs,
+    expand_group_specs,
+    sample_group_specs,
+    sample_supergroup_shared_specs,
+    serialize_specs,
+)
 from genmol.rl.trainer import (
     _aggregate_scalar_list,
     _nanmean,
@@ -437,8 +443,9 @@ class PocketPrefixCpGRPOTrainer:
         expanded_entries = []
         for start in range(0, len(group_specs), self.config.supergroup_num_groups):
             supergroup_specs = group_specs[start:start + self.config.supergroup_num_groups]
-            max_add_seq_len = max(spec.add_seq_len for spec in supergroup_specs)
-            sampled_entry = self._eligible_manifest_entry(max_add_seq_len, rng)
+            if any(spec != supergroup_specs[0] for spec in supergroup_specs[1:]):
+                raise ValueError('Expected identical specs within each coupled_sgrpo supergroup')
+            sampled_entry = self._eligible_manifest_entry(supergroup_specs[0].add_seq_len, rng)
             expanded_entries.extend(
                 [sampled_entry] * (self.config.supergroup_num_groups * self.config.num_generations)
             )
@@ -447,14 +454,25 @@ class PocketPrefixCpGRPOTrainer:
     def _generate_and_score_completions(self, mode):
         cycle_seed = self.config.seed + self.generation_cycle_idx * 10000
         if self.accelerator.is_main_process:
-            group_specs = sample_group_specs(
-                num_groups=self.num_groups_global,
-                generation_temperature=self.config.generation_temperature,
-                randomness=self.config.randomness,
-                min_add_len=self.config.min_add_len,
-                max_completion_length=self.config.max_completion_length,
-                seed=cycle_seed,
-            )
+            if self.config.rl_algorithm == 'coupled_sgrpo':
+                group_specs = sample_supergroup_shared_specs(
+                    num_groups=self.num_groups_global,
+                    supergroup_num_groups=self.config.supergroup_num_groups,
+                    generation_temperature=self.config.generation_temperature,
+                    randomness=self.config.randomness,
+                    min_add_len=self.config.min_add_len,
+                    max_completion_length=self.config.max_completion_length,
+                    seed=cycle_seed,
+                )
+            else:
+                group_specs = sample_group_specs(
+                    num_groups=self.num_groups_global,
+                    generation_temperature=self.config.generation_temperature,
+                    randomness=self.config.randomness,
+                    min_add_len=self.config.min_add_len,
+                    max_completion_length=self.config.max_completion_length,
+                    seed=cycle_seed,
+                )
             expanded_pocket_entries = self._sample_expanded_pocket_entries(group_specs=group_specs, seed=cycle_seed + 777)
         else:
             group_specs = []

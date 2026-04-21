@@ -5,15 +5,15 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH -t 48:00:00
-#SBATCH -J cpgrpo_8g1024
-#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs/cpgrpo_8g1024_%j.out
-#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs/cpgrpo_8g1024_%j.err
+#SBATCH -J mmcpgrpo8g
+#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/logs/train_%j.out
+#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/logs/train_%j.err
 
 set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
-CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yaml}
-LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs
+CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_pocket_prefix_ng256_bs512_lr5e-5_beta5e-3_ni1.yaml}
+LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
 if [[ -z "${WANDB_API_KEY:-}" ]]; then
@@ -22,20 +22,21 @@ if [[ -z "${WANDB_API_KEY:-}" ]]; then
 fi
 
 export WANDB_PROJECT="${WANDB_PROJECT:-tools4sys}"
-export WANDB_NAME="${WANDB_NAME:-cpgrpo-8g-sgrpo-ng64-sg8-bs1024}"
+export WANDB_NAME="${WANDB_NAME:-cpgrpo-denovo-pocket-prefix-8gpu-ng256-bs512-ni1}"
 
-source ~/miniconda/etc/profile.d/conda.sh
+source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
 export PATH=/opt/gridview/slurm/bin:$PATH
 
 cd "${REPO_DIR}"
 mkdir -p "${LOG_DIR}"
 
-export HF_HOME=/tmp/xinwuye_hf_cpgrpo_${SLURM_JOB_ID}
+export HF_HOME=/tmp/xinwuye_hf_mmcpgrpo_${SLURM_JOB_ID}
 export HF_DATASETS_CACHE=${HF_HOME}/datasets
 export HF_HUB_CACHE=${HF_HOME}/hub
 export TRANSFORMERS_CACHE=${HF_HOME}/transformers
 export PYTHONPATH=src
+export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 if [[ "${http_proxy:-}${https_proxy:-}${all_proxy:-}" == *"127.0.0.1:7897"* ]]; then
@@ -50,5 +51,5 @@ accelerate launch \
   --config_file configs/accelerate_zero2.yaml \
   --num_processes 8 \
   --main_process_port "${MASTER_PORT}" \
-  scripts/train_cpgrpo_denovo.py \
+  scripts/train_cpgrpo_denovo_pocket_prefix.py \
   --config "${CONFIG_PATH}"

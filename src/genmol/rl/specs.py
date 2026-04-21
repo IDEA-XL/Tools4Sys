@@ -64,6 +64,42 @@ def sample_group_specs(
     return specs
 
 
+def sample_supergroup_shared_specs(
+    num_groups,
+    supergroup_num_groups,
+    generation_temperature,
+    randomness,
+    min_add_len,
+    seed,
+    max_completion_length=None,
+    length_path=None,
+):
+    if supergroup_num_groups <= 1:
+        raise ValueError('supergroup_num_groups must be greater than 1')
+    if num_groups <= 0:
+        raise ValueError('num_groups must be positive')
+    if num_groups % supergroup_num_groups != 0:
+        raise ValueError(
+            'num_groups must be divisible by supergroup_num_groups: '
+            f'{num_groups} vs {supergroup_num_groups}'
+        )
+
+    num_supergroups = num_groups // supergroup_num_groups
+    base_specs = sample_group_specs(
+        num_groups=num_supergroups,
+        generation_temperature=generation_temperature,
+        randomness=randomness,
+        min_add_len=min_add_len,
+        seed=seed,
+        max_completion_length=max_completion_length,
+        length_path=length_path,
+    )
+    specs = []
+    for spec in base_specs:
+        specs.extend([spec] * supergroup_num_groups)
+    return specs
+
+
 def expand_group_specs(group_specs, num_generations):
     if num_generations <= 1:
         raise ValueError('num_generations must be greater than 1')
