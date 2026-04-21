@@ -83,9 +83,7 @@ class CompositeProteinReward:
 
     def calibrate(self, sequences):
         nat_raw, _, _ = self._timed_score_raw(self.naturalness, sequences)
-        self._timed_release(self.naturalness)
         stab_raw, _, _ = self._timed_score_raw(self.stability, sequences)
-        self._timed_release(self.stability)
         nat_q10, nat_q90 = _quantiles(nat_raw)
         stab_q10, stab_q90 = _quantiles(stab_raw)
         self.calibration = {
@@ -104,13 +102,17 @@ class CompositeProteinReward:
         if self.calibration is None:
             raise RuntimeError('CompositeProteinReward.calibrate must be called before score')
         nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(self.naturalness, sequences)
-        nat_release_sec, nat_gpu_to_cpu_sec = self._timed_release(self.naturalness)
         fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(self.foldability, sequences)
-        fold_release_sec, fold_gpu_to_cpu_sec = self._timed_release(self.foldability)
         stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(self.stability, sequences)
-        stab_release_sec, stab_gpu_to_cpu_sec = self._timed_release(self.stability)
         dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(self.developability, sequences)
-        dev_release_sec, dev_gpu_to_cpu_sec = self._timed_release(self.developability)
+        nat_release_sec = 0.0
+        nat_gpu_to_cpu_sec = 0.0
+        fold_release_sec = 0.0
+        fold_gpu_to_cpu_sec = 0.0
+        stab_release_sec = 0.0
+        stab_gpu_to_cpu_sec = 0.0
+        dev_release_sec = 0.0
+        dev_gpu_to_cpu_sec = 0.0
 
         nat = _scale_quantile(
             nat_raw,

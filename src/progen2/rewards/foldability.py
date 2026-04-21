@@ -90,9 +90,14 @@ class ESMFoldFoldabilityScorer:
         outputs = []
         self._ensure_loaded()
         for chunk in iter_chunks(sequences, self.batch_size):
-            for sequence in chunk:
-                inference = self.model.infer(sequence)
-                if 'mean_plddt' not in inference:
-                    raise ValueError('ESMFold inference did not return mean_plddt')
-                outputs.append(float(inference['mean_plddt']) / 100.0)
+            inference = self.model.infer(chunk)
+            if 'mean_plddt' not in inference:
+                raise ValueError('ESMFold inference did not return mean_plddt')
+            mean_plddt = torch.as_tensor(inference['mean_plddt'], dtype=torch.float32)
+            if mean_plddt.numel() != len(chunk):
+                raise RuntimeError(
+                    'ESMFold inference returned a different number of mean_plddt values than inputs '
+                    f'for the current chunk: {mean_plddt.numel()} != {len(chunk)}'
+                )
+            outputs.extend((mean_plddt / 100.0).detach().cpu().tolist())
         return outputs
