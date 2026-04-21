@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 
-from progen2.rewards.common import iter_chunks, release_model, validate_batch_size
+from progen2.rewards.common import iter_chunks, move_model_to_device, release_model, validate_batch_size
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,8 @@ class ESM2NaturalnessScorer:
         self.model = None
         self.alphabet = None
         self.batch_converter = None
+        self.last_move_to_device_sec = 0.0
+        self.last_release_to_cpu_sec = 0.0
 
     def _cached_checkpoint_path(self):
         return Path(torch.hub.get_dir()) / 'checkpoints' / f'{self.model_name}.pt'
@@ -50,10 +52,10 @@ class ESM2NaturalnessScorer:
                 self.model, self.alphabet = self._load_model()
             self.model.eval()
             self.batch_converter = self.alphabet.get_batch_converter()
-        self.model.to(self.device)
+        self.last_move_to_device_sec = move_model_to_device(self.model, self.device)
 
     def release(self):
-        release_model(self.model, self.device)
+        self.last_release_to_cpu_sec = release_model(self.model, self.device)
 
     @torch.no_grad()
     def score_raw(self, sequences):

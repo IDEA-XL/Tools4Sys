@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from transformers import BertTokenizer
 
-from progen2.rewards.common import iter_chunks, release_model, validate_batch_size
+from progen2.rewards.common import iter_chunks, move_model_to_device, release_model, validate_batch_size
 
 
 def _import_adapter_model():
@@ -84,12 +84,14 @@ class _TemBERTureReplica:
             self.model.bert.prompt_tuning = nn.Identity()
         self.model.eval()
         self.tokenizer = BertTokenizer.from_pretrained(self.base_model_path)
+        self.last_move_to_device_sec = 0.0
+        self.last_release_to_cpu_sec = 0.0
 
     @torch.no_grad()
     def score_raw(self, sequences):
         if not sequences:
             raise ValueError('sequences must be non-empty')
-        self.model.to(self.device)
+        self.last_move_to_device_sec = move_model_to_device(self.model, self.device)
         outputs = []
         normalized = [' '.join(''.join(sequence.split())) for sequence in sequences]
         for chunk in iter_chunks(normalized, self.batch_size):
@@ -106,7 +108,7 @@ class _TemBERTureReplica:
         return outputs
 
     def release(self):
-        release_model(self.model, self.device)
+        self.last_release_to_cpu_sec = release_model(self.model, self.device)
 
 
 class TemBERTureTmScorer:
@@ -133,6 +135,8 @@ class TemBERTureTmScorer:
         if not self.replica_names:
             raise ValueError('TemBERTure replicas must be non-empty')
         self.replicas = None
+        self.last_move_to_device_sec = 0.0
+        self.last_release_to_cpu_sec = 0.0
 
     def _ensure_loaded(self):
         if self.replicas is not None:
@@ -153,15 +157,20 @@ class TemBERTureTmScorer:
     def release(self):
         if self.replicas is None:
             return
+        self.last_release_to_cpu_sec = 0.0
         for replica in self.replicas:
             replica.release()
+            self.last_release_to_cpu_sec += replica.last_release_to_cpu_sec
 
     @torch.no_grad()
     def score_raw(self, sequences):
         if not sequences:
             raise ValueError('sequences must be non-empty')
         self._ensure_loaded()
+        self.last_move_to_device_sec = 0.0
         replica_scores = [replica.score_raw(sequences) for replica in self.replicas]
+        for replica in self.replicas:
+            self.last_move_to_device_sec += replica.last_move_to_device_sec
         if not replica_scores:
             raise RuntimeError('TemBERTure scorer loaded no replicas')
         tensor = torch.tensor(replica_scores, dtype=torch.float32)

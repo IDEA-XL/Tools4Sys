@@ -4,7 +4,7 @@ import types
 
 import torch
 
-from progen2.rewards.common import iter_chunks, release_model, validate_batch_size
+from progen2.rewards.common import iter_chunks, move_model_to_device, release_model, validate_batch_size
 
 
 def _ensure_openfold_lightning_compat():
@@ -71,15 +71,17 @@ class ESMFoldFoldabilityScorer:
         self.device = torch.device(device)
         self.batch_size = validate_batch_size(batch_size, field_name='foldability.batch_size')
         self.model = None
+        self.last_move_to_device_sec = 0.0
+        self.last_release_to_cpu_sec = 0.0
 
     def _ensure_loaded(self):
         if self.model is None:
             self.model = self.esm.pretrained.esmfold_v1()
             self.model.eval()
-        self.model.to(self.device)
+        self.last_move_to_device_sec = move_model_to_device(self.model, self.device)
 
     def release(self):
-        release_model(self.model, self.device)
+        self.last_release_to_cpu_sec = release_model(self.model, self.device)
 
     @torch.no_grad()
     def score_raw(self, sequences):

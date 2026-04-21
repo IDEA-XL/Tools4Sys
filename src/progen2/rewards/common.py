@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import time
 
 import torch
 
@@ -45,11 +46,33 @@ def is_valid_protein_sequence(sequence):
     return True
 
 
-def release_model(model, device):
-    if model is None:
-        return
+def synchronize_device(device):
     device = torch.device(device)
     if device.type != 'cuda':
         return
+    torch.cuda.synchronize(device)
+
+
+def move_model_to_device(model, device):
+    if model is None:
+        return 0.0
+    device = torch.device(device)
+    synchronize_device(device)
+    start = time.perf_counter()
+    model.to(device)
+    synchronize_device(device)
+    return time.perf_counter() - start
+
+
+def release_model(model, device):
+    if model is None:
+        return 0.0
+    device = torch.device(device)
+    if device.type != 'cuda':
+        return 0.0
+    synchronize_device(device)
+    start = time.perf_counter()
     model.to('cpu')
     torch.cuda.empty_cache()
+    synchronize_device(device)
+    return time.perf_counter() - start

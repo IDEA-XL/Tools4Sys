@@ -1,5 +1,8 @@
+import time
+
 import torch
 
+from progen2.rewards.common import synchronize_device
 from progen2.rewards.developability import ProteinSolScorer, score_developability_components
 from progen2.rewards.foldability import ESMFoldFoldabilityScorer
 from progen2.rewards.naturalness import ESM2NaturalnessScorer
@@ -56,11 +59,33 @@ class CompositeProteinReward:
         )
         self.calibration = None
 
+    def _timed_score_raw(self, scorer, sequences):
+        if hasattr(scorer, 'device'):
+            synchronize_device(scorer.device)
+        start = time.perf_counter()
+        values = scorer.score_raw(sequences)
+        if hasattr(scorer, 'device'):
+            synchronize_device(scorer.device)
+        elapsed = time.perf_counter() - start
+        transfer_in = float(getattr(scorer, 'last_move_to_device_sec', 0.0))
+        return values, elapsed, transfer_in
+
+    def _timed_release(self, scorer):
+        if hasattr(scorer, 'device'):
+            synchronize_device(scorer.device)
+        start = time.perf_counter()
+        scorer.release()
+        if hasattr(scorer, 'device'):
+            synchronize_device(scorer.device)
+        elapsed = time.perf_counter() - start
+        transfer_out = float(getattr(scorer, 'last_release_to_cpu_sec', 0.0))
+        return elapsed, transfer_out
+
     def calibrate(self, sequences):
-        nat_raw = self.naturalness.score_raw(sequences)
-        self.naturalness.release()
-        stab_raw = self.stability.score_raw(sequences)
-        self.stability.release()
+        nat_raw, _, _ = self._timed_score_raw(self.naturalness, sequences)
+        self._timed_release(self.naturalness)
+        stab_raw, _, _ = self._timed_score_raw(self.stability, sequences)
+        self._timed_release(self.stability)
         nat_q10, nat_q90 = _quantiles(nat_raw)
         stab_q10, stab_q90 = _quantiles(stab_raw)
         self.calibration = {
@@ -78,14 +103,14 @@ class CompositeProteinReward:
     def score_details(self, sequences):
         if self.calibration is None:
             raise RuntimeError('CompositeProteinReward.calibrate must be called before score')
-        nat_raw = self.naturalness.score_raw(sequences)
-        self.naturalness.release()
-        fold = self.foldability.score_raw(sequences)
-        self.foldability.release()
-        stab_raw = self.stability.score_raw(sequences)
-        self.stability.release()
-        dev_raw = self.developability.score_raw(sequences)
-        self.developability.release()
+        nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(self.naturalness, sequences)
+        nat_release_sec, nat_gpu_to_cpu_sec = self._timed_release(self.naturalness)
+        fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(self.foldability, sequences)
+        fold_release_sec, fold_gpu_to_cpu_sec = self._timed_release(self.foldability)
+        stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(self.stability, sequences)
+        stab_release_sec, stab_gpu_to_cpu_sec = self._timed_release(self.stability)
+        dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(self.developability, sequences)
+        dev_release_sec, dev_gpu_to_cpu_sec = self._timed_release(self.developability)
 
         nat = _scale_quantile(
             nat_raw,
@@ -128,5 +153,24 @@ class CompositeProteinReward:
             'reward_sol_mean': float(torch.tensor(developability_components['solubility'], dtype=torch.float32).mean().item()),
             'reward_liability_mean': float(torch.tensor(developability_components['liability_reward'], dtype=torch.float32).mean().item()),
             'reward_total_mean': float(torch.tensor(total, dtype=torch.float32).mean().item()),
+            'reward_nat_score_sec': nat_score_sec,
+            'reward_fold_score_sec': fold_score_sec,
+            'reward_stab_score_sec': stab_score_sec,
+            'reward_dev_score_sec': dev_score_sec,
+            'reward_nat_cpu_to_gpu_sec': nat_cpu_to_gpu_sec,
+            'reward_fold_cpu_to_gpu_sec': fold_cpu_to_gpu_sec,
+            'reward_stab_cpu_to_gpu_sec': stab_cpu_to_gpu_sec,
+            'reward_dev_cpu_to_gpu_sec': dev_cpu_to_gpu_sec,
+            'reward_nat_gpu_to_cpu_sec': nat_gpu_to_cpu_sec,
+            'reward_fold_gpu_to_cpu_sec': fold_gpu_to_cpu_sec,
+            'reward_stab_gpu_to_cpu_sec': stab_gpu_to_cpu_sec,
+            'reward_dev_gpu_to_cpu_sec': dev_gpu_to_cpu_sec,
+            'reward_nat_release_sec': nat_release_sec,
+            'reward_fold_release_sec': fold_release_sec,
+            'reward_stab_release_sec': stab_release_sec,
+            'reward_dev_release_sec': dev_release_sec,
+            'reward_score_sec_total': nat_score_sec + fold_score_sec + stab_score_sec + dev_score_sec,
+            'reward_cpu_to_gpu_sec_total': nat_cpu_to_gpu_sec + fold_cpu_to_gpu_sec + stab_cpu_to_gpu_sec + dev_cpu_to_gpu_sec,
+            'reward_gpu_to_cpu_sec_total': nat_gpu_to_cpu_sec + fold_gpu_to_cpu_sec + stab_gpu_to_cpu_sec + dev_gpu_to_cpu_sec,
         }
         return details, metrics

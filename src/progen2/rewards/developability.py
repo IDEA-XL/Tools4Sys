@@ -62,9 +62,12 @@ class ProteinSolScorer:
         if not model_name_or_path:
             raise ValueError('Protein-Sol model_name_or_path is required')
         self.batch_size = validate_batch_size(batch_size, field_name='developability.batch_size')
+        self.device = device
         self.bundle_root = _resolve_proteinsol_root(model_name_or_path)
         self._workspace = None
         self._workspace_root = None
+        self.last_move_to_device_sec = 0.0
+        self.last_release_to_cpu_sec = 0.0
 
     def _ensure_workspace(self):
         if self._workspace_root is not None:
