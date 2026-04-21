@@ -8,6 +8,13 @@ from progen2.rewards.foldability import ESMFoldFoldabilityScorer
 from progen2.rewards.naturalness import ESM2NaturalnessScorer
 from progen2.rewards.stability import TemBERTureTmScorer
 
+REWARD_NAME_ORDER = (
+    'naturalness',
+    'foldability',
+    'stability',
+    'developability',
+)
+
 
 def _quantiles(values):
     tensor = torch.as_tensor(values, dtype=torch.float32)
@@ -38,9 +45,72 @@ def _resolve_reward_batch_size(config, default_batch_size, field_name):
     return default_batch_size
 
 
+def normalize_reward_compute_every_n_steps(config):
+    if config is None:
+        return {name: 1 for name in REWARD_NAME_ORDER}
+    if isinstance(config, (list, tuple)):
+        if len(config) != len(REWARD_NAME_ORDER):
+            raise ValueError(
+                'reward_compute_every_n_steps list must have exactly '
+                f'{len(REWARD_NAME_ORDER)} entries in order {REWARD_NAME_ORDER}, got {len(config)}'
+            )
+        raw = dict(zip(REWARD_NAME_ORDER, config))
+    elif isinstance(config, dict):
+        raw = dict(config)
+        missing = [name for name in REWARD_NAME_ORDER if name not in raw]
+        extra = sorted(name for name in raw if name not in REWARD_NAME_ORDER)
+        if missing or extra:
+            raise ValueError(
+                'reward_compute_every_n_steps dict must have exactly these keys: '
+                f'{REWARD_NAME_ORDER}; missing={missing}, extra={extra}'
+            )
+    else:
+        raise ValueError(
+            'reward_compute_every_n_steps must be null, a dict keyed by '
+            f'{REWARD_NAME_ORDER}, or a list in that order; got {type(config).__name__}'
+        )
+
+    normalized = {}
+    for name in REWARD_NAME_ORDER:
+        value = raw[name]
+        try:
+            interval = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'reward_compute_every_n_steps[{name!r}] must be a positive integer, got {value!r}'
+            ) from exc
+        if interval <= 0:
+            raise ValueError(
+                f'reward_compute_every_n_steps[{name!r}] must be a positive integer, got {value!r}'
+            )
+        normalized[name] = interval
+    return normalized
+
+
+def _normalize_step_number(step_number):
+    if step_number is None:
+        return None
+    try:
+        normalized = int(step_number)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'step_number must be a positive integer or null, got {step_number!r}') from exc
+    if normalized <= 0:
+        raise ValueError(f'step_number must be a positive integer or null, got {step_number!r}')
+    return normalized
+
+
 class CompositeProteinReward:
-    def __init__(self, config, device='cpu', default_reward_batch_size=None):
+    def __init__(
+        self,
+        config,
+        device='cpu',
+        default_reward_batch_size=None,
+        reward_compute_every_n_steps=None,
+    ):
         self.device = torch.device(device)
+        self.reward_compute_every_n_steps = normalize_reward_compute_every_n_steps(
+            reward_compute_every_n_steps
+        )
         naturalness_cfg = dict(config['naturalness'])
         foldability_cfg = dict(config.get('foldability', {}))
         stability_cfg = dict(config['stability'])
@@ -121,17 +191,78 @@ class CompositeProteinReward:
         }
         return dict(self.calibration)
 
-    def score(self, sequences):
-        details, metrics = self.score_details(sequences)
+    def _should_compute_reward(self, reward_name, step_number):
+        if step_number is None:
+            return True
+        interval = self.reward_compute_every_n_steps[reward_name]
+        return (step_number - 1) % interval == 0
+
+    def score(self, sequences, step_number=None):
+        details, metrics = self.score_details(sequences, step_number=step_number)
         return details['total'], metrics
 
-    def score_details(self, sequences):
+    def score_details(self, sequences, step_number=None):
         if self.calibration is None:
             raise RuntimeError('CompositeProteinReward.calibrate must be called before score')
-        nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(self.naturalness, sequences)
-        fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(self.foldability, sequences)
-        stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(self.stability, sequences)
-        dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(self.developability, sequences)
+        step_number = _normalize_step_number(step_number)
+        num_sequences = len(sequences)
+
+        if self._should_compute_reward('naturalness', step_number):
+            nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(self.naturalness, sequences)
+            nat = _scale_quantile(
+                nat_raw,
+                self.calibration['naturalness_q10'],
+                self.calibration['naturalness_q90'],
+            )
+            nat_skipped = 0.0
+        else:
+            nat_raw = [0.0] * num_sequences
+            nat_score_sec = 0.0
+            nat_cpu_to_gpu_sec = 0.0
+            nat = [0.0] * num_sequences
+            nat_skipped = 1.0
+
+        if self._should_compute_reward('foldability', step_number):
+            fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(self.foldability, sequences)
+            fold_skipped = 0.0
+        else:
+            fold = [0.0] * num_sequences
+            fold_score_sec = 0.0
+            fold_cpu_to_gpu_sec = 0.0
+            fold_skipped = 1.0
+
+        if self._should_compute_reward('stability', step_number):
+            stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(self.stability, sequences)
+            stab = _scale_quantile(
+                stab_raw,
+                self.calibration['stability_q10'],
+                self.calibration['stability_q90'],
+            )
+            stab_skipped = 0.0
+        else:
+            stab_raw = [0.0] * num_sequences
+            stab_score_sec = 0.0
+            stab_cpu_to_gpu_sec = 0.0
+            stab = [0.0] * num_sequences
+            stab_skipped = 1.0
+
+        if self._should_compute_reward('developability', step_number):
+            dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(self.developability, sequences)
+            developability_components = score_developability_components(dev_raw, sequences)
+            dev = developability_components['developability']
+            dev_skipped = 0.0
+        else:
+            dev_raw = [0.0] * num_sequences
+            dev_score_sec = 0.0
+            dev_cpu_to_gpu_sec = 0.0
+            developability_components = {
+                'solubility': [0.0] * num_sequences,
+                'liability_reward': [0.0] * num_sequences,
+                'developability': [0.0] * num_sequences,
+            }
+            dev = developability_components['developability']
+            dev_skipped = 1.0
+
         nat_release_sec = 0.0
         nat_gpu_to_cpu_sec = 0.0
         fold_release_sec = 0.0
@@ -140,19 +271,6 @@ class CompositeProteinReward:
         stab_gpu_to_cpu_sec = 0.0
         dev_release_sec = 0.0
         dev_gpu_to_cpu_sec = 0.0
-
-        nat = _scale_quantile(
-            nat_raw,
-            self.calibration['naturalness_q10'],
-            self.calibration['naturalness_q90'],
-        )
-        stab = _scale_quantile(
-            stab_raw,
-            self.calibration['stability_q10'],
-            self.calibration['stability_q90'],
-        )
-        developability_components = score_developability_components(dev_raw, sequences)
-        dev = developability_components['developability']
 
         total = []
         for idx in range(len(sequences)):
@@ -186,6 +304,14 @@ class CompositeProteinReward:
             'reward_fold_score_sec': fold_score_sec,
             'reward_stab_score_sec': stab_score_sec,
             'reward_dev_score_sec': dev_score_sec,
+            'reward_nat_skipped': nat_skipped,
+            'reward_fold_skipped': fold_skipped,
+            'reward_stab_skipped': stab_skipped,
+            'reward_dev_skipped': dev_skipped,
+            'reward_nat_every_n_steps': float(self.reward_compute_every_n_steps['naturalness']),
+            'reward_fold_every_n_steps': float(self.reward_compute_every_n_steps['foldability']),
+            'reward_stab_every_n_steps': float(self.reward_compute_every_n_steps['stability']),
+            'reward_dev_every_n_steps': float(self.reward_compute_every_n_steps['developability']),
             'reward_nat_cpu_to_gpu_sec': nat_cpu_to_gpu_sec,
             'reward_fold_cpu_to_gpu_sec': fold_cpu_to_gpu_sec,
             'reward_stab_cpu_to_gpu_sec': stab_cpu_to_gpu_sec,

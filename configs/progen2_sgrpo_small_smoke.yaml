@@ -25,6 +25,11 @@ rl_algorithm: sgrpo
 num_generations: 4
 supergroup_num_groups: 2
 group_advantage_weight: 0.5
+reward_compute_every_n_steps:
+  naturalness: 1
+  foldability: 1
+  stability: 1
+  developability: 1
 max_new_tokens: 64
 top_p: 0.95
 temperature: 0.8

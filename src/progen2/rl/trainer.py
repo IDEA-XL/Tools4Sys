@@ -14,11 +14,16 @@ from progen2.checkpoint import PROGEN2_SGRPO_VARIANT, stamp_checkpoint_variant
 from progen2.data.prompts import load_prompt_texts
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
 from progen2.rewards import CompositeProteinReward, compute_group_diversity_reward
+from progen2.rewards.composite import normalize_reward_compute_every_n_steps
 from progen2.rl.policy import ProGen2Policy
 from rl_shared.sgrpo import compute_clipped_grpo_loss, compute_grouped_advantages, compute_sgrpo_advantages
 
 
 logger = logging.getLogger(__name__)
+
+
+def default_reward_compute_every_n_steps():
+    return normalize_reward_compute_every_n_steps(None)
 
 
 @dataclass
@@ -53,6 +58,9 @@ class ProGen2TrainConfig:
     num_generations: int = 4
     supergroup_num_groups: int = 2
     group_advantage_weight: float = 0.5
+    reward_compute_every_n_steps: dict[str, int] = field(
+        default_factory=default_reward_compute_every_n_steps
+    )
     max_new_tokens: int = 128
     top_p: float = 0.95
     temperature: float = 0.8
@@ -97,6 +105,9 @@ def load_config(path):
     for field_name in float_fields:
         if field_name in raw and raw[field_name] is not None:
             raw[field_name] = float(raw[field_name])
+    raw['reward_compute_every_n_steps'] = normalize_reward_compute_every_n_steps(
+        raw.get('reward_compute_every_n_steps')
+    )
     config = ProGen2TrainConfig(**raw)
     if config.model_variant != PROGEN2_SGRPO_VARIANT:
         raise ValueError(
@@ -226,6 +237,7 @@ class ProGen2SGRPOTrainer:
             config.rewards,
             device=self.device,
             default_reward_batch_size=default_reward_batch_size(config),
+            reward_compute_every_n_steps=config.reward_compute_every_n_steps,
         )
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
@@ -287,13 +299,16 @@ class ProGen2SGRPOTrainer:
             dist.broadcast_object_list(payload, src=0)
         self.reward_model.calibration = payload[0]
 
-    def _score_rollout_rewards(self, sequences):
+    def _score_rollout_rewards(self, sequences, *, step_number):
         valid_indices = [idx for idx, sequence in enumerate(sequences) if sequence]
         rewards = [0.0] * len(sequences)
         metrics = {'invalid_sequence_rate': 1.0 if not valid_indices else 1.0 - (len(valid_indices) / len(sequences))}
         if valid_indices:
             valid_sequences = [sequences[idx] for idx in valid_indices]
-            valid_rewards, reward_metrics = self.reward_model.score(valid_sequences)
+            valid_rewards, reward_metrics = self.reward_model.score(
+                valid_sequences,
+                step_number=step_number,
+            )
             for target_idx, reward in zip(valid_indices, valid_rewards):
                 rewards[target_idx] = float(reward)
             metrics.update(reward_metrics)
@@ -400,7 +415,10 @@ class ProGen2SGRPOTrainer:
                 temperature=self.config.temperature,
                 seed=self.config.seed + step_idx,
             )
-            rollout_rewards, reward_metrics = self._score_rollout_rewards(rollout.protein_sequences)
+            rollout_rewards, reward_metrics = self._score_rollout_rewards(
+                rollout.protein_sequences,
+                step_number=self.global_step + 1,
+            )
             group_rewards = self._score_group_rewards(rollout.protein_sequences)
             advantages, group_advantages, rollout_advantages, advantage_metrics = self._compute_advantages(
                 rollout_rewards,
