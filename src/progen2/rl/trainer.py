@@ -49,7 +49,7 @@ class ProGen2TrainConfig:
     save_steps: int = 25
     save_total_limit: int = 3
     report_to: list[str] = field(default_factory=list)
-    rl_algorithm: str = 'coupled_sgrpo'
+    rl_algorithm: str = 'sgrpo'
     num_generations: int = 4
     supergroup_num_groups: int = 2
     group_advantage_weight: float = 0.5
@@ -114,10 +114,12 @@ def load_config(path):
         raise ValueError('max_steps must be positive')
     if config.num_generations <= 1:
         raise ValueError('num_generations must be greater than 1')
-    if config.rl_algorithm not in {'coupled_grpo', 'coupled_sgrpo'}:
-        raise ValueError("rl_algorithm must be 'coupled_grpo' or 'coupled_sgrpo'")
-    if config.rl_algorithm == 'coupled_sgrpo' and config.supergroup_num_groups <= 1:
-        raise ValueError('supergroup_num_groups must be greater than 1 for coupled_sgrpo')
+    if config.rl_algorithm not in {'grpo', 'sgrpo'}:
+        raise ValueError("rl_algorithm must be 'grpo' or 'sgrpo'")
+    if config.supergroup_num_groups <= 0:
+        raise ValueError('supergroup_num_groups must be positive')
+    if config.rl_algorithm == 'sgrpo' and config.supergroup_num_groups <= 1:
+        raise ValueError('supergroup_num_groups must be greater than 1 for sgrpo')
     if not 0.0 <= config.group_advantage_weight <= 1.0:
         raise ValueError('group_advantage_weight must be in [0, 1]')
     if not config.rewards:
@@ -153,6 +155,14 @@ def _write_jsonl(path, payload):
         handle.write(json.dumps(payload, sort_keys=True) + '\n')
 
 
+def default_reward_batch_size(config):
+    return int(
+        config.per_device_prompt_batch_size
+        * config.num_generations
+        * config.supergroup_num_groups
+    )
+
+
 class ProGen2SGRPOTrainer:
     def __init__(self, config, output_dir):
         self.config = config
@@ -171,7 +181,7 @@ class ProGen2SGRPOTrainer:
         self._prompt_cursor = self.accelerator.process_index * config.per_device_prompt_batch_size
         self.num_return_sequences = (
             config.num_generations * config.supergroup_num_groups
-            if config.rl_algorithm == 'coupled_sgrpo'
+            if config.rl_algorithm == 'sgrpo'
             else config.num_generations
         )
 
@@ -212,7 +222,11 @@ class ProGen2SGRPOTrainer:
             optimizer,
             scheduler,
         )
-        self.reward_model = CompositeProteinReward(config.rewards, device=self.device)
+        self.reward_model = CompositeProteinReward(
+            config.rewards,
+            device=self.device,
+            default_reward_batch_size=default_reward_batch_size(config),
+        )
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
         self.global_step = 0
@@ -303,7 +317,7 @@ class ProGen2SGRPOTrainer:
         chunk_rollout = self.num_return_sequences
         chunk_groups = (
             self.config.supergroup_num_groups
-            if self.config.rl_algorithm == 'coupled_sgrpo'
+            if self.config.rl_algorithm == 'sgrpo'
             else 1
         )
         for prompt_idx in range(self.config.per_device_prompt_batch_size):
@@ -313,7 +327,7 @@ class ProGen2SGRPOTrainer:
             group_start = prompt_idx * chunk_groups
             group_end = group_start + chunk_groups
             prompt_group_rewards = group_rewards[group_start:group_end]
-            if self.config.rl_algorithm == 'coupled_sgrpo':
+            if self.config.rl_algorithm == 'sgrpo':
                 prompt_adv, prompt_group_adv, prompt_rollout_adv, prompt_metrics = compute_sgrpo_advantages(
                     rollout_rewards=prompt_rollout_rewards,
                     group_rewards=prompt_group_rewards,

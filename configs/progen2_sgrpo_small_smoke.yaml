@@ -21,7 +21,7 @@ logging_steps: 1
 save_steps: 5
 save_total_limit: 2
 report_to: []
-rl_algorithm: coupled_sgrpo
+rl_algorithm: sgrpo
 num_generations: 4
 supergroup_num_groups: 2
 group_advantage_weight: 0.5
@@ -34,16 +34,12 @@ rewards:
   naturalness:
     model_name: esm2_t33_650M_UR50D
     device: cuda
-    batch_size: 4
   foldability:
     device: cuda
-    batch_size: 1
   stability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official
     base_model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd
     device: cuda
-    batch_size: 8
   developability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official
     device: cuda
-    batch_size: 8

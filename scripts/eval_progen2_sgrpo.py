@@ -146,6 +146,10 @@ def _cycle_prompt_batch(prompts, batch_size, start_index):
     return batch
 
 
+def _default_reward_batch_size(config):
+    return int(config.generation_prompt_batch_size * config.group_size)
+
+
 def _collect_calibration_sequences(policy, prompts, config, seed):
     collected = []
     prompt_cursor = 0
@@ -368,7 +372,11 @@ def evaluate_experiment(config, experiment, prompts, device):
         ),
         trainable=False,
     )
-    reward_model = CompositeProteinReward(config.rewards, device=device)
+    reward_model = CompositeProteinReward(
+        config.rewards,
+        device=device,
+        default_reward_batch_size=_default_reward_batch_size(config),
+    )
     calibration_sequences = _collect_calibration_sequences(
         policy,
         prompts,

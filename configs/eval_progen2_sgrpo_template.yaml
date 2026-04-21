@@ -19,19 +19,15 @@ rewards:
   naturalness:
     model_name: esm2_t33_650M_UR50D
     device: cuda
-    batch_size: 4
   foldability:
     device: cuda
-    batch_size: 1
   stability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official
     base_model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd
     device: cuda
-    batch_size: 8
   developability:
     model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official
     device: cuda
-    batch_size: 8
 experiments:
   - name: progen2_sgrpo_checkpoint
     display_name: ProGen2 SGRPO

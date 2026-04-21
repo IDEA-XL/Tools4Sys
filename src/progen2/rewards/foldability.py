@@ -51,7 +51,7 @@ def _require_openfold_attention_core_extension():
 
 
 class ESMFoldFoldabilityScorer:
-    def __init__(self, device='cpu', batch_size=1, num_recycles=None):
+    def __init__(self, device='cpu', batch_size=1, num_recycles=1):
         try:
             import esm
         except ImportError as exc:

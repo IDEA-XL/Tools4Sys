@@ -28,8 +28,18 @@ def _scale_quantile(raw_values, q10, q90):
     return outputs
 
 
+def _resolve_reward_batch_size(config, default_batch_size, field_name):
+    if 'batch_size' in config and config['batch_size'] is not None:
+        return config['batch_size']
+    if default_batch_size is None:
+        raise ValueError(
+            f'{field_name} must be set explicitly when no default_reward_batch_size is provided'
+        )
+    return default_batch_size
+
+
 class CompositeProteinReward:
-    def __init__(self, config, device='cpu'):
+    def __init__(self, config, device='cpu', default_reward_batch_size=None):
         self.device = torch.device(device)
         naturalness_cfg = dict(config['naturalness'])
         foldability_cfg = dict(config.get('foldability', {}))
@@ -38,25 +48,41 @@ class CompositeProteinReward:
         self.naturalness = ESM2NaturalnessScorer(
             model_name=str(naturalness_cfg['model_name']),
             device=naturalness_cfg.get('device', self.device),
-            batch_size=naturalness_cfg.get('batch_size', 8),
+            batch_size=_resolve_reward_batch_size(
+                naturalness_cfg,
+                default_batch_size=default_reward_batch_size,
+                field_name='naturalness.batch_size',
+            ),
         )
         self.foldability = ESMFoldFoldabilityScorer(
             device=foldability_cfg.get('device', self.device),
-            batch_size=foldability_cfg.get('batch_size', 1),
+            batch_size=_resolve_reward_batch_size(
+                foldability_cfg,
+                default_batch_size=default_reward_batch_size,
+                field_name='foldability.batch_size',
+            ),
             num_recycles=foldability_cfg.get('num_recycles'),
         )
         self.stability = TemBERTureTmScorer(
             model_name_or_path=str(stability_cfg['model_name_or_path']),
             tokenizer_name_or_path=stability_cfg.get('tokenizer_name_or_path'),
             device=stability_cfg.get('device', self.device),
-            batch_size=stability_cfg.get('batch_size', 16),
+            batch_size=_resolve_reward_batch_size(
+                stability_cfg,
+                default_batch_size=default_reward_batch_size,
+                field_name='stability.batch_size',
+            ),
             base_model_name_or_path=stability_cfg.get('base_model_name_or_path'),
         )
         self.developability = ProteinSolScorer(
             model_name_or_path=str(developability_cfg['model_name_or_path']),
             tokenizer_name_or_path=developability_cfg.get('tokenizer_name_or_path'),
             device=developability_cfg.get('device', self.device),
-            batch_size=developability_cfg.get('batch_size', 16),
+            batch_size=_resolve_reward_batch_size(
+                developability_cfg,
+                default_batch_size=default_reward_batch_size,
+                field_name='developability.batch_size',
+            ),
         )
         self.calibration = None
 
