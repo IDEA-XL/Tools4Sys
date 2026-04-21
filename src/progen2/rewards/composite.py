@@ -43,6 +43,7 @@ class CompositeProteinReward:
         self.foldability = ESMFoldFoldabilityScorer(
             device=foldability_cfg.get('device', self.device),
             batch_size=foldability_cfg.get('batch_size', 1),
+            num_recycles=foldability_cfg.get('num_recycles'),
         )
         self.stability = TemBERTureTmScorer(
             model_name_or_path=str(stability_cfg['model_name_or_path']),

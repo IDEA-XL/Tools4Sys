@@ -51,7 +51,7 @@ def _require_openfold_attention_core_extension():
 
 
 class ESMFoldFoldabilityScorer:
-    def __init__(self, device='cpu', batch_size=1):
+    def __init__(self, device='cpu', batch_size=1, num_recycles=None):
         try:
             import esm
         except ImportError as exc:
@@ -70,6 +70,18 @@ class ESMFoldFoldabilityScorer:
         self.esm = esm
         self.device = torch.device(device)
         self.batch_size = validate_batch_size(batch_size, field_name='foldability.batch_size')
+        if num_recycles is not None:
+            try:
+                num_recycles = int(num_recycles)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f'foldability.num_recycles must be a non-negative integer or null, got {num_recycles!r}'
+                ) from exc
+            if num_recycles < 0:
+                raise ValueError(
+                    f'foldability.num_recycles must be a non-negative integer or null, got {num_recycles!r}'
+                )
+        self.num_recycles = num_recycles
         self.model = None
         self.last_move_to_device_sec = 0.0
         self.last_release_to_cpu_sec = 0.0
@@ -90,7 +102,7 @@ class ESMFoldFoldabilityScorer:
         outputs = []
         self._ensure_loaded()
         for chunk in iter_chunks(sequences, self.batch_size):
-            inference = self.model.infer(chunk)
+            inference = self.model.infer(chunk, num_recycles=self.num_recycles)
             if 'mean_plddt' not in inference:
                 raise ValueError('ESMFold inference did not return mean_plddt')
             mean_plddt = torch.as_tensor(inference['mean_plddt'], dtype=torch.float32)
