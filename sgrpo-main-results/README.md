@@ -604,23 +604,23 @@ Notes:
 - Latest 1-GPU long-context probe status:
 
 ```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs128/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs64/summary.md
 status = oom
 recommended_batch_size = None
 reason = no_successful_candidate
-config = genmol/configs/progen2_sgrpo_1gpu_probe_ng32_sg8_bs2_len512_rbs128.yaml
+config = genmol/configs/progen2_sgrpo_1gpu_probe_ng32_sg8_bs2_len512_rbs64.yaml
 per_device_prompt_batch_size = 2
 num_generations = 32
 supergroup_num_groups = 8
 max_new_tokens = 512
-reward batch_size = 128 for naturalness / foldability / stability / developability
+reward batch_size = 64 for naturalness / foldability / stability / developability
 ```
 
 - Latest failure mode:
 
 ```text
 OOM at train step 1 inside foldability / ESMFold reward evaluation.
-The failing allocation was 16.00 GiB with only 8.97 GiB free on a 139.80 GiB GPU.
+The failing allocation was 128.00 GiB with only 22.28 GiB free on a 139.80 GiB GPU.
 ```
 
 - Last successful 1-GPU baseline probe conclusion:
@@ -641,6 +641,7 @@ max_new_tokens = 64
 /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/phase_peaks_bs64_10step/summary.md
 /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2/summary.md
 /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs128/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs64/summary.md
 ```
 
 ### Pareto Curves To Maintain
