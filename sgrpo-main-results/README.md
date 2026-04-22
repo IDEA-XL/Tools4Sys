@@ -569,7 +569,7 @@ Notes:
 
 ### GRPO
 
-Status: `TODO`
+Status: `Partial`
 
 Checkpoint:
 
@@ -580,30 +580,42 @@ TODO
 Training config:
 
 ```text
-TODO
+configs/progen2_grpo_ng96_bs2_len256_rbs16.yaml
 ```
 
 Launch Script:
 
 ```text
-TODO
+scripts/slurm/train_progen2_grpo_8gpu.sbatch
 ```
 
 Expected GPU Topology:
 
 ```text
-TODO
+8 GPU
 ```
 
 Invocation:
 
 ```text
-TODO
+CONFIG_PATH=configs/progen2_grpo_ng96_bs2_len256_rbs16.yaml sbatch scripts/slurm/train_progen2_grpo_8gpu.sbatch
 ```
 
 Notes:
 
+- Planned 8-GPU DDP main-result line:
+
+```text
+max_new_tokens = 256
+per_device_prompt_batch_size = 2
+num_generations = 96
+reward batch_size = 16 for naturalness / foldability / stability / developability
+reward_compute_every_n_steps = {naturalness: 1, foldability: 4, stability: 1, developability: 1}
+```
+
+- Unverified assumption: `ng96` is the intended GRPO companion line because it rollout-count matches the SGRPO line (`12 * 8 = 96`) while keeping `len256 / bs2 / rbs16` fixed.
 - No verified ProGen2 `grpo` training run has been locked into this comparison index yet.
+- Provisional training defaults in the config are `max_steps = 1000`, `save_steps = 100`, and `report_to = []`.
 
 ### SGRPO
 
@@ -618,13 +630,13 @@ TODO
 Training config:
 
 ```text
-TODO
+configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16.yaml
 ```
 
 Launch Script:
 
 ```text
-TODO
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
 ```
 
 Expected GPU Topology:
@@ -636,56 +648,36 @@ Expected GPU Topology:
 Invocation:
 
 ```text
-TODO
+CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
 ```
 
 Notes:
 
-- Current main-result checkpoint and 8-GPU training config are not locked yet.
-- Latest 1-GPU long-context probe status:
+- Current main-result checkpoint is not locked yet.
+- Planned 8-GPU DDP main-result line:
 
 ```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs16/summary.md
-status = oom
-recommended_batch_size = None
-reason = no_successful_candidate
-config = genmol/configs/progen2_sgrpo_1gpu_probe_ng32_sg8_bs2_len512_rbs16.yaml
+max_new_tokens = 256
 per_device_prompt_batch_size = 2
-num_generations = 32
+num_generations = 12
 supergroup_num_groups = 8
-max_new_tokens = 512
 reward batch_size = 16 for naturalness / foldability / stability / developability
+reward_compute_every_n_steps = {naturalness: 1, foldability: 4, stability: 1, developability: 1}
 ```
 
-- Latest failure mode:
+- Latest successful 1-GPU training-feasibility probe:
 
 ```text
-OOM at train step 1 inside foldability / ESMFold reward evaluation.
-The failing allocation was 32.00 GiB with only 15.05 GiB free on a 139.80 GiB GPU.
-At failure time, PyTorch had 75.47 GiB allocated and 48.60 GiB reserved but unallocated.
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len256_ng16_sg8_bs2_rbs16/summary.md
+status = success
+recommended_batch_size = 2
+recommendation_reason = largest_success_exceeds_target_reserved_ratio
+training peak allocated = 115.450734 GiB
+reward peak allocated = 33.102311 GiB
 ```
 
-- Last successful 1-GPU baseline probe conclusion:
-
-```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/phase_peaks_bs64_10step/summary.md
-recommended per_device_prompt_batch_size = 64
-config = genmol/configs/progen2_sgrpo_1gpu_memprobe_10steps.yaml
-per_device_prompt_batch_size = 1
-num_generations = 4
-supergroup_num_groups = 2
-max_new_tokens = 64
-```
-
-- Supporting probe artifacts:
-
-```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/phase_peaks_bs64_10step/summary.md
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2/summary.md
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs128/summary.md
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs64/summary.md
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs16/summary.md
-```
+- The main-result SGRPO line is intentionally set below the successful `ng16` 1-GPU probe to keep the first 8-GPU training asset conservative.
+- Provisional training defaults in the config are `max_steps = 1000`, `save_steps = 100`, and `report_to = []`.
 
 ### Pareto Curves To Maintain
 
