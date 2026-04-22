@@ -601,18 +601,46 @@ TODO
 Notes:
 
 - Current main-result checkpoint and 8-GPU training config are not locked yet.
-- Verified 1-GPU probe conclusion:
+- Latest 1-GPU long-context probe status:
 
 ```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs128/summary.md
+status = oom
+recommended_batch_size = None
+reason = no_successful_candidate
+config = genmol/configs/progen2_sgrpo_1gpu_probe_ng32_sg8_bs2_len512_rbs128.yaml
+per_device_prompt_batch_size = 2
+num_generations = 32
+supergroup_num_groups = 8
+max_new_tokens = 512
+reward batch_size = 128 for naturalness / foldability / stability / developability
+```
+
+- Latest failure mode:
+
+```text
+OOM at train step 1 inside foldability / ESMFold reward evaluation.
+The failing allocation was 16.00 GiB with only 8.97 GiB free on a 139.80 GiB GPU.
+```
+
+- Last successful 1-GPU baseline probe conclusion:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/phase_peaks_bs64_10step/summary.md
 recommended per_device_prompt_batch_size = 64
+config = genmol/configs/progen2_sgrpo_1gpu_memprobe_10steps.yaml
+per_device_prompt_batch_size = 1
+num_generations = 4
+supergroup_num_groups = 2
+max_new_tokens = 64
 ```
 
 - Supporting probe artifacts:
 
 ```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/recycle1_default_probe_v2/summary.md
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/recycle1_bs64_10step_nos39/probe/summary.md
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/fold_every4_bs64_10step_nos39/probe/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/phase_peaks_bs64_10step/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2/summary.md
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_batch_probe/len512_ng32_sg8_bs2_rbs128/summary.md
 ```
 
 ### Pareto Curves To Maintain
