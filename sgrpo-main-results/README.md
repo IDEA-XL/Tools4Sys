@@ -215,29 +215,37 @@ configs/eval_denovo_main_results_temperature_sweep_20260422.yaml
 Generated artifacts:
 
 ```text
-TODO
+genmol-denovo/denovo_main_results_temperature_sweep_20260422.md
+genmol-denovo/denovo_main_results_temperature_sweep_20260422.json
+genmol-denovo/denovo_main_results_temperature_sweep_20260422.rows.jsonl
 ```
 
 Notes:
 
-- TODO: run the `temperature = 0.1, 0.2, ..., 1.0` sweep with fixed `randomness = 0.3`
-- TODO: save `1000` samples per model per temperature
+- Completed by eval job `41546`.
+- Sweep grid: `temperature = 0.1, 0.2, ..., 1.0`
+- Fixed `randomness = 0.3`
+- Sample budget: `1000` molecules per model per temperature
 
 #### `diversity` vs `qed` for temperature sweep
 
 Plot:
 
 ```text
-TODO
+genmol-denovo/qed_vs_diversity_temperature_20260422.png
 ```
+
+![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260422.png)
 
 #### `diversity` vs `sa_score` for temperature sweep
 
 Plot:
 
 ```text
-TODO
+genmol-denovo/sa_score_vs_diversity_temperature_20260422.png
 ```
+
+![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260422.png)
 
 ## mmGenMol
 
