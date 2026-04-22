@@ -84,6 +84,31 @@ def compute_sgrpo_advantages(
     return final_advantages, expanded_group_advantages, rollout_advantages, metrics
 
 
+def compute_group_reward_regularizer_advantages(group_rewards, num_generations, scale_rewards=False):
+    if group_rewards.dim() != 1:
+        raise ValueError('group_rewards must be a 1D tensor')
+    if num_generations <= 0:
+        raise ValueError('num_generations must be positive')
+
+    num_groups = int(group_rewards.numel())
+    if num_groups <= 1:
+        raise ValueError('group_rewards must contain at least two groups for a centered regularizer signal')
+
+    group_advantages, group_reward_std, group_zero_std_ratio = compute_grouped_advantages(
+        rewards=group_rewards,
+        num_generations=num_groups,
+        scale_rewards=scale_rewards,
+    )
+    expanded_group_advantages = group_advantages.repeat_interleave(num_generations)
+    metrics = {
+        'group_advantage_mean': expanded_group_advantages.mean().item(),
+        'group_reward_mean': group_rewards.mean().item(),
+        'group_zero_std_ratio': group_zero_std_ratio,
+        'group_reward_std_mean': group_reward_std.mean().item(),
+    }
+    return expanded_group_advantages, metrics
+
+
 def compute_clipped_grpo_loss(
     new_log_probs,
     old_log_probs,

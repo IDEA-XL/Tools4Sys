@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from rl_shared.sgrpo import (
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
+    compute_group_reward_regularizer_advantages,
     compute_sgrpo_advantages,
     compute_warmup_steps,
 )
@@ -174,4 +175,3 @@ def get_per_token_logps(
         ).view(num_iterations, batch_size, logits_to_keep).permute(1, 0, 2)
 
     return per_token_logps.to(torch.float32)
-

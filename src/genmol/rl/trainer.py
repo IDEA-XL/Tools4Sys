@@ -16,6 +16,7 @@ from accelerate.utils import set_seed
 from genmol.rl.cpgrpo import (
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
+    compute_group_reward_regularizer_advantages,
     compute_sgrpo_advantages,
     compute_warmup_steps,
     split_tensor_dict,
@@ -83,6 +84,7 @@ class TrainConfig:
     rl_algorithm: str = 'coupled_grpo'
     supergroup_num_groups: int = 1
     group_advantage_weight: float = 0.5
+    diversity_regularizer_weight: float = 0.0
 
 
 @dataclass
@@ -120,6 +122,8 @@ def load_config(path):
         raise ValueError('supergroup_num_groups must be positive')
     if not 0.0 <= config.group_advantage_weight <= 1.0:
         raise ValueError('group_advantage_weight must be in [0, 1]')
+    if config.diversity_regularizer_weight < 0.0:
+        raise ValueError('diversity_regularizer_weight must be non-negative')
     return config
 
 
@@ -271,6 +275,10 @@ class GenMolCpGRPOTrainer:
                     'num_groups_global must be divisible by supergroup_num_groups for coupled_sgrpo: '
                     f'{self.num_groups_global} vs {config.supergroup_num_groups}'
                 )
+        if config.diversity_regularizer_weight > 0.0 and self.num_groups_global <= 1:
+            raise ValueError(
+                'diversity_regularizer_weight > 0 requires at least two groups in the global batch'
+            )
 
         deepspeed_plugin = getattr(self.accelerator.state, 'deepspeed_plugin', None)
         if deepspeed_plugin is not None:
@@ -373,6 +381,18 @@ class GenMolCpGRPOTrainer:
             self._last_reward_metrics[mode]['rollout_zero_std_ratio'] = float(metadata['rollout_zero_std_ratio'])
         if 'group_zero_std_ratio' in metadata:
             self._last_reward_metrics[mode]['group_zero_std_ratio'] = float(metadata['group_zero_std_ratio'])
+        if 'diversity_regularizer/advantage_mean' in metadata:
+            self._last_reward_metrics[mode]['diversity_regularizer/advantage_mean'] = float(
+                metadata['diversity_regularizer/advantage_mean']
+            )
+        if 'diversity_regularizer/group_reward_mean' in metadata:
+            self._last_reward_metrics[mode]['diversity_regularizer/group_reward_mean'] = float(
+                metadata['diversity_regularizer/group_reward_mean']
+            )
+        if 'diversity_regularizer/zero_std_ratio' in metadata:
+            self._last_reward_metrics[mode]['diversity_regularizer/zero_std_ratio'] = float(
+                metadata['diversity_regularizer/zero_std_ratio']
+            )
         bucket['reward'].append(float(metadata['reward_mean']))
         bucket['reward_std'].append(float(metadata['reward_std']))
         bucket['advantage_mean'].append(float(metadata['advantage_mean']))
@@ -395,6 +415,12 @@ class GenMolCpGRPOTrainer:
             bucket['rollout_zero_std_ratio'].append(float(metadata['rollout_zero_std_ratio']))
         if 'group_zero_std_ratio' in metadata:
             bucket['group_zero_std_ratio'].append(float(metadata['group_zero_std_ratio']))
+        if 'diversity_regularizer/advantage_mean' in metadata:
+            bucket['diversity_regularizer/advantage_mean'].append(float(metadata['diversity_regularizer/advantage_mean']))
+        if 'diversity_regularizer/group_reward_mean' in metadata:
+            bucket['diversity_regularizer/group_reward_mean'].append(float(metadata['diversity_regularizer/group_reward_mean']))
+        if 'diversity_regularizer/zero_std_ratio' in metadata:
+            bucket['diversity_regularizer/zero_std_ratio'].append(float(metadata['diversity_regularizer/zero_std_ratio']))
 
     def _record_loss_metrics(self, mode, step_metrics):
         if mode not in self._metrics:
@@ -418,6 +444,11 @@ class GenMolCpGRPOTrainer:
         if 'kl_mean' in step_metrics:
             gathered_kl = self.accelerator.gather_for_metrics(step_metrics['kl_mean'].detach().reshape(1))
             bucket['kl'].append(torch.nanmean(gathered_kl).item())
+        if 'diversity_regularizer_loss' in step_metrics:
+            gathered_diversity_loss = self.accelerator.gather_for_metrics(
+                step_metrics['diversity_regularizer_loss'].detach().reshape(1)
+            )
+            bucket['diversity_regularizer/loss'].append(torch.nanmean(gathered_diversity_loss).item())
 
     def _record_optimizer_metrics(self, mode, grad_norm, lr):
         if mode not in self._metrics:
@@ -504,15 +535,8 @@ class GenMolCpGRPOTrainer:
         reward_records = self.reward_model.score(rollout.smiles)
         local_rewards = torch.tensor([record.reward for record in reward_records], device=self.device, dtype=torch.float32)
         global_rewards = self.accelerator.gather(local_rewards).detach()
-        if self.config.rl_algorithm == 'coupled_grpo':
-            global_advantages, global_reward_std, zero_std_ratio = compute_grouped_advantages(
-                rewards=global_rewards,
-                num_generations=self.config.num_generations,
-                scale_rewards=self.config.scale_rewards,
-            )
-            local_advantages = global_advantages[local_start:local_end].to(device=self.device)
-            extra_advantage_metrics = {}
-        else:
+        global_group_rewards = None
+        if self.config.rl_algorithm == 'coupled_sgrpo' or self.config.diversity_regularizer_weight > 0.0:
             global_smiles = self._all_gather_objects([record.smiles for record in reward_records])
             if len(global_smiles) != self.global_sample_count:
                 raise ValueError(
@@ -524,6 +548,17 @@ class GenMolCpGRPOTrainer:
                     compute_internal_diversity(global_smiles[group_start:group_start + self.config.num_generations])
                 )
             global_group_rewards = torch.tensor(group_diversities, device=self.device, dtype=torch.float32)
+
+        local_diversity_regularizer_advantages = None
+        if self.config.rl_algorithm == 'coupled_grpo':
+            global_advantages, global_reward_std, zero_std_ratio = compute_grouped_advantages(
+                rewards=global_rewards,
+                num_generations=self.config.num_generations,
+                scale_rewards=self.config.scale_rewards,
+            )
+            local_advantages = global_advantages[local_start:local_end].to(device=self.device)
+            extra_advantage_metrics = {}
+        else:
             global_advantages, _, _, sgrpo_metrics = compute_sgrpo_advantages(
                 rollout_rewards=global_rewards,
                 group_rewards=global_group_rewards,
@@ -542,6 +577,26 @@ class GenMolCpGRPOTrainer:
                 'rollout_zero_std_ratio': float(sgrpo_metrics['rollout_zero_std_ratio']),
                 'group_zero_std_ratio': float(sgrpo_metrics['group_zero_std_ratio']),
             }
+        if self.config.diversity_regularizer_weight > 0.0:
+            if global_group_rewards is None:
+                raise ValueError('global_group_rewards must be populated when diversity_regularizer_weight > 0')
+            global_diversity_regularizer_advantages, diversity_regularizer_metrics = (
+                compute_group_reward_regularizer_advantages(
+                    group_rewards=global_group_rewards,
+                    num_generations=self.config.num_generations,
+                    scale_rewards=self.config.scale_rewards,
+                )
+            )
+            local_diversity_regularizer_advantages = global_diversity_regularizer_advantages[local_start:local_end].to(
+                device=self.device
+            )
+            extra_advantage_metrics.update(
+                {
+                    'diversity_regularizer/advantage_mean': float(diversity_regularizer_metrics['group_advantage_mean']),
+                    'diversity_regularizer/group_reward_mean': float(diversity_regularizer_metrics['group_reward_mean']),
+                    'diversity_regularizer/zero_std_ratio': float(diversity_regularizer_metrics['group_zero_std_ratio']),
+                }
+            )
 
         local_valid = torch.tensor([float(record.is_valid) for record in reward_records], device=self.device)
         local_alert = torch.tensor([float(record.alert_hit) for record in reward_records], device=self.device)
@@ -644,6 +699,7 @@ class GenMolCpGRPOTrainer:
             'completion_ids': rollout.completion_ids,
             'completion_mask': rollout.completion_mask,
             'advantages': local_advantages,
+            'diversity_regularizer_advantages': local_diversity_regularizer_advantages,
             'old_per_token_logps': old_per_token_logps,
             'ref_per_token_logps': ref_per_token_logps,
             'mask_seeds': mask_seeds,
@@ -694,6 +750,23 @@ class GenMolCpGRPOTrainer:
             ref_log_probs=ref_per_token_logps,
             beta=self.config.beta,
         )
+        if self.config.diversity_regularizer_weight > 0.0:
+            diversity_regularizer_advantages = inputs['diversity_regularizer_advantages']
+            if diversity_regularizer_advantages is None:
+                raise ValueError(
+                    'diversity_regularizer_advantages must be present when diversity_regularizer_weight > 0'
+                )
+            diversity_regularizer_loss, _ = compute_clipped_grpo_loss(
+                new_log_probs=per_token_logps,
+                old_log_probs=old_per_token_logps,
+                advantages=diversity_regularizer_advantages,
+                completion_mask=inputs['completion_mask'],
+                epsilon=self.config.epsilon,
+                ref_log_probs=None,
+                beta=0.0,
+            )
+            loss = loss + (self.config.diversity_regularizer_weight * diversity_regularizer_loss)
+            step_metrics['diversity_regularizer_loss'] = diversity_regularizer_loss.detach()
         self._record_loss_metrics(mode, step_metrics)
         return loss
 
@@ -740,10 +813,27 @@ class GenMolCpGRPOTrainer:
             metrics['rollout_zero_std_ratio'] = _reward_metric('rollout_zero_std_ratio')
         if bucket['group_zero_std_ratio'] or 'group_zero_std_ratio' in last_reward_metrics:
             metrics['group_zero_std_ratio'] = _reward_metric('group_zero_std_ratio')
+        if (
+            bucket['diversity_regularizer/advantage_mean']
+            or 'diversity_regularizer/advantage_mean' in last_reward_metrics
+        ):
+            metrics['diversity_regularizer/advantage_mean'] = _reward_metric('diversity_regularizer/advantage_mean')
+        if (
+            bucket['diversity_regularizer/group_reward_mean']
+            or 'diversity_regularizer/group_reward_mean' in last_reward_metrics
+        ):
+            metrics['diversity_regularizer/group_reward_mean'] = _reward_metric('diversity_regularizer/group_reward_mean')
+        if (
+            bucket['diversity_regularizer/zero_std_ratio']
+            or 'diversity_regularizer/zero_std_ratio' in last_reward_metrics
+        ):
+            metrics['diversity_regularizer/zero_std_ratio'] = _reward_metric('diversity_regularizer/zero_std_ratio')
         metrics['reward_mean'] = metrics['reward']
         if bucket['kl']:
             metrics['kl'] = _aggregate_scalar_list(bucket['kl'])
             metrics['kl_mean'] = metrics['kl']
+        if bucket['diversity_regularizer/loss']:
+            metrics['diversity_regularizer/loss'] = _aggregate_scalar_list(bucket['diversity_regularizer/loss'])
         self._metrics[mode] = defaultdict(list)
         return metrics
 
@@ -788,6 +878,20 @@ class GenMolCpGRPOTrainer:
                         f" rollout_zero_std_ratio={metrics['rollout_zero_std_ratio']:.6f}"
                         f" group_zero_std_ratio={metrics['group_zero_std_ratio']:.6f}"
                     )
+                )
+                + (
+                    ''
+                    if 'diversity_regularizer/advantage_mean' not in metrics
+                    else (
+                        f" diversity_regularizer/advantage_mean={metrics['diversity_regularizer/advantage_mean']:.6f}"
+                        f" diversity_regularizer/group_reward_mean={metrics['diversity_regularizer/group_reward_mean']:.6f}"
+                        f" diversity_regularizer/zero_std_ratio={metrics['diversity_regularizer/zero_std_ratio']:.6f}"
+                    )
+                )
+                + (
+                    ''
+                    if 'diversity_regularizer/loss' not in metrics
+                    else f" diversity_regularizer/loss={metrics['diversity_regularizer/loss']:.6f}"
                 )
                 + ('' if 'kl_mean' not in metrics else f" kl_mean={metrics['kl_mean']:.6f}"),
             )
