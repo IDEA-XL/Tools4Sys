@@ -466,6 +466,50 @@ job 40942, 1 GPU, COMPLETED, 10 steps, no OOM
 
 - Current 8-GPU launch line is reduced below the 1-GPU validated line after the `ng256 / bs512` run hit first-backward OOM on 8 GPUs.
 
+### GRPO Diversity-Regularizer
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_divreg005.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_divreg005.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_ni1.sbatch
+```
+
+Notes:
+
+- This line mirrors the current mmGenMol GRPO 8-GPU setup and only adds:
+
+```text
+diversity_regularizer_weight = 0.05
+```
+
+- All other rollout, optimizer, and launch settings are intentionally unchanged relative to the current `ng192 / bs384` GRPO line.
+
 ### SGRPO
 
 Status: `Partial`
@@ -615,7 +659,7 @@ reward_compute_every_n_steps = {naturalness: 1, foldability: 4, stability: 1, de
 
 - Unverified assumption: `ng96` is the intended GRPO companion line because it rollout-count matches the SGRPO line (`12 * 8 = 96`) while keeping `len256 / bs2 / rbs16` fixed.
 - No verified ProGen2 `grpo` training run has been locked into this comparison index yet.
-- Provisional training defaults in the config are `max_steps = 1000`, `save_steps = 100`, and `report_to = []`.
+- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = []`.
 
 ### SGRPO
 
@@ -677,7 +721,7 @@ reward peak allocated = 33.102311 GiB
 ```
 
 - The main-result SGRPO line is intentionally set below the successful `ng16` 1-GPU probe to keep the first 8-GPU training asset conservative.
-- Provisional training defaults in the config are `max_steps = 1000`, `save_steps = 100`, and `report_to = []`.
+- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = []`.
 
 ### Pareto Curves To Maintain
 
