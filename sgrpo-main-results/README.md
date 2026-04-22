@@ -121,6 +121,45 @@ Notes:
 - Locked main comparison asset produced by the 8-GPU GRPO run completed on 2026-04-22.
 - Training job: `41260`
 
+### GRPO 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Notes:
+
+- Planned rerun with `max_steps = 2000`.
+- All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step GRPO run.
+
 ### SGRPO
 
 Status: `Verified`
@@ -160,7 +199,51 @@ Notes:
 - Locked main comparison asset produced by the 8-GPU SGRPO run completed on 2026-04-22.
 - Training job: `41262`
 
+### SGRPO 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Planned rerun with `max_steps = 2000`.
+- All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step SGRPO run.
+
 ### Pareto Curves To Maintain
+
+#### Pending 2000-Step Variants
+
+- TODO: add full de novo Pareto assets for `GRPO 2000-Step Variant`, including both the `randomness = 0.1, 0.2, ..., 1.0` sweep and the `temperature = 0.1, 0.2, ..., 1.0` sweep
+- TODO: add full de novo Pareto assets for `SGRPO 2000-Step Variant`, including both the `randomness = 0.1, 0.2, ..., 1.0` sweep and the `temperature = 0.1, 0.2, ..., 1.0` sweep
 
 #### Randomness Sweep
 
