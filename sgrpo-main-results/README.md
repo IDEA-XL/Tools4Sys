@@ -25,7 +25,9 @@ The intent is to keep three things in one place:
 ## Sweep Policy
 
 - `genmol de novo`: sweep `randomness = 0.1, 0.2, ..., 1.0`
+- `genmol de novo`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 - `mmgenmol`: sweep `randomness = 0.1, 0.2, ..., 1.0`
+- `mmgenmol`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 - `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 
 For every family and every property curve, save:
@@ -160,8 +162,82 @@ Notes:
 
 ### Pareto Curves To Maintain
 
-- TODO: `diversity` vs `qed`
-- TODO: `diversity` vs `sa_score`
+#### Randomness Sweep
+
+Sweep config:
+
+```text
+configs/eval_denovo_main_results_randomness_sweep_20260422.yaml
+```
+
+Generated artifacts:
+
+```text
+genmol-denovo/denovo_main_results_randomness_sweep_20260422.md
+genmol-denovo/denovo_main_results_randomness_sweep_20260422.json
+genmol-denovo/denovo_main_results_randomness_sweep_20260422.rows.jsonl
+```
+
+Notes:
+
+- Completed by eval job `41496`.
+- Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
+- Sample budget: `1000` molecules per model per randomness
+
+#### `diversity` vs `qed`
+
+Plot:
+
+```text
+genmol-denovo/qed_vs_diversity_20260422.png
+```
+
+![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260422.png)
+
+#### `diversity` vs `sa_score`
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_20260422.png
+```
+
+![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260422.png)
+
+#### Temperature Sweep
+
+Sweep config:
+
+```text
+configs/eval_denovo_main_results_temperature_sweep_20260422.yaml
+```
+
+Generated artifacts:
+
+```text
+TODO
+```
+
+Notes:
+
+- TODO: run the `temperature = 0.1, 0.2, ..., 1.0` sweep with fixed `randomness = 0.3`
+- TODO: save `1000` samples per model per temperature
+
+#### `diversity` vs `qed` for temperature sweep
+
+Plot:
+
+```text
+TODO
+```
+
+#### `diversity` vs `sa_score` for temperature sweep
+
+Plot:
+
+```text
+TODO
+```
 
 ## mmGenMol
 
@@ -298,6 +374,15 @@ Notes:
 - `generation_batch_size` is fixed to `384` to match the current reduced 8-GPU memory line.
 
 ### Pareto Curves To Maintain
+
+#### Randomness Sweep
+
+- TODO: `diversity` vs `qed_mean`
+- TODO: `diversity` vs `sa_score_mean`
+- TODO: `diversity` vs `qvina_mean`
+- TODO: `diversity` vs `vina_dock_mean`
+
+#### Temperature Sweep
 
 - TODO: `diversity` vs `qed_mean`
 - TODO: `diversity` vs `sa_score_mean`
