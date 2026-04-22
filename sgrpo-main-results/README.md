@@ -222,13 +222,13 @@ TODO: lock the main mmGenMol GRPO checkpoint for the comparison
 Training config:
 
 ```text
-configs/cpgrpo_denovo_pocket_prefix_ng256_bs512_lr5e-5_beta5e-3_ni1.yaml
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1.yaml
 ```
 
 Launch Script:
 
 ```text
-scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng256_bs512_ni1.sbatch
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_ni1.sbatch
 ```
 
 Expected GPU Topology:
@@ -240,7 +240,7 @@ Expected GPU Topology:
 Invocation:
 
 ```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng256_bs512_lr5e-5_beta5e-3_ni1.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng256_bs512_ni1.sbatch
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_ni1.sbatch
 ```
 
 Notes:
@@ -257,6 +257,8 @@ Notes:
 job 40942, 1 GPU, COMPLETED, 10 steps, no OOM
 ```
 
+- Current 8-GPU launch line is reduced below the 1-GPU validated line after the `ng256 / bs512` run hit first-backward OOM on 8 GPUs.
+
 ### SGRPO
 
 Status: `Partial`
@@ -270,13 +272,13 @@ TODO
 Training config:
 
 ```text
-configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng32_sg8_bs512_lr5e-5_beta5e-3_gw09.yaml
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09.yaml
 ```
 
 Launch Script:
 
 ```text
-scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng32_sg8_bs512_gw09.sbatch
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_gw09.sbatch
 ```
 
 Expected GPU Topology:
@@ -288,13 +290,13 @@ Expected GPU Topology:
 Invocation:
 
 ```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng32_sg8_bs512_lr5e-5_beta5e-3_gw09.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng32_sg8_bs512_gw09.sbatch
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_gw09.sbatch
 ```
 
 Notes:
 
-- Config family is defined to mirror de novo SGRPO with `num_generations=32`, `supergroup_num_groups=8`, `group_advantage_weight=0.9`, and `per_device_train_batch_size=512`.
-- Unverified assumption: `generation_batch_size` is also fixed to `512` to stay aligned with the current validated mm GRPO memory line.
+- Config family is defined to mirror de novo SGRPO with `num_generations=24`, `supergroup_num_groups=8`, `group_advantage_weight=0.9`, and `per_device_train_batch_size=384`.
+- `generation_batch_size` is fixed to `384` to match the current reduced 8-GPU memory line.
 
 ### Pareto Curves To Maintain
 
