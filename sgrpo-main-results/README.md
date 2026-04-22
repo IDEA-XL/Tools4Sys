@@ -82,12 +82,12 @@ Notes:
 
 ### GRPO
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_20260422_025828/checkpoint-001000
 ```
 
 Training config:
@@ -116,17 +116,17 @@ CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml sbatch s
 
 Notes:
 
-- Pending rerun after the supergroup-conditioning change.
-- The next intended GRPO config is `configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml`.
+- Locked main comparison asset produced by the 8-GPU GRPO run completed on 2026-04-22.
+- Training job: `41260`
 
 ### SGRPO
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_20260422_030845/checkpoint-001000
 ```
 
 Training config:
@@ -155,14 +155,13 @@ CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yam
 
 Notes:
 
-- Pending rerun after the supergroup-conditioning change.
-- The intended SGRPO config is `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09.yaml`.
+- Locked main comparison asset produced by the 8-GPU SGRPO run completed on 2026-04-22.
+- Training job: `41262`
 
 ### Pareto Curves To Maintain
 
-- Core individual-property curves implied by the current de novo reward:
-- `diversity` vs `qed`
-- `diversity` vs `sa_score`
+- TODO: `diversity` vs `qed`
+- TODO: `diversity` vs `sa_score`
 
 ## mmGenMol
 
@@ -300,10 +299,10 @@ Notes:
 
 ### Pareto Curves To Maintain
 
-- `diversity` vs `qed_mean`
-- `diversity` vs `sa_score_mean`
-- `diversity` vs `qvina_mean`
-- `diversity` vs `vina_dock_mean`
+- TODO: `diversity` vs `qed_mean`
+- TODO: `diversity` vs `sa_score_mean`
+- TODO: `diversity` vs `qvina_mean`
+- TODO: `diversity` vs `vina_dock_mean`
 
 ## ProGen2
 
@@ -442,10 +441,10 @@ recommended per_device_prompt_batch_size = 64
 
 ### Pareto Curves To Maintain
 
-- `diversity` vs `naturalness`
-- `diversity` vs `foldability`
-- `diversity` vs `stability`
-- `diversity` vs `developability`
+- TODO: `diversity` vs `naturalness`
+- TODO: `diversity` vs `foldability`
+- TODO: `diversity` vs `stability`
+- TODO: `diversity` vs `developability`
 
 ## Global Open Items
 
