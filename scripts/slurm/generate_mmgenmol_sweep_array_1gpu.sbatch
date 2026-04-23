@@ -48,8 +48,8 @@ if [[ "${task_id}" != "${SLURM_ARRAY_TASK_ID}" ]]; then
   echo "Task ID mismatch: row=${task_id} array=${SLURM_ARRAY_TASK_ID}" >&2
   exit 1
 fi
-if [[ ! -e "${checkpoint_path}" ]]; then
-  echo "Missing checkpoint path: ${checkpoint_path}" >&2
+if [[ ! -f "${checkpoint_path}" ]]; then
+  echo "Missing checkpoint file: ${checkpoint_path}" >&2
   exit 1
 fi
 if [[ -e "${output_path}" ]]; then
