@@ -6,8 +6,8 @@
 #SBATCH --mem=256G
 #SBATCH -t 48:00:00
 #SBATCH -J p2grpo8g
-#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_train/logs/progen2_grpo_8gpu_%j.out
-#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_train/logs/progen2_grpo_8gpu_%j.err
+#SBATCH -o slurm_progen2_grpo_8gpu_%j.out
+#SBATCH -e slurm_progen2_grpo_8gpu_%j.err
 
 set -euo pipefail
 
@@ -28,6 +28,18 @@ conda activate genmol
 export PATH=/opt/gridview/slurm/bin:$PATH
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+TORCH_LIB_DIR=$(python - <<'PY'
+from pathlib import Path
+import torch
+
+print(Path(torch.__file__).resolve().parent / "lib")
+PY
+)
+if [[ ! -d "${TORCH_LIB_DIR}" ]]; then
+  echo "Missing torch library directory: ${TORCH_LIB_DIR}" >&2
+  exit 1
+fi
+export LD_LIBRARY_PATH="${TORCH_LIB_DIR}:${LD_LIBRARY_PATH:-}"
 
 if [[ -n "${WANDB_API_KEY:-}" ]]; then
   wandb login --relogin "${WANDB_API_KEY}" >/dev/null 2>&1 || true
