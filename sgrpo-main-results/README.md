@@ -123,12 +123,12 @@ Notes:
 
 ### GRPO 2000-Step Variant
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_20260422_161812/checkpoint-002000
 ```
 
 Training config:
@@ -157,17 +157,18 @@ CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000.yaml s
 
 Notes:
 
-- Planned rerun with `max_steps = 2000`.
+- Completed rerun with `max_steps = 2000`.
 - All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step GRPO run.
+- Training job: `41711`
 
 ### GRPO Diversity-Regularizer 2000-Step
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_divreg005_20260422_203200/checkpoint-002000
 ```
 
 Training config:
@@ -196,9 +197,11 @@ CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_divreg
 
 Notes:
 
-- Planned rerun with `max_steps = 2000`.
+- Completed rerun with `max_steps = 2000`.
 - All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step GRPO run.
 - `diversity_regularizer_weight = 0.05`.
+- Training job: `42249`
+- The sibling timestamp directory ending in `_203159` is not the locked artifact; it does not contain the complete `checkpoint-002000/model.ckpt`.
 
 ### SGRPO
 
@@ -241,12 +244,12 @@ Notes:
 
 ### SGRPO 2000-Step Variant
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_ms2000_20260422_162050/checkpoint-002000
 ```
 
 Training config:
@@ -275,101 +278,98 @@ CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_ms2
 
 Notes:
 
-- Planned rerun with `max_steps = 2000`.
+- Completed rerun with `max_steps = 2000`.
 - All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step SGRPO run.
+- Training job: `41712`
 
 ### Pareto Curves To Maintain
-
-#### Pending 2000-Step Variants
-
-- TODO: add full de novo Pareto assets for `GRPO 2000-Step Variant`, including both the `randomness = 0.1, 0.2, ..., 1.0` sweep and the `temperature = 0.1, 0.2, ..., 1.0` sweep
-- TODO: add full de novo Pareto assets for `GRPO Diversity-Regularizer 2000-Step`, including both the `randomness = 0.1, 0.2, ..., 1.0` sweep and the `temperature = 0.1, 0.2, ..., 1.0` sweep
-- TODO: add full de novo Pareto assets for `SGRPO 2000-Step Variant`, including both the `randomness = 0.1, 0.2, ..., 1.0` sweep and the `temperature = 0.1, 0.2, ..., 1.0` sweep
 
 #### Randomness Sweep
 
 Sweep config:
 
 ```text
-configs/eval_denovo_main_results_randomness_sweep_20260422.yaml
+configs/eval_denovo_main_results_randomness_sweep_20260423.yaml
 ```
 
 Generated artifacts:
 
 ```text
-genmol-denovo/denovo_main_results_randomness_sweep_20260422.md
-genmol-denovo/denovo_main_results_randomness_sweep_20260422.json
-genmol-denovo/denovo_main_results_randomness_sweep_20260422.rows.jsonl
+genmol-denovo/denovo_main_results_randomness_sweep_20260423.md
+genmol-denovo/denovo_main_results_randomness_sweep_20260423.json
+genmol-denovo/denovo_main_results_randomness_sweep_20260423.rows.jsonl
 ```
 
 Notes:
 
-- Completed by eval job `41496`.
+- Completed by eval job `42804`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000
 
 #### `diversity` vs `qed`
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_20260422.png
+genmol-denovo/qed_vs_diversity_20260423.png
 ```
 
-![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260422.png)
+![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260423.png)
 
 #### `diversity` vs `sa_score`
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_20260422.png
+genmol-denovo/sa_score_vs_diversity_20260423.png
 ```
 
-![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260422.png)
+![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260423.png)
 
 #### Temperature Sweep
 
 Sweep config:
 
 ```text
-configs/eval_denovo_main_results_temperature_sweep_20260422.yaml
+configs/eval_denovo_main_results_temperature_sweep_20260423.yaml
 ```
 
 Generated artifacts:
 
 ```text
-genmol-denovo/denovo_main_results_temperature_sweep_20260422.md
-genmol-denovo/denovo_main_results_temperature_sweep_20260422.json
-genmol-denovo/denovo_main_results_temperature_sweep_20260422.rows.jsonl
+genmol-denovo/denovo_main_results_temperature_sweep_20260423.md
+genmol-denovo/denovo_main_results_temperature_sweep_20260423.json
+genmol-denovo/denovo_main_results_temperature_sweep_20260423.rows.jsonl
 ```
 
 Notes:
 
-- Completed by eval job `41546`.
+- Completed by eval job `42805`.
 - Sweep grid: `temperature = 0.1, 0.2, ..., 1.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000
 
 #### `diversity` vs `qed` for temperature sweep
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_temperature_20260422.png
+genmol-denovo/qed_vs_diversity_temperature_20260423.png
 ```
 
-![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260422.png)
+![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260423.png)
 
 #### `diversity` vs `sa_score` for temperature sweep
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_temperature_20260422.png
+genmol-denovo/sa_score_vs_diversity_temperature_20260423.png
 ```
 
-![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260422.png)
+![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260423.png)
 
 ## mmGenMol
 
