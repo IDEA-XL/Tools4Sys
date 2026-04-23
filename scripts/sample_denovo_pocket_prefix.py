@@ -4,6 +4,8 @@ import os
 import random
 import sys
 
+import torch
+
 sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
@@ -41,8 +43,10 @@ def main():
         raise ValueError(f'num_pockets exceeds available manifest entries: {args.num_pockets} vs {len(entries)}')
     selected_entries = rng.sample(entries, args.num_pockets)
     expanded_entries = []
-    for entry in selected_entries:
+    expanded_pocket_indices = []
+    for pocket_idx, entry in enumerate(selected_entries):
         expanded_entries.extend([entry] * args.num_samples_per_pocket)
+        expanded_pocket_indices.extend([pocket_idx] * args.num_samples_per_pocket)
 
     specs = sample_group_specs(
         num_groups=len(expanded_entries),
@@ -58,9 +62,16 @@ def main():
         bf16=args.bf16,
         trainable=False,
     )
-    pocket_raw_embeddings, pocket_mask = policy.get_pocket_raw_embeddings(
-        [entry['pocket_coords'] for entry in expanded_entries]
+    unique_pocket_raw_embeddings, unique_pocket_mask = policy.get_pocket_raw_embeddings(
+        [entry['pocket_coords'] for entry in selected_entries]
     )
+    expanded_pocket_indices = torch.tensor(
+        expanded_pocket_indices,
+        device=unique_pocket_raw_embeddings.device,
+        dtype=torch.long,
+    )
+    pocket_raw_embeddings = unique_pocket_raw_embeddings.index_select(0, expanded_pocket_indices)
+    pocket_mask = unique_pocket_mask.index_select(0, expanded_pocket_indices)
     rollout = policy.rollout_specs(
         specs=specs,
         pocket_raw_embeddings=pocket_raw_embeddings,
