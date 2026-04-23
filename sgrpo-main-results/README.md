@@ -285,12 +285,14 @@ Notes:
 
 ### SGRPO Thresholded (`qed > 0.85`, `sa_score > 0.72`)
 
-Status: `TODO`
+Status: `Training Running`
 
 Checkpoint:
 
 ```text
-TODO
+Pending final checkpoint creation.
+Active run directory:
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_20260424_012813
 ```
 
 Training config:
@@ -321,6 +323,8 @@ Notes:
 
 - Baseline is the locked 1000-step SGRPO configuration.
 - Only added `individual_reward_thresholds.qed = 0.85` and `individual_reward_thresholds.sa_score = 0.72`.
+- Smoke job `43314` completed successfully.
+- Formal training job `43326` is running and has already written `checkpoint-000050` and `checkpoint-000100`.
 - Smoke config:
 
 ```text
@@ -329,12 +333,14 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_
 
 ### SGRPO Reward-Sum Hierarchy
 
-Status: `TODO`
+Status: `Training Running`
 
 Checkpoint:
 
 ```text
-TODO
+Pending final checkpoint creation.
+Active run directory:
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_20260424_013430
 ```
 
 Training config:
@@ -365,6 +371,8 @@ Notes:
 
 - Baseline is the locked 1000-step SGRPO configuration.
 - Only changed `hierarchy = reward_sum`.
+- Smoke job `43318` completed successfully.
+- Formal training job `43327` is running and has already written `checkpoint-000050`.
 - Smoke config:
 
 ```text
@@ -373,12 +381,14 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_smoke
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy
 
-Status: `TODO`
+Status: `Training Running`
 
 Checkpoint:
 
 ```text
-TODO
+Pending final checkpoint creation.
+Active run directory:
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_20260424_013817
 ```
 
 Training config:
@@ -410,6 +420,8 @@ Notes:
 - Baseline is the locked 1000-step SGRPO configuration.
 - Added `individual_reward_thresholds.qed = 0.85` and `individual_reward_thresholds.sa_score = 0.72`.
 - Changed `hierarchy = reward_sum`.
+- Smoke job `43319` completed successfully.
+- Formal training job `43331` is running and has already written `checkpoint-000050`.
 - Smoke config:
 
 ```text
