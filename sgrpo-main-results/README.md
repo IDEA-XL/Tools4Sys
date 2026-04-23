@@ -26,8 +26,9 @@ The intent is to keep three things in one place:
 
 - `genmol de novo`: sweep `randomness = 0.1, 0.2, ..., 1.0`
 - `genmol de novo`: sweep `temperature = 0.1, 0.2, ..., 1.0`
-- `mmgenmol`: sweep `randomness = 0.1, 0.2, ..., 1.0`
-- `mmgenmol`: sweep `temperature = 0.1, 0.2, ..., 1.0`
+- `mmgenmol`: sweep `randomness = 0.1, 0.3, 0.6, 1.0`
+- `mmgenmol`: sweep `temperature = 0.1, 0.3, 0.6, 1.0`
+- `mmgenmol`: report docking with `vina_dock` only for the main sweep; `qvina` is excluded from the current main-result plan.
 - `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 
 For every family and every property curve, save:
@@ -560,19 +561,45 @@ Notes:
 
 ### Pareto Curves To Maintain
 
+Generation task manifest:
+
+```text
+sgrpo-main-results/mmgenmol/generation_sweep_tasks_20260423.tsv
+```
+
+Generation launch script:
+
+```text
+scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
+```
+
+Generation invocation:
+
+```text
+sbatch scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
+```
+
+Generation output root:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_generation_20260423
+```
+
 #### Randomness Sweep
 
 - TODO: `diversity` vs `qed_mean`
 - TODO: `diversity` vs `sa_score_mean`
-- TODO: `diversity` vs `qvina_mean`
 - TODO: `diversity` vs `vina_dock_mean`
+- Sweep grid: `randomness = 0.1, 0.3, 0.6, 1.0`
+- Docking mode for the main sweep: `vina_dock` only
 
 #### Temperature Sweep
 
 - TODO: `diversity` vs `qed_mean`
 - TODO: `diversity` vs `sa_score_mean`
-- TODO: `diversity` vs `qvina_mean`
 - TODO: `diversity` vs `vina_dock_mean`
+- Sweep grid: `temperature = 0.1, 0.3, 0.6, 1.0`
+- Docking mode for the main sweep: `vina_dock` only
 
 ## ProGen2
 
@@ -741,8 +768,7 @@ reward peak allocated = 33.102311 GiB
 
 ## Global Open Items
 
-- `genmol de novo`: missing the unified 3-way full-grid sweep result under this directory
-- `mmgenmol`: missing locked GRPO and SGRPO comparison checkpoints
+- `mmgenmol`: missing narrowed 4-point sweep artifacts for the locked Original / GRPO / SGRPO / GRPO Diversity-Regularizer checkpoints.
 - `progen2`: missing GRPO checkpoint and final SGRPO checkpoint
 
 ## Update Rule
