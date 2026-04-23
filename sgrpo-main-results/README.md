@@ -585,6 +585,24 @@ Generation output root:
 /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_generation_20260423
 ```
 
+Vina docking launch script:
+
+```text
+scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
+```
+
+Vina docking invocation:
+
+```text
+sbatch scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
+```
+
+Vina docking output root:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_vina_dock_20260423
+```
+
 #### Randomness Sweep
 
 - TODO: `diversity` vs `qed_mean`
