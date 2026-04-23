@@ -16,8 +16,9 @@ CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_be
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
-if [[ -z "${WANDB_API_KEY:-}" ]]; then
-  echo "WANDB_API_KEY is required" >&2
+WANDB_NETRC_PATH="${WANDB_NETRC_PATH:-$HOME/.netrc}"
+if [[ -z "${WANDB_API_KEY:-}" && ! -f "${WANDB_NETRC_PATH}" ]]; then
+  echo "Either WANDB_API_KEY or ~/.netrc is required for wandb auth" >&2
   exit 1
 fi
 
