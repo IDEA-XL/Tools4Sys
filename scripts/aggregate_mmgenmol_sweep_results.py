@@ -297,8 +297,8 @@ def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
     for model_name in model_names:
         model_rows = [row for row in sweep_rows if row['model_name'] == model_name]
         model_rows.sort(key=lambda row: float(row['sweep_value']))
-        x_values = [float(row['diversity']) for row in model_rows]
-        y_values = [float(row[metric_key]) for row in model_rows]
+        x_values = [float(row[metric_key]) for row in model_rows]
+        y_values = [float(row['diversity']) for row in model_rows]
         ax.plot(x_values, y_values, marker='o', linewidth=2, label=_display_name(model_name))
         for row, x_value, y_value in zip(model_rows, x_values, y_values):
             ax.annotate(
@@ -308,9 +308,9 @@ def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
                 xytext=(4, 4),
                 fontsize=8,
             )
-    ax.set_title(f'mmGenMol {sweep_type}: Diversity vs {metric_label}')
-    ax.set_xlabel('Mean Per-Pocket Internal Diversity')
-    ax.set_ylabel(metric_label)
+    ax.set_title(f'mmGenMol {sweep_type}: {metric_label} vs Diversity')
+    ax.set_xlabel(metric_label)
+    ax.set_ylabel('Mean Per-Pocket Internal Diversity')
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
