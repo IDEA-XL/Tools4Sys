@@ -418,12 +418,12 @@ configs/eval_pocket_prefix_crossdocked_5500ckpt.yaml
 
 ### GRPO
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO: lock the main mmGenMol GRPO checkpoint for the comparison
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_20260422_110904/checkpoint-001000
 ```
 
 Training config:
@@ -465,15 +465,18 @@ job 40942, 1 GPU, COMPLETED, 10 steps, no OOM
 ```
 
 - Current 8-GPU launch line is reduced below the 1-GPU validated line after the `ng256 / bs512` run hit first-backward OOM on 8 GPUs.
+- Completed training job: `41439`
+- Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present.
+- Slurm exit code was not rechecked in this update because `sacct` was unavailable on the reachable admin node and the login nodes timed out during the check.
 
 ### GRPO Diversity-Regularizer
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_divreg005_20260423_013009/checkpoint-001000
 ```
 
 Training config:
@@ -509,15 +512,18 @@ diversity_regularizer_weight = 0.05
 ```
 
 - All other rollout, optimizer, and launch settings are intentionally unchanged relative to the current `ng192 / bs384` GRPO line.
+- Completed training job: `42630`
+- Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present.
+- Slurm exit code was not rechecked in this update because `sacct` was unavailable on the reachable admin node and the login nodes timed out during the check.
 
 ### SGRPO
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_20260422_110738/checkpoint-001000
 ```
 
 Training config:
@@ -548,6 +554,9 @@ Notes:
 
 - Config family is defined to mirror de novo SGRPO with `num_generations=24`, `supergroup_num_groups=8`, `group_advantage_weight=0.9`, and `per_device_train_batch_size=384`.
 - `generation_batch_size` is fixed to `384` to match the current reduced 8-GPU memory line.
+- Completed training job: `41440`
+- Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present.
+- Slurm exit code was not rechecked in this update because `sacct` was unavailable on the reachable admin node and the login nodes timed out during the check.
 
 ### Pareto Curves To Maintain
 
