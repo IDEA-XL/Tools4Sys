@@ -5,11 +5,14 @@ import torch
 import torch.nn.functional as F
 
 from rl_shared.sgrpo import (
+    VALID_SGRPO_HIERARCHIES,
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
     compute_group_reward_regularizer_advantages,
     compute_sgrpo_advantages,
     compute_warmup_steps,
+    normalize_reward_thresholds,
+    validate_reward_threshold_names,
 )
 
 

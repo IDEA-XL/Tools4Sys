@@ -14,9 +14,15 @@ from progen2.checkpoint import PROGEN2_SGRPO_VARIANT, stamp_checkpoint_variant
 from progen2.data.prompts import load_prompt_texts
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
 from progen2.rewards import CompositeProteinReward, compute_group_diversity_reward
-from progen2.rewards.composite import normalize_reward_compute_every_n_steps
+from progen2.rewards.composite import REWARD_NAME_ORDER, normalize_reward_compute_every_n_steps
 from progen2.rl.policy import ProGen2Policy
-from rl_shared.sgrpo import compute_clipped_grpo_loss, compute_grouped_advantages, compute_sgrpo_advantages
+from rl_shared.sgrpo import (
+    VALID_SGRPO_HIERARCHIES,
+    compute_clipped_grpo_loss,
+    compute_grouped_advantages,
+    compute_sgrpo_advantages,
+    validate_reward_threshold_names,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -58,6 +64,8 @@ class ProGen2TrainConfig:
     num_generations: int = 4
     supergroup_num_groups: int = 2
     group_advantage_weight: float = 0.5
+    hierarchy: str = 'advantage_sum'
+    individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
     reward_compute_every_n_steps: dict[str, int] = field(
         default_factory=default_reward_compute_every_n_steps
     )
@@ -133,6 +141,28 @@ def load_config(path):
         raise ValueError('supergroup_num_groups must be greater than 1 for sgrpo')
     if not 0.0 <= config.group_advantage_weight <= 1.0:
         raise ValueError('group_advantage_weight must be in [0, 1]')
+    config.individual_reward_thresholds = validate_reward_threshold_names(
+        config.individual_reward_thresholds,
+        REWARD_NAME_ORDER,
+    )
+    if config.hierarchy not in VALID_SGRPO_HIERARCHIES:
+        raise ValueError(
+            f"hierarchy must be one of {sorted(VALID_SGRPO_HIERARCHIES)}, got {config.hierarchy!r}"
+        )
+    has_active_threshold = any(
+        threshold is not None for threshold in config.individual_reward_thresholds.values()
+    )
+    if config.rl_algorithm != 'sgrpo':
+        if has_active_threshold:
+            raise ValueError('individual_reward_thresholds is only supported when rl_algorithm=sgrpo')
+        if config.hierarchy != 'advantage_sum':
+            raise ValueError('hierarchy is only supported when rl_algorithm=sgrpo')
+    for reward_name, threshold in config.individual_reward_thresholds.items():
+        if threshold is not None and config.reward_compute_every_n_steps[reward_name] != 1:
+            raise ValueError(
+                'thresholded progen2 rewards must be computed every step; '
+                f'{reward_name!r} has every_n_steps={config.reward_compute_every_n_steps[reward_name]}'
+            )
     if not config.rewards:
         raise ValueError('rewards config is required')
     if config.reward_calibration_prompt_batch_size <= 0:
@@ -312,17 +342,32 @@ class ProGen2SGRPOTrainer:
     def _score_rollout_rewards(self, sequences, *, step_number):
         valid_indices = [idx for idx, sequence in enumerate(sequences) if sequence]
         rewards = [0.0] * len(sequences)
+        individual_reward_values = {
+            reward_name: [0.0] * len(sequences) for reward_name in REWARD_NAME_ORDER
+        }
         metrics = {'invalid_sequence_rate': 1.0 if not valid_indices else 1.0 - (len(valid_indices) / len(sequences))}
         if valid_indices:
             valid_sequences = [sequences[idx] for idx in valid_indices]
-            valid_rewards, reward_metrics = self.reward_model.score(
+            reward_details, reward_metrics = self.reward_model.score_details(
                 valid_sequences,
                 step_number=step_number,
             )
+            valid_rewards = reward_details['total']
             for target_idx, reward in zip(valid_indices, valid_rewards):
                 rewards[target_idx] = float(reward)
+            for reward_name in REWARD_NAME_ORDER:
+                for target_idx, reward_value in zip(valid_indices, reward_details[reward_name]):
+                    individual_reward_values[reward_name][target_idx] = float(reward_value)
             metrics.update(reward_metrics)
-        return torch.tensor(rewards, device=self.device, dtype=torch.float32), metrics
+        individual_reward_tensors = {
+            reward_name: torch.tensor(values, device=self.device, dtype=torch.float32)
+            for reward_name, values in individual_reward_values.items()
+        }
+        return (
+            torch.tensor(rewards, device=self.device, dtype=torch.float32),
+            metrics,
+            individual_reward_tensors,
+        )
 
     def _score_group_rewards(self, sequences):
         group_rewards = []
@@ -334,7 +379,20 @@ class ProGen2SGRPOTrainer:
                 group_rewards.append(float(compute_group_diversity_reward(group_sequences)))
         return torch.tensor(group_rewards, device=self.device, dtype=torch.float32)
 
-    def _compute_advantages(self, rollout_rewards, group_rewards):
+    def _build_group_mean_individual_rewards(self, individual_reward_tensors):
+        outputs = {}
+        for reward_name, reward_values in individual_reward_tensors.items():
+            if reward_values.dim() != 1:
+                raise ValueError(f'individual reward tensor for {reward_name!r} must be 1D')
+            if reward_values.numel() % self.config.num_generations != 0:
+                raise ValueError(
+                    'individual reward tensor length must be divisible by num_generations: '
+                    f'{reward_name!r} has {reward_values.numel()} vs {self.config.num_generations}'
+                )
+            outputs[reward_name] = reward_values.view(-1, self.config.num_generations).mean(dim=1)
+        return outputs
+
+    def _compute_advantages(self, rollout_rewards, group_rewards, group_mean_individual_rewards=None):
         advantages = []
         expanded_group_advantages = []
         rollout_advantages = []
@@ -352,6 +410,12 @@ class ProGen2SGRPOTrainer:
             group_start = prompt_idx * chunk_groups
             group_end = group_start + chunk_groups
             prompt_group_rewards = group_rewards[group_start:group_end]
+            prompt_group_mean_individual_rewards = None
+            if group_mean_individual_rewards is not None:
+                prompt_group_mean_individual_rewards = {
+                    reward_name: reward_means[group_start:group_end]
+                    for reward_name, reward_means in group_mean_individual_rewards.items()
+                }
             if self.config.rl_algorithm == 'sgrpo':
                 prompt_adv, prompt_group_adv, prompt_rollout_adv, prompt_metrics = compute_sgrpo_advantages(
                     rollout_rewards=prompt_rollout_rewards,
@@ -360,6 +424,9 @@ class ProGen2SGRPOTrainer:
                     supergroup_num_groups=self.config.supergroup_num_groups,
                     group_advantage_weight=self.config.group_advantage_weight,
                     scale_rewards=False,
+                    hierarchy=self.config.hierarchy,
+                    group_mean_individual_rewards=prompt_group_mean_individual_rewards,
+                    individual_reward_thresholds=self.config.individual_reward_thresholds,
                 )
             else:
                 prompt_adv, _, zero_std_ratio = compute_grouped_advantages(
@@ -485,14 +552,18 @@ class ProGen2SGRPOTrainer:
 
             if self.device.type == 'cuda':
                 self._reset_cuda_phase_peak()
-            rollout_rewards, reward_metrics = self._score_rollout_rewards(
+            rollout_rewards, reward_metrics, individual_reward_tensors = self._score_rollout_rewards(
                 rollout.protein_sequences,
                 step_number=self.global_step + 1,
             )
             group_rewards = self._score_group_rewards(rollout.protein_sequences)
+            group_mean_individual_rewards = None
+            if any(threshold is not None for threshold in self.config.individual_reward_thresholds.values()):
+                group_mean_individual_rewards = self._build_group_mean_individual_rewards(individual_reward_tensors)
             advantages, group_advantages, rollout_advantages, advantage_metrics = self._compute_advantages(
                 rollout_rewards,
                 group_rewards,
+                group_mean_individual_rewards=group_mean_individual_rewards,
             )
             if self.device.type == 'cuda':
                 reward_phase_metrics, reward_step_peak_reserved, reward_step_peak_allocated = (
@@ -545,7 +616,9 @@ class ProGen2SGRPOTrainer:
             metrics = {
                 'loss': float(loss.detach().item()),
                 'reward_mean': float(rollout_rewards.mean().item()),
-                'group_reward_mean': float(group_rewards.mean().item()),
+                'group_reward_mean': float(advantage_metrics.get('group_reward_mean', group_rewards.mean().item())),
+                'group_reward_raw_mean': float(advantage_metrics.get('group_reward_raw_mean', group_rewards.mean().item())),
+                'group_reward_indicator_mean': float(advantage_metrics.get('group_reward_indicator_mean', 1.0)),
                 'advantage_mean': float(advantages.mean().item()),
                 'group_advantage_mean': float(group_advantages.mean().item()),
                 'rollout_advantage_mean': float(rollout_advantages.mean().item()),

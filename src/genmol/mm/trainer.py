@@ -15,10 +15,12 @@ from accelerate.utils import set_seed
 from genmol.mm.crossdocked import load_crossdocked_manifest
 from genmol.mm.policy import PocketPrefixCpGRPOPolicy
 from genmol.rl.cpgrpo import (
+    VALID_SGRPO_HIERARCHIES,
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
     compute_group_reward_regularizer_advantages,
     compute_sgrpo_advantages,
+    validate_reward_threshold_names,
     split_tensor_dict,
 )
 from genmol.rl.reward import MolecularReward, compute_internal_diversity
@@ -31,8 +33,11 @@ from genmol.rl.specs import (
 )
 from genmol.rl.trainer import (
     _aggregate_scalar_list,
+    _build_group_mean_individual_rewards,
+    _has_active_individual_reward_thresholds,
     _nanmean,
     _nanreduce,
+    GENMOL_SGRPO_THRESHOLD_REWARD_NAMES,
     build_scheduler,
     ensure_exists,
     find_last_checkpoint,
@@ -95,6 +100,8 @@ class PocketPrefixTrainConfig:
     supergroup_num_groups: int = 1
     group_advantage_weight: float = 0.5
     diversity_regularizer_weight: float = 0.0
+    hierarchy: str = 'advantage_sum'
+    individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
     manifest_path: str = ''
     split: str = 'train'
     crossdocked_lmdb_path: str = ''
@@ -142,6 +149,24 @@ def load_config(path):
         raise ValueError('group_advantage_weight must be in [0, 1]')
     if config.diversity_regularizer_weight < 0.0:
         raise ValueError('diversity_regularizer_weight must be non-negative')
+    config.individual_reward_thresholds = validate_reward_threshold_names(
+        config.individual_reward_thresholds,
+        GENMOL_SGRPO_THRESHOLD_REWARD_NAMES,
+    )
+    if config.hierarchy not in VALID_SGRPO_HIERARCHIES:
+        raise ValueError(
+            f"hierarchy must be one of {sorted(VALID_SGRPO_HIERARCHIES)}, got {config.hierarchy!r}"
+        )
+    if config.rl_algorithm != 'coupled_sgrpo':
+        has_active_threshold = any(
+            threshold is not None for threshold in config.individual_reward_thresholds.values()
+        )
+        if has_active_threshold:
+            raise ValueError(
+                'individual_reward_thresholds is only supported when rl_algorithm=coupled_sgrpo'
+            )
+        if config.hierarchy != 'advantage_sum':
+            raise ValueError('hierarchy is only supported when rl_algorithm=coupled_sgrpo')
     if not config.manifest_path:
         raise ValueError('manifest_path is required for pocket_prefix_mm de novo RL')
     if config.split not in {'train', 'val', 'test'}:
@@ -536,6 +561,7 @@ class PocketPrefixCpGRPOTrainer:
         local_rewards = torch.tensor([record.reward for record in reward_records], device=self.device, dtype=torch.float32)
         global_rewards = self.accelerator.gather(local_rewards).detach()
         global_group_rewards = None
+        global_group_mean_individual_rewards = None
         if self.config.rl_algorithm == 'coupled_sgrpo' or self.config.diversity_regularizer_weight > 0.0:
             global_smiles = self._all_gather_objects([record.smiles for record in reward_records])
             if len(global_smiles) != self.global_sample_count:
@@ -548,6 +574,25 @@ class PocketPrefixCpGRPOTrainer:
                     compute_internal_diversity(global_smiles[group_start:group_start + self.config.num_generations])
                 )
             global_group_rewards = torch.tensor(group_diversities, device=self.device, dtype=torch.float32)
+        if self.config.rl_algorithm == 'coupled_sgrpo' and _has_active_individual_reward_thresholds(
+            self.config.individual_reward_thresholds
+        ):
+            local_qed_for_threshold = torch.tensor(
+                [0.0 if record.qed is None else float(record.qed) for record in reward_records],
+                device=self.device,
+                dtype=torch.float32,
+            )
+            local_sa_score_for_threshold = torch.tensor(
+                [0.0 if record.sa_score is None else float(record.sa_score) for record in reward_records],
+                device=self.device,
+                dtype=torch.float32,
+            )
+            global_group_mean_individual_rewards = _build_group_mean_individual_rewards(
+                qed_values=self.accelerator.gather(local_qed_for_threshold).detach(),
+                sa_score_values=self.accelerator.gather(local_sa_score_for_threshold).detach(),
+                num_generations=self.config.num_generations,
+                device=self.device,
+            )
 
         local_diversity_regularizer_advantages = None
         if self.config.rl_algorithm == 'coupled_grpo':
@@ -566,6 +611,9 @@ class PocketPrefixCpGRPOTrainer:
                 supergroup_num_groups=self.config.supergroup_num_groups,
                 group_advantage_weight=self.config.group_advantage_weight,
                 scale_rewards=self.config.scale_rewards,
+                hierarchy=self.config.hierarchy,
+                group_mean_individual_rewards=global_group_mean_individual_rewards,
+                individual_reward_thresholds=self.config.individual_reward_thresholds,
             )
             local_advantages = global_advantages[local_start:local_end].to(device=self.device)
             global_reward_std = torch.full_like(global_rewards, float(sgrpo_metrics['rollout_reward_std_mean']))
@@ -574,8 +622,11 @@ class PocketPrefixCpGRPOTrainer:
                 'rollout_advantage_mean': float(sgrpo_metrics['rollout_advantage_mean']),
                 'group_advantage_mean': float(sgrpo_metrics['group_advantage_mean']),
                 'group_reward/diversity_mean': float(sgrpo_metrics['group_reward_mean']),
+                'group_reward/raw_diversity_mean': float(sgrpo_metrics['group_reward_raw_mean']),
+                'group_reward/indicator_mean': float(sgrpo_metrics['group_reward_indicator_mean']),
                 'rollout_zero_std_ratio': float(sgrpo_metrics['rollout_zero_std_ratio']),
                 'group_zero_std_ratio': float(sgrpo_metrics['group_zero_std_ratio']),
+                'sgrpo/hierarchy_reward_sum_enabled': float(sgrpo_metrics['hierarchy_reward_sum_enabled']),
             }
         if self.config.diversity_regularizer_weight > 0.0:
             if global_group_rewards is None:

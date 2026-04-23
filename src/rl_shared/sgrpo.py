@@ -2,6 +2,68 @@ import math
 
 import torch
 
+VALID_SGRPO_HIERARCHIES = {'advantage_sum', 'reward_sum'}
+
+
+def normalize_reward_thresholds(thresholds):
+    if thresholds is None:
+        return {}
+    if not isinstance(thresholds, dict):
+        raise ValueError(
+            'individual_reward_thresholds must be a dict keyed by reward name or null'
+        )
+
+    normalized = {}
+    for reward_name, value in thresholds.items():
+        if not isinstance(reward_name, str) or not reward_name:
+            raise ValueError(
+                f'individual_reward_thresholds keys must be non-empty strings, got {reward_name!r}'
+            )
+        if value is None:
+            normalized[reward_name] = None
+            continue
+        try:
+            normalized[reward_name] = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'individual_reward_thresholds[{reward_name!r}] must be a float or null, got {value!r}'
+            ) from exc
+    return normalized
+
+
+def validate_reward_threshold_names(thresholds, available_reward_names):
+    normalized = normalize_reward_thresholds(thresholds)
+    unknown = sorted(set(normalized) - set(available_reward_names))
+    if unknown:
+        raise ValueError(
+            'individual_reward_thresholds contains unsupported reward names: '
+            f'{unknown}; expected subset of {sorted(available_reward_names)}'
+        )
+    return normalized
+
+
+def _compute_group_reward_indicator(group_mean_individual_rewards, group_reward_thresholds, num_groups, device):
+    indicator = torch.ones(num_groups, device=device, dtype=torch.float32)
+    active_threshold_count = 0
+    for reward_name, threshold in group_reward_thresholds.items():
+        if threshold is None:
+            continue
+        if reward_name not in group_mean_individual_rewards:
+            raise ValueError(
+                f'missing group mean individual reward tensor for thresholded reward {reward_name!r}'
+            )
+        reward_means = group_mean_individual_rewards[reward_name]
+        if reward_means.dim() != 1:
+            raise ValueError(f'group mean individual rewards for {reward_name!r} must be 1D')
+        if reward_means.numel() != num_groups:
+            raise ValueError(
+                'group mean individual reward tensor length must match number of groups: '
+                f'{reward_name!r} has {reward_means.numel()} vs {num_groups}'
+            )
+        indicator = indicator * (reward_means > float(threshold)).to(dtype=torch.float32)
+        active_threshold_count += 1
+    return indicator, active_threshold_count
+
 
 def compute_grouped_advantages(rewards, num_generations, scale_rewards=False):
     if rewards.dim() != 1:
@@ -28,6 +90,9 @@ def compute_sgrpo_advantages(
     supergroup_num_groups,
     group_advantage_weight,
     scale_rewards=False,
+    hierarchy='advantage_sum',
+    group_mean_individual_rewards=None,
+    individual_reward_thresholds=None,
 ):
     if rollout_rewards.dim() != 1:
         raise ValueError('rollout_rewards must be a 1D tensor')
@@ -39,6 +104,10 @@ def compute_sgrpo_advantages(
         raise ValueError('supergroup_num_groups must be greater than 1')
     if not 0.0 <= group_advantage_weight <= 1.0:
         raise ValueError('group_advantage_weight must be in [0, 1]')
+    if hierarchy not in VALID_SGRPO_HIERARCHIES:
+        raise ValueError(
+            f"hierarchy must be one of {sorted(VALID_SGRPO_HIERARCHIES)}, got {hierarchy!r}"
+        )
     if rollout_rewards.numel() % num_generations != 0:
         raise ValueError('rollout_rewards length must be divisible by num_generations')
 
@@ -53,6 +122,18 @@ def compute_sgrpo_advantages(
             f'{num_groups} vs {supergroup_num_groups}'
         )
 
+    group_mean_individual_rewards = (
+        {} if group_mean_individual_rewards is None else dict(group_mean_individual_rewards)
+    )
+    group_reward_thresholds = normalize_reward_thresholds(individual_reward_thresholds)
+    group_reward_indicator, active_threshold_count = _compute_group_reward_indicator(
+        group_mean_individual_rewards=group_mean_individual_rewards,
+        group_reward_thresholds=group_reward_thresholds,
+        num_groups=num_groups,
+        device=group_rewards.device,
+    )
+    gated_group_rewards = group_rewards * group_reward_indicator
+
     rollout_supergroup_size = num_generations * supergroup_num_groups
     rollout_advantages, rollout_reward_std, rollout_zero_std_ratio = compute_grouped_advantages(
         rewards=rollout_rewards,
@@ -60,26 +141,47 @@ def compute_sgrpo_advantages(
         scale_rewards=scale_rewards,
     )
     group_advantages, group_reward_std, group_zero_std_ratio = compute_grouped_advantages(
-        rewards=group_rewards,
+        rewards=gated_group_rewards,
         num_generations=supergroup_num_groups,
         scale_rewards=scale_rewards,
     )
     expanded_group_advantages = group_advantages.repeat_interleave(num_generations)
     rollout_advantage_weight = 1.0 - group_advantage_weight
-    final_advantages = (
-        rollout_advantages * rollout_advantage_weight
-        + expanded_group_advantages * group_advantage_weight
-    )
+    if hierarchy == 'advantage_sum':
+        final_advantages = (
+            rollout_advantages * rollout_advantage_weight
+            + expanded_group_advantages * group_advantage_weight
+        )
+        final_reward_std = rollout_reward_std
+        final_zero_std_ratio = rollout_zero_std_ratio
+        combined_reward_mean = float('nan')
+    else:
+        expanded_group_rewards = gated_group_rewards.repeat_interleave(num_generations)
+        combined_rewards = (
+            rollout_rewards * rollout_advantage_weight
+            + expanded_group_rewards * group_advantage_weight
+        )
+        final_advantages, final_reward_std, final_zero_std_ratio = compute_grouped_advantages(
+            rewards=combined_rewards,
+            num_generations=rollout_supergroup_size,
+            scale_rewards=scale_rewards,
+        )
+        combined_reward_mean = combined_rewards.mean().item()
 
     metrics = {
         'rollout_advantage_mean': rollout_advantages.mean().item(),
         'group_advantage_mean': expanded_group_advantages.mean().item(),
-        'group_reward_mean': group_rewards.mean().item(),
+        'group_reward_mean': gated_group_rewards.mean().item(),
+        'group_reward_raw_mean': group_rewards.mean().item(),
         'group_advantage_weight': float(group_advantage_weight),
-        'rollout_zero_std_ratio': rollout_zero_std_ratio,
+        'rollout_zero_std_ratio': final_zero_std_ratio,
         'group_zero_std_ratio': group_zero_std_ratio,
-        'rollout_reward_std_mean': rollout_reward_std.mean().item(),
+        'rollout_reward_std_mean': final_reward_std.mean().item(),
         'group_reward_std_mean': group_reward_std.mean().item(),
+        'group_reward_indicator_mean': group_reward_indicator.mean().item(),
+        'active_threshold_count': float(active_threshold_count),
+        'hierarchy_reward_sum_enabled': 1.0 if hierarchy == 'reward_sum' else 0.0,
+        'combined_reward_mean': combined_reward_mean,
     }
     return final_advantages, expanded_group_advantages, rollout_advantages, metrics
 
