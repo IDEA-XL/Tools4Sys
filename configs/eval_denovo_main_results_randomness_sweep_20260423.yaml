@@ -1,0 +1,43 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260423.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260423.json
+output_qed_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/qed_vs_diversity_20260423.png
+output_sa_score_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/sa_score_vs_diversity_20260423.png
+output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260423.rows.jsonl
+seed: 42
+bf16: true
+device: cuda
+num_samples: 1000
+generation_batch_size: 2048
+generation_temperature: 1.0
+randomness_values:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  - 1.0
+min_add_len: 60
+max_completion_length: null
+experiments:
+  - name: original_genmol_v2
+    display_name: Original GenMol v2
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt
+  - name: genmol_denovo_grpo
+    display_name: GenMol De Novo GRPO 1000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_20260422_025828/checkpoint-001000/model.ckpt
+  - name: genmol_denovo_sgrpo
+    display_name: GenMol De Novo SGRPO 1000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_20260422_030845/checkpoint-001000/model.ckpt
+  - name: genmol_denovo_grpo_2000
+    display_name: GenMol De Novo GRPO 2000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_20260422_161812/checkpoint-002000/model.ckpt
+  - name: genmol_denovo_sgrpo_2000
+    display_name: GenMol De Novo SGRPO 2000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_ms2000_20260422_162050/checkpoint-002000/model.ckpt
+  - name: genmol_denovo_grpo_divreg005_2000
+    display_name: GenMol De Novo GRPO DivReg0.05 2000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_divreg005_20260422_203200/checkpoint-002000/model.ckpt
