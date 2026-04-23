@@ -285,14 +285,12 @@ Notes:
 
 ### SGRPO Thresholded (`qed > 0.85`, `sa_score > 0.72`)
 
-Status: `Training Running`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-Pending final checkpoint creation.
-Active run directory:
-/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_20260424_012813
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_20260424_012813/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -324,7 +322,7 @@ Notes:
 - Baseline is the locked 1000-step SGRPO configuration.
 - Only added `individual_reward_thresholds.qed = 0.85` and `individual_reward_thresholds.sa_score = 0.72`.
 - Smoke job `43314` completed successfully.
-- Formal training job `43326` is running and has already written `checkpoint-000050` and `checkpoint-000100`.
+- Formal training job `43326` completed successfully.
 - Smoke config:
 
 ```text
@@ -333,14 +331,12 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_
 
 ### SGRPO Reward-Sum Hierarchy
 
-Status: `Training Running`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-Pending final checkpoint creation.
-Active run directory:
-/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_20260424_013430
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_20260424_013430/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -372,7 +368,7 @@ Notes:
 - Baseline is the locked 1000-step SGRPO configuration.
 - Only changed `hierarchy = reward_sum`.
 - Smoke job `43318` completed successfully.
-- Formal training job `43327` is running and has already written `checkpoint-000050`.
+- Formal training job `43327` completed successfully.
 - Smoke config:
 
 ```text
@@ -381,14 +377,12 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_smoke
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy
 
-Status: `Training Running`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-Pending final checkpoint creation.
-Active run directory:
-/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_20260424_013817
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_20260424_013817/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -421,7 +415,7 @@ Notes:
 - Added `individual_reward_thresholds.qed = 0.85` and `individual_reward_thresholds.sa_score = 0.72`.
 - Changed `hierarchy = reward_sum`.
 - Smoke job `43319` completed successfully.
-- Formal training job `43331` is running and has already written `checkpoint-000050`.
+- Formal training job `43331` completed successfully.
 - Smoke config:
 
 ```text
@@ -435,87 +429,87 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_
 Sweep config:
 
 ```text
-configs/eval_denovo_main_results_randomness_sweep_20260423.yaml
+configs/eval_denovo_main_results_randomness_sweep_20260424.yaml
 ```
 
 Generated artifacts:
 
 ```text
-genmol-denovo/denovo_main_results_randomness_sweep_20260423.md
-genmol-denovo/denovo_main_results_randomness_sweep_20260423.json
-genmol-denovo/denovo_main_results_randomness_sweep_20260423.rows.jsonl
+genmol-denovo/denovo_main_results_randomness_sweep_20260424.md
+genmol-denovo/denovo_main_results_randomness_sweep_20260424.json
+genmol-denovo/denovo_main_results_randomness_sweep_20260424.rows.jsonl
 ```
 
 Notes:
 
-- Completed by eval job `42804`.
+- Completed by eval job `43386`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000
 
 #### `diversity` vs `qed`
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_20260423.png
+genmol-denovo/qed_vs_diversity_20260424.png
 ```
 
-![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260423.png)
+![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260424.png)
 
 #### `diversity` vs `sa_score`
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_20260423.png
+genmol-denovo/sa_score_vs_diversity_20260424.png
 ```
 
-![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260423.png)
+![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260424.png)
 
 #### Temperature Sweep
 
 Sweep config:
 
 ```text
-configs/eval_denovo_main_results_temperature_sweep_20260423.yaml
+configs/eval_denovo_main_results_temperature_sweep_20260424.yaml
 ```
 
 Generated artifacts:
 
 ```text
-genmol-denovo/denovo_main_results_temperature_sweep_20260423.md
-genmol-denovo/denovo_main_results_temperature_sweep_20260423.json
-genmol-denovo/denovo_main_results_temperature_sweep_20260423.rows.jsonl
+genmol-denovo/denovo_main_results_temperature_sweep_20260424.md
+genmol-denovo/denovo_main_results_temperature_sweep_20260424.json
+genmol-denovo/denovo_main_results_temperature_sweep_20260424.rows.jsonl
 ```
 
 Notes:
 
-- Completed by eval job `42805`.
+- Completed by eval job `43388`.
 - Sweep grid: `temperature = 0.1, 0.2, ..., 1.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000
 
 #### `diversity` vs `qed` for temperature sweep
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_temperature_20260423.png
+genmol-denovo/qed_vs_diversity_temperature_20260424.png
 ```
 
-![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260423.png)
+![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260424.png)
 
 #### `diversity` vs `sa_score` for temperature sweep
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_temperature_20260423.png
+genmol-denovo/sa_score_vs_diversity_temperature_20260424.png
 ```
 
-![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260423.png)
+![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260424.png)
 
 ## mmGenMol
 
