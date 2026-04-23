@@ -44,26 +44,26 @@
 | GRPO DivReg 0.05 1000 | temperature | 0.600000 | 0.294551 | 0.842423 | 0.812717 | -7.160457 | 0.989375 | 0.996250 |
 | GRPO DivReg 0.05 1000 | temperature | 1.000000 | 0.275579 | 0.846507 | 0.813896 | -7.192632 | 0.993125 | 0.996875 |
 
-## randomness diversity vs QED
+## randomness QED vs diversity
 
-![randomness diversity vs QED](mmgenmol_randomness_diversity_vs_qed_mean_20260423.png)
+![randomness QED vs diversity](mmgenmol_randomness_diversity_vs_qed_mean_20260423.png)
 
-## randomness diversity vs SA Score
+## randomness SA Score vs diversity
 
-![randomness diversity vs SA Score](mmgenmol_randomness_diversity_vs_sa_score_mean_20260423.png)
+![randomness SA Score vs diversity](mmgenmol_randomness_diversity_vs_sa_score_mean_20260423.png)
 
-## randomness diversity vs Vina Dock Mean
+## randomness Vina Dock Mean vs diversity
 
-![randomness diversity vs Vina Dock Mean](mmgenmol_randomness_diversity_vs_vina_dock_mean_20260423.png)
+![randomness Vina Dock Mean vs diversity](mmgenmol_randomness_diversity_vs_vina_dock_mean_20260423.png)
 
-## temperature diversity vs QED
+## temperature QED vs diversity
 
-![temperature diversity vs QED](mmgenmol_temperature_diversity_vs_qed_mean_20260423.png)
+![temperature QED vs diversity](mmgenmol_temperature_diversity_vs_qed_mean_20260423.png)
 
-## temperature diversity vs SA Score
+## temperature SA Score vs diversity
 
-![temperature diversity vs SA Score](mmgenmol_temperature_diversity_vs_sa_score_mean_20260423.png)
+![temperature SA Score vs diversity](mmgenmol_temperature_diversity_vs_sa_score_mean_20260423.png)
 
-## temperature diversity vs Vina Dock Mean
+## temperature Vina Dock Mean vs diversity
 
-![temperature diversity vs Vina Dock Mean](mmgenmol_temperature_diversity_vs_vina_dock_mean_20260423.png)
+![temperature Vina Dock Mean vs diversity](mmgenmol_temperature_diversity_vs_vina_dock_mean_20260423.png)

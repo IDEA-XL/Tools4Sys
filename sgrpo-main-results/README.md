@@ -623,17 +623,17 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
 
-##### `diversity` vs `qed_mean`
+##### `qed_mean` vs `diversity`
 
-![mmGenMol Randomness Diversity vs QED](mmgenmol/mmgenmol_randomness_diversity_vs_qed_mean_20260423.png)
+![mmGenMol Randomness QED vs Diversity](mmgenmol/mmgenmol_randomness_diversity_vs_qed_mean_20260423.png)
 
-##### `diversity` vs `sa_score_mean`
+##### `sa_score_mean` vs `diversity`
 
-![mmGenMol Randomness Diversity vs SA Score](mmgenmol/mmgenmol_randomness_diversity_vs_sa_score_mean_20260423.png)
+![mmGenMol Randomness SA Score vs Diversity](mmgenmol/mmgenmol_randomness_diversity_vs_sa_score_mean_20260423.png)
 
-##### `diversity` vs `vina_dock_mean`
+##### `vina_dock_mean` vs `diversity`
 
-![mmGenMol Randomness Diversity vs Vina Dock Mean](mmgenmol/mmgenmol_randomness_diversity_vs_vina_dock_mean_20260423.png)
+![mmGenMol Randomness Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_randomness_diversity_vs_vina_dock_mean_20260423.png)
 
 #### Temperature Sweep
 
@@ -641,17 +641,17 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
 
-##### `diversity` vs `qed_mean`
+##### `qed_mean` vs `diversity`
 
-![mmGenMol Temperature Diversity vs QED](mmgenmol/mmgenmol_temperature_diversity_vs_qed_mean_20260423.png)
+![mmGenMol Temperature QED vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_qed_mean_20260423.png)
 
-##### `diversity` vs `sa_score_mean`
+##### `sa_score_mean` vs `diversity`
 
-![mmGenMol Temperature Diversity vs SA Score](mmgenmol/mmgenmol_temperature_diversity_vs_sa_score_mean_20260423.png)
+![mmGenMol Temperature SA Score vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_sa_score_mean_20260423.png)
 
-##### `diversity` vs `vina_dock_mean`
+##### `vina_dock_mean` vs `diversity`
 
-![mmGenMol Temperature Diversity vs Vina Dock Mean](mmgenmol/mmgenmol_temperature_diversity_vs_vina_dock_mean_20260423.png)
+![mmGenMol Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_vina_dock_mean_20260423.png)
 
 ## ProGen2
 

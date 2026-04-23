@@ -422,7 +422,7 @@ def main():
                 f'mmgenmol_{sweep_type}_diversity_vs_{metric_key}_20260423.png',
             )
             _plot_metric(rows, sweep_type, metric_key, metric_label, plot_path)
-            plot_paths.append((f'{sweep_type} diversity vs {metric_label}', plot_path))
+            plot_paths.append((f'{sweep_type} {metric_label} vs diversity', plot_path))
 
     markdown = _build_markdown(rows, plot_paths, output_json_path, output_rows_path)
     with open(output_markdown_path, 'w') as handle:
