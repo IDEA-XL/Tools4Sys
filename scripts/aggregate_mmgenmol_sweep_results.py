@@ -275,12 +275,22 @@ def _display_name(name):
     }.get(name, name)
 
 
+def _model_order(name):
+    order = {
+        'original_5500': 0,
+        'grpo_1000': 1,
+        'sgrpo_1000': 2,
+        'grpo_divreg005_1000': 3,
+    }
+    return order.get(name, len(order))
+
+
 def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
     sweep_rows = [row for row in rows if row['sweep_type'] == sweep_type]
     if not sweep_rows:
         raise ValueError(f'No rows for sweep_type={sweep_type!r}')
     model_names = []
-    for row in sweep_rows:
+    for row in sorted(sweep_rows, key=lambda item: (_model_order(item['model_name']), item['model_name'])):
         if row['model_name'] not in model_names:
             model_names.append(row['model_name'])
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -390,7 +400,7 @@ def main():
         )
         for task in tasks
     ]
-    rows.sort(key=lambda row: (row['model_name'], row['sweep_type'], row['sweep_value']))
+    rows.sort(key=lambda row: (_model_order(row['model_name']), row['model_name'], row['sweep_type'], row['sweep_value']))
 
     os.makedirs(args.output_dir, exist_ok=True)
     output_json_path = os.path.join(args.output_dir, f'{args.output_prefix}.json')
