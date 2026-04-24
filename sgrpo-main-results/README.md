@@ -471,12 +471,12 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_
 
 ### SGRPO Thresholded 2000-Step Variant (`qed > 0.85`, `sa_score > 0.72`)
 
-Status: `RUNNING`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_ms2000_20260424_120030/checkpoint-002000/model.ckpt
 ```
 
 Training config:
@@ -508,16 +508,17 @@ Notes:
 - Baseline is the 1000-step thresholded SGRPO configuration.
 - Only changed `max_steps = 2000`.
 - Training job: `43478`
+- Training completed successfully.
 - Superseded failed job `43474` because `server13` could not initialize CUDA/NVML.
 
 ### SGRPO Reward-Sum Hierarchy 2000-Step Variant
 
-Status: `RUNNING`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_ms2000_20260424_115413/checkpoint-002000/model.ckpt
 ```
 
 Training config:
@@ -549,10 +550,11 @@ Notes:
 - Baseline is the 1000-step reward-sum SGRPO configuration.
 - Only changed `max_steps = 2000`.
 - Training job: `43475`
+- Training completed successfully.
 
 ### SGRPO Hierarchical-Sum Hierarchy 2000-Step Variant
 
-Status: `PENDING`
+Status: `RUNNING`
 
 Checkpoint:
 
@@ -592,12 +594,12 @@ Notes:
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy 2000-Step Variant
 
-Status: `RUNNING`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_ms2000_20260424_115503/checkpoint-002000/model.ckpt
 ```
 
 Training config:
@@ -629,6 +631,7 @@ Notes:
 - Baseline is the 1000-step thresholded reward-sum SGRPO configuration.
 - Only changed `max_steps = 2000`.
 - Training job: `43476`
+- Training completed successfully.
 
 ### Pareto Curves To Maintain
 
