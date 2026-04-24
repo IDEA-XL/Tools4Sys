@@ -640,87 +640,87 @@ Notes:
 Sweep config:
 
 ```text
-configs/eval_denovo_main_results_randomness_sweep_20260424.yaml
+configs/eval_denovo_main_results_randomness_sweep_20260425.yaml
 ```
 
 Generated artifacts:
 
 ```text
-genmol-denovo/denovo_main_results_randomness_sweep_20260424.md
-genmol-denovo/denovo_main_results_randomness_sweep_20260424.json
-genmol-denovo/denovo_main_results_randomness_sweep_20260424.rows.jsonl
+genmol-denovo/denovo_main_results_randomness_sweep_20260425.md
+genmol-denovo/denovo_main_results_randomness_sweep_20260425.json
 ```
 
 Notes:
 
-- Completed by eval job `43386`.
+- Completed by eval job `44218`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000
+- Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl`
 
 #### `diversity` vs `qed`
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_20260424.png
+genmol-denovo/qed_vs_diversity_20260425.png
 ```
 
-![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260424.png)
+![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260425.png)
 
 #### `diversity` vs `sa_score`
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_20260424.png
+genmol-denovo/sa_score_vs_diversity_20260425.png
 ```
 
-![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260424.png)
+![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260425.png)
 
 #### Temperature Sweep
 
 Sweep config:
 
 ```text
-configs/eval_denovo_main_results_temperature_sweep_20260424.yaml
+configs/eval_denovo_main_results_temperature_sweep_20260425.yaml
 ```
 
 Generated artifacts:
 
 ```text
-genmol-denovo/denovo_main_results_temperature_sweep_20260424.md
-genmol-denovo/denovo_main_results_temperature_sweep_20260424.json
-genmol-denovo/denovo_main_results_temperature_sweep_20260424.rows.jsonl
+genmol-denovo/denovo_main_results_temperature_sweep_20260425.md
+genmol-denovo/denovo_main_results_temperature_sweep_20260425.json
 ```
 
 Notes:
 
-- Completed by eval job `43388`.
+- Completed by eval job `44219`.
 - Sweep grid: `temperature = 0.1, 0.2, ..., 1.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000
+- Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`
 
 #### `diversity` vs `qed` for temperature sweep
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_temperature_20260424.png
+genmol-denovo/qed_vs_diversity_temperature_20260425.png
 ```
 
-![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260424.png)
+![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260425.png)
 
 #### `diversity` vs `sa_score` for temperature sweep
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_temperature_20260424.png
+genmol-denovo/sa_score_vs_diversity_temperature_20260425.png
 ```
 
-![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260424.png)
+![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260425.png)
 
 ## mmGenMol
 
