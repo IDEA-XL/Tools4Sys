@@ -422,6 +422,126 @@ Notes:
 configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_smoke20.yaml
 ```
 
+### SGRPO Thresholded 2000-Step Variant (`qed > 0.85`, `sa_score > 0.72`)
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 1000-step thresholded SGRPO configuration.
+- Only changed `max_steps = 2000`.
+- Training job: `TODO`
+
+### SGRPO Reward-Sum Hierarchy 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 1000-step reward-sum SGRPO configuration.
+- Only changed `max_steps = 2000`.
+- Training job: `TODO`
+
+### SGRPO Thresholded + Reward-Sum Hierarchy 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_rewardsum_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 1000-step thresholded reward-sum SGRPO configuration.
+- Only changed `max_steps = 2000`.
+- Training job: `TODO`
+
 ### Pareto Curves To Maintain
 
 #### Randomness Sweep
