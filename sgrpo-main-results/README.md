@@ -419,7 +419,7 @@ Notes:
 configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_smoke20.yaml
 ```
 
-- Smoke job: `TODO`
+- Smoke job: `44015`
 - Formal training job: `TODO`
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy
