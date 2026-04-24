@@ -377,12 +377,12 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_smoke
 
 ### SGRPO Hierarchical-Sum Hierarchy
 
-Status: `PENDING`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_20260424_204857/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -421,6 +421,7 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum
 
 - Smoke job: `44015`
 - Formal training job: `44080`
+- Training completed successfully.
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy
 
