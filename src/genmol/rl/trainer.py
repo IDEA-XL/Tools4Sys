@@ -652,6 +652,9 @@ class GenMolCpGRPOTrainer:
                 'rollout_zero_std_ratio': float(sgrpo_metrics['rollout_zero_std_ratio']),
                 'group_zero_std_ratio': float(sgrpo_metrics['group_zero_std_ratio']),
                 'sgrpo/hierarchy_reward_sum_enabled': float(sgrpo_metrics['hierarchy_reward_sum_enabled']),
+                'sgrpo/hierarchy_hierarchical_sum_enabled': float(
+                    sgrpo_metrics['hierarchy_hierarchical_sum_enabled']
+                ),
             }
         if self.config.diversity_regularizer_weight > 0.0:
             if global_group_rewards is None:

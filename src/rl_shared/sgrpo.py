@@ -2,7 +2,7 @@ import math
 
 import torch
 
-VALID_SGRPO_HIERARCHIES = {'advantage_sum', 'reward_sum'}
+VALID_SGRPO_HIERARCHIES = {'advantage_sum', 'reward_sum', 'hierarchical_sum'}
 
 
 def normalize_reward_thresholds(thresholds):
@@ -83,6 +83,73 @@ def compute_grouped_advantages(rewards, num_generations, scale_rewards=False):
     return advantages, repeated_std, zero_std_ratio
 
 
+def compute_hierarchical_sum_advantages(
+    rollout_rewards,
+    group_rewards,
+    num_generations,
+    supergroup_num_groups,
+    group_advantage_weight,
+    scale_rewards=False,
+):
+    if rollout_rewards.dim() != 1:
+        raise ValueError('rollout_rewards must be a 1D tensor')
+    if group_rewards.dim() != 1:
+        raise ValueError('group_rewards must be a 1D tensor')
+    if num_generations <= 1:
+        raise ValueError('num_generations must be greater than 1')
+    if supergroup_num_groups <= 1:
+        raise ValueError('supergroup_num_groups must be greater than 1')
+    if not 0.0 <= group_advantage_weight <= 1.0:
+        raise ValueError('group_advantage_weight must be in [0, 1]')
+    if rollout_rewards.numel() % num_generations != 0:
+        raise ValueError('rollout_rewards length must be divisible by num_generations')
+
+    num_groups = rollout_rewards.numel() // num_generations
+    if group_rewards.numel() != num_groups:
+        raise ValueError(
+            f'group_rewards length must equal number of groups: {group_rewards.numel()} vs {num_groups}'
+        )
+    if num_groups % supergroup_num_groups != 0:
+        raise ValueError(
+            'number of groups must be divisible by supergroup_num_groups: '
+            f'{num_groups} vs {supergroup_num_groups}'
+        )
+
+    group_advantage_weight = float(group_advantage_weight)
+    rollout_advantage_weight = 1.0 - group_advantage_weight
+
+    expanded_group_rewards = group_rewards.repeat_interleave(num_generations)
+    combined_rewards = (
+        rollout_rewards * rollout_advantage_weight
+        + expanded_group_rewards * group_advantage_weight
+    )
+
+    rollout_rewards_grouped = rollout_rewards.view(num_groups, num_generations)
+    rollout_baseline = (
+        (rollout_rewards_grouped.sum(dim=1, keepdim=True) - rollout_rewards_grouped)
+        / (num_generations - 1)
+    ).view(-1)
+    group_rewards_grouped = group_rewards.view(-1, supergroup_num_groups)
+    group_baseline = (
+        (group_rewards_grouped.sum(dim=1, keepdim=True) - group_rewards_grouped)
+        / (supergroup_num_groups - 1)
+    ).view(-1).repeat_interleave(num_generations)
+    baseline = rollout_baseline * rollout_advantage_weight + group_baseline * group_advantage_weight
+    advantages = combined_rewards - baseline
+
+    rollout_supergroup_size = num_generations * supergroup_num_groups
+    final_reward_std = (
+        combined_rewards.view(-1, rollout_supergroup_size)
+        .std(dim=1, keepdim=True)
+        .repeat_interleave(rollout_supergroup_size, dim=1)
+        .view(-1)
+    )
+    if scale_rewards:
+        advantages = advantages / (final_reward_std + 1e-4)
+    zero_std_ratio = (final_reward_std < 1e-6).to(torch.float32).mean().item()
+    return advantages, final_reward_std, zero_std_ratio, combined_rewards.mean().item()
+
+
 def compute_sgrpo_advantages(
     rollout_rewards,
     group_rewards,
@@ -155,7 +222,7 @@ def compute_sgrpo_advantages(
         final_reward_std = rollout_reward_std
         final_zero_std_ratio = rollout_zero_std_ratio
         combined_reward_mean = float('nan')
-    else:
+    elif hierarchy == 'reward_sum':
         expanded_group_rewards = gated_group_rewards.repeat_interleave(num_generations)
         combined_rewards = (
             rollout_rewards * rollout_advantage_weight
@@ -167,6 +234,17 @@ def compute_sgrpo_advantages(
             scale_rewards=scale_rewards,
         )
         combined_reward_mean = combined_rewards.mean().item()
+    else:
+        final_advantages, final_reward_std, final_zero_std_ratio, combined_reward_mean = (
+            compute_hierarchical_sum_advantages(
+                rollout_rewards=rollout_rewards,
+                group_rewards=gated_group_rewards,
+                num_generations=num_generations,
+                supergroup_num_groups=supergroup_num_groups,
+                group_advantage_weight=group_advantage_weight,
+                scale_rewards=scale_rewards,
+            )
+        )
 
     metrics = {
         'rollout_advantage_mean': rollout_advantages.mean().item(),
@@ -181,6 +259,7 @@ def compute_sgrpo_advantages(
         'group_reward_indicator_mean': group_reward_indicator.mean().item(),
         'active_threshold_count': float(active_threshold_count),
         'hierarchy_reward_sum_enabled': 1.0 if hierarchy == 'reward_sum' else 0.0,
+        'hierarchy_hierarchical_sum_enabled': 1.0 if hierarchy == 'hierarchical_sum' else 0.0,
         'combined_reward_mean': combined_reward_mean,
     }
     return final_advantages, expanded_group_advantages, rollout_advantages, metrics

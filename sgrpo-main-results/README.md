@@ -375,6 +375,53 @@ Notes:
 configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_smoke20.yaml
 ```
 
+### SGRPO Hierarchical-Sum Hierarchy
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the locked 1000-step reward-sum SGRPO configuration.
+- Only changed `hierarchy = hierarchical_sum`.
+- Smoke config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_smoke20.yaml
+```
+
+- Smoke job: `TODO`
+- Formal training job: `TODO`
+
 ### SGRPO Thresholded + Reward-Sum Hierarchy
 
 Status: `Verified`
@@ -502,6 +549,46 @@ Notes:
 - Baseline is the 1000-step reward-sum SGRPO configuration.
 - Only changed `max_steps = 2000`.
 - Training job: `43475`
+
+### SGRPO Hierarchical-Sum Hierarchy 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 2000-step reward-sum SGRPO configuration.
+- Only changed `hierarchy = hierarchical_sum`.
+- Formal training job: `TODO`
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy 2000-Step Variant
 

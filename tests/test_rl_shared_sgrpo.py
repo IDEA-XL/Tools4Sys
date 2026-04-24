@@ -79,3 +79,27 @@ def test_compute_sgrpo_advantages_reward_sum_uses_combined_rewards():
     assert abs(metrics['combined_reward_mean'] - combined_rewards.mean().item()) < 1e-6
     assert expanded_group_advantages.shape == rollout_rewards.shape
     assert rollout_advantages.shape == rollout_rewards.shape
+
+
+def test_compute_sgrpo_advantages_hierarchical_sum_uses_hierarchical_baseline():
+    rollout_rewards = torch.tensor([1.0, 3.0, 5.0, 9.0])
+    group_rewards = torch.tensor([2.0, 4.0])
+    weight = 0.25
+    expected_advantages = torch.tensor([-2.0, 1.0, -2.5, 3.5])
+
+    final_advantages, expanded_group_advantages, rollout_advantages, metrics = compute_sgrpo_advantages(
+        rollout_rewards=rollout_rewards,
+        group_rewards=group_rewards,
+        num_generations=2,
+        supergroup_num_groups=2,
+        group_advantage_weight=weight,
+        scale_rewards=False,
+        hierarchy='hierarchical_sum',
+    )
+
+    assert torch.allclose(final_advantages, expected_advantages)
+    assert metrics['hierarchy_reward_sum_enabled'] == 0.0
+    assert metrics['hierarchy_hierarchical_sum_enabled'] == 1.0
+    assert abs(metrics['combined_reward_mean'] - 4.125) < 1e-6
+    assert expanded_group_advantages.shape == rollout_rewards.shape
+    assert rollout_advantages.shape == rollout_rewards.shape
