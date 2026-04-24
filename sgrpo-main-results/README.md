@@ -424,7 +424,7 @@ configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_thr_q085_sa072_
 
 ### SGRPO Thresholded 2000-Step Variant (`qed > 0.85`, `sa_score > 0.72`)
 
-Status: `TODO`
+Status: `RUNNING`
 
 Checkpoint:
 
@@ -460,11 +460,12 @@ Notes:
 
 - Baseline is the 1000-step thresholded SGRPO configuration.
 - Only changed `max_steps = 2000`.
-- Training job: `TODO`
+- Training job: `43478`
+- Superseded failed job `43474` because `server13` could not initialize CUDA/NVML.
 
 ### SGRPO Reward-Sum Hierarchy 2000-Step Variant
 
-Status: `TODO`
+Status: `RUNNING`
 
 Checkpoint:
 
@@ -500,11 +501,11 @@ Notes:
 
 - Baseline is the 1000-step reward-sum SGRPO configuration.
 - Only changed `max_steps = 2000`.
-- Training job: `TODO`
+- Training job: `43475`
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy 2000-Step Variant
 
-Status: `TODO`
+Status: `RUNNING`
 
 Checkpoint:
 
@@ -540,7 +541,7 @@ Notes:
 
 - Baseline is the 1000-step thresholded reward-sum SGRPO configuration.
 - Only changed `max_steps = 2000`.
-- Training job: `TODO`
+- Training job: `43476`
 
 ### Pareto Curves To Maintain
 
