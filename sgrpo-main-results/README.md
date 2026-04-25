@@ -555,12 +555,12 @@ Notes:
 
 ### SGRPO Hierarchical-Sum Hierarchy 2000-Step Variant
 
-Status: `RUNNING`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_ms2000_20260424_211108/checkpoint-002000/model.ckpt
 ```
 
 Training config:
@@ -592,6 +592,7 @@ Notes:
 - Baseline is the 2000-step reward-sum SGRPO configuration.
 - Only changed `hierarchy = hierarchical_sum`.
 - Formal training job: `44081`
+- Training completed successfully.
 
 ### SGRPO Thresholded + Reward-Sum Hierarchy 2000-Step Variant
 
