@@ -3,6 +3,7 @@ import math
 import torch
 
 VALID_SGRPO_HIERARCHIES = {'advantage_sum', 'reward_sum', 'hierarchical_sum'}
+VALID_GROUP_REWRAD_CREDITS = {'broadcast', 'loo'}
 
 
 def normalize_reward_thresholds(thresholds):
@@ -150,6 +151,71 @@ def compute_hierarchical_sum_advantages(
     return advantages, final_reward_std, zero_std_ratio, combined_rewards.mean().item()
 
 
+def _normalize_group_reward_credits(group_reward_credits, num_groups, num_generations, device):
+    if group_reward_credits is None:
+        raise ValueError('group_reward_credits is required when group_rewrad_credit=loo')
+    if not torch.is_tensor(group_reward_credits):
+        raise ValueError('group_reward_credits must be a tensor')
+    credits = group_reward_credits.to(device=device, dtype=torch.float32)
+    if credits.dim() == 1:
+        if credits.numel() != num_groups * num_generations:
+            raise ValueError(
+                'flat group_reward_credits length must equal num_groups * num_generations: '
+                f'{credits.numel()} vs {num_groups * num_generations}'
+            )
+        credits = credits.view(num_groups, num_generations)
+    elif credits.dim() == 2:
+        if credits.shape != (num_groups, num_generations):
+            raise ValueError(
+                'group_reward_credits must have shape '
+                f'[{num_groups}, {num_generations}], got {list(credits.shape)}'
+            )
+    else:
+        raise ValueError('group_reward_credits must be 1D or 2D')
+    return credits
+
+
+def _credit_weights(group_reward_credits, temperature):
+    if temperature <= 0.0:
+        raise ValueError('group_rewrad_credit_temperature must be positive')
+    centered = group_reward_credits - group_reward_credits.mean(dim=1, keepdim=True)
+    std = group_reward_credits.std(dim=1, keepdim=True)
+    z_scores = centered / (std + 1e-4)
+    num_generations = group_reward_credits.size(1)
+    positive_weights = num_generations * torch.softmax(z_scores / float(temperature), dim=1)
+    negative_weights = num_generations * torch.softmax(-z_scores / float(temperature), dim=1)
+    return positive_weights, negative_weights
+
+
+def _apply_loo_credit_to_group_advantages(group_advantages, group_reward_credits, temperature):
+    positive_weights, negative_weights = _credit_weights(group_reward_credits, temperature)
+    group_advantages = group_advantages.view(-1, 1)
+    credited = (
+        torch.clamp(group_advantages, min=0.0) * positive_weights
+        - torch.clamp(-group_advantages, min=0.0) * negative_weights
+    )
+    return credited.view(-1)
+
+
+def _allocate_group_rewards_with_loo_credit(
+    group_rewards,
+    group_advantages,
+    group_reward_credits,
+    temperature,
+):
+    # Preserve each group's mean reward while using the signed supergroup
+    # advantage to decide which LOO-credit side receives the reward residual.
+    positive_weights, negative_weights = _credit_weights(group_reward_credits, temperature)
+    group_rewards = group_rewards.view(-1, 1)
+    group_advantages = group_advantages.view(-1, 1)
+    allocation_delta = (
+        torch.clamp(group_advantages, min=0.0) * (positive_weights - 1.0)
+        - torch.clamp(-group_advantages, min=0.0) * (negative_weights - 1.0)
+    )
+    allocated = group_rewards + allocation_delta
+    return allocated.view(-1)
+
+
 def compute_sgrpo_advantages(
     rollout_rewards,
     group_rewards,
@@ -160,6 +226,9 @@ def compute_sgrpo_advantages(
     hierarchy='advantage_sum',
     group_mean_individual_rewards=None,
     individual_reward_thresholds=None,
+    group_rewrad_credit='broadcast',
+    group_rewrad_credit_temperature=1.0,
+    group_reward_credits=None,
 ):
     if rollout_rewards.dim() != 1:
         raise ValueError('rollout_rewards must be a 1D tensor')
@@ -175,6 +244,14 @@ def compute_sgrpo_advantages(
         raise ValueError(
             f"hierarchy must be one of {sorted(VALID_SGRPO_HIERARCHIES)}, got {hierarchy!r}"
         )
+    if group_rewrad_credit not in VALID_GROUP_REWRAD_CREDITS:
+        raise ValueError(
+            f"group_rewrad_credit must be one of {sorted(VALID_GROUP_REWRAD_CREDITS)}, "
+            f'got {group_rewrad_credit!r}'
+        )
+    group_rewrad_credit_temperature = float(group_rewrad_credit_temperature)
+    if group_rewrad_credit_temperature <= 0.0:
+        raise ValueError('group_rewrad_credit_temperature must be positive')
     if rollout_rewards.numel() % num_generations != 0:
         raise ValueError('rollout_rewards length must be divisible by num_generations')
 
@@ -212,7 +289,28 @@ def compute_sgrpo_advantages(
         num_generations=supergroup_num_groups,
         scale_rewards=scale_rewards,
     )
-    expanded_group_advantages = group_advantages.repeat_interleave(num_generations)
+    if group_rewrad_credit == 'loo':
+        normalized_group_reward_credits = _normalize_group_reward_credits(
+            group_reward_credits=group_reward_credits,
+            num_groups=num_groups,
+            num_generations=num_generations,
+            device=group_rewards.device,
+        )
+        expanded_group_advantages = _apply_loo_credit_to_group_advantages(
+            group_advantages=group_advantages,
+            group_reward_credits=normalized_group_reward_credits,
+            temperature=group_rewrad_credit_temperature,
+        )
+        expanded_group_rewards = _allocate_group_rewards_with_loo_credit(
+            group_rewards=gated_group_rewards,
+            group_advantages=group_advantages,
+            group_reward_credits=normalized_group_reward_credits,
+            temperature=group_rewrad_credit_temperature,
+        )
+    else:
+        normalized_group_reward_credits = None
+        expanded_group_advantages = group_advantages.repeat_interleave(num_generations)
+        expanded_group_rewards = gated_group_rewards.repeat_interleave(num_generations)
     rollout_advantage_weight = 1.0 - group_advantage_weight
     if hierarchy == 'advantage_sum':
         final_advantages = (
@@ -223,7 +321,6 @@ def compute_sgrpo_advantages(
         final_zero_std_ratio = rollout_zero_std_ratio
         combined_reward_mean = float('nan')
     elif hierarchy == 'reward_sum':
-        expanded_group_rewards = gated_group_rewards.repeat_interleave(num_generations)
         combined_rewards = (
             rollout_rewards * rollout_advantage_weight
             + expanded_group_rewards * group_advantage_weight
@@ -235,16 +332,44 @@ def compute_sgrpo_advantages(
         )
         combined_reward_mean = combined_rewards.mean().item()
     else:
-        final_advantages, final_reward_std, final_zero_std_ratio, combined_reward_mean = (
-            compute_hierarchical_sum_advantages(
-                rollout_rewards=rollout_rewards,
-                group_rewards=gated_group_rewards,
-                num_generations=num_generations,
-                supergroup_num_groups=supergroup_num_groups,
-                group_advantage_weight=group_advantage_weight,
-                scale_rewards=scale_rewards,
+        if group_rewrad_credit == 'loo':
+            combined_rewards = (
+                rollout_rewards * rollout_advantage_weight
+                + expanded_group_rewards * group_advantage_weight
             )
-        )
+            rollout_rewards_grouped = rollout_rewards.view(num_groups, num_generations)
+            rollout_baseline = (
+                (rollout_rewards_grouped.sum(dim=1, keepdim=True) - rollout_rewards_grouped)
+                / (num_generations - 1)
+            ).view(-1)
+            group_rewards_grouped = gated_group_rewards.view(-1, supergroup_num_groups)
+            group_baseline = (
+                (group_rewards_grouped.sum(dim=1, keepdim=True) - group_rewards_grouped)
+                / (supergroup_num_groups - 1)
+            ).view(-1).repeat_interleave(num_generations)
+            baseline = rollout_baseline * rollout_advantage_weight + group_baseline * group_advantage_weight
+            final_advantages = combined_rewards - baseline
+            final_reward_std = (
+                combined_rewards.view(-1, rollout_supergroup_size)
+                .std(dim=1, keepdim=True)
+                .repeat_interleave(rollout_supergroup_size, dim=1)
+                .view(-1)
+            )
+            if scale_rewards:
+                final_advantages = final_advantages / (final_reward_std + 1e-4)
+            final_zero_std_ratio = (final_reward_std < 1e-6).to(torch.float32).mean().item()
+            combined_reward_mean = combined_rewards.mean().item()
+        else:
+            final_advantages, final_reward_std, final_zero_std_ratio, combined_reward_mean = (
+                compute_hierarchical_sum_advantages(
+                    rollout_rewards=rollout_rewards,
+                    group_rewards=gated_group_rewards,
+                    num_generations=num_generations,
+                    supergroup_num_groups=supergroup_num_groups,
+                    group_advantage_weight=group_advantage_weight,
+                    scale_rewards=scale_rewards,
+                )
+            )
 
     metrics = {
         'rollout_advantage_mean': rollout_advantages.mean().item(),
@@ -261,7 +386,12 @@ def compute_sgrpo_advantages(
         'hierarchy_reward_sum_enabled': 1.0 if hierarchy == 'reward_sum' else 0.0,
         'hierarchy_hierarchical_sum_enabled': 1.0 if hierarchy == 'hierarchical_sum' else 0.0,
         'combined_reward_mean': combined_reward_mean,
+        'group_rewrad_credit_loo_enabled': 1.0 if group_rewrad_credit == 'loo' else 0.0,
+        'group_rewrad_credit_temperature': float(group_rewrad_credit_temperature),
     }
+    if normalized_group_reward_credits is not None:
+        metrics['group_rewrad_credit_mean'] = normalized_group_reward_credits.mean().item()
+        metrics['group_rewrad_credit_std'] = normalized_group_reward_credits.std().item()
     return final_advantages, expanded_group_advantages, rollout_advantages, metrics
 
 

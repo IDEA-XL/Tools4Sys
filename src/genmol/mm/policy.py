@@ -313,8 +313,20 @@ class PocketPrefixCpGRPOPolicy:
         with self.eval_mode():
             with torch.no_grad():
                 mdlm = self._root_model().mdlm
-                for start in range(0, len(specs), generation_batch_size):
-                    chunk_specs = specs[start:start + generation_batch_size]
+                start = 0
+                while start < len(specs):
+                    max_end = min(start + generation_batch_size, len(specs))
+                    ref_spec = specs[start]
+                    end = start + 1
+                    while end < max_end:
+                        candidate = specs[end]
+                        if (
+                            candidate.generation_temperature != ref_spec.generation_temperature
+                            or candidate.randomness != ref_spec.randomness
+                        ):
+                            break
+                        end += 1
+                    chunk_specs = specs[start:end]
                     chunk_size = len(chunk_specs)
                     chunk_pocket_embeddings = pocket_raw_embeddings[start:start + chunk_size]
                     chunk_pocket_mask = pocket_mask[start:start + chunk_size]
@@ -347,6 +359,7 @@ class PocketPrefixCpGRPOPolicy:
 
                     chunk_outputs.append(x.detach().clone())
                     chunk_masks.append(completion_mask.detach().clone())
+                    start = end
 
         token_ids = torch.cat(chunk_outputs, dim=0)
         completion_mask = torch.cat(chunk_masks, dim=0)[:, 1:]

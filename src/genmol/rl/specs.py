@@ -5,6 +5,8 @@ import random
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 
+from rl_shared.sampling import sample_scalar_or_range
+
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
@@ -56,8 +58,18 @@ def sample_group_specs(
                     max_completion_length=max_completion_length,
                     length_path=length_path,
                 ),
-                generation_temperature=generation_temperature,
-                randomness=randomness,
+                generation_temperature=sample_scalar_or_range(
+                    generation_temperature,
+                    rng,
+                    name='generation_temperature',
+                    min_exclusive=0.0,
+                ),
+                randomness=sample_scalar_or_range(
+                    randomness,
+                    rng,
+                    name='randomness',
+                    min_exclusive=0.0,
+                ),
                 min_add_len=min_add_len,
             )
         )

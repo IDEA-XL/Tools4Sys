@@ -40,6 +40,7 @@ def test_load_config_accepts_sgrpo_and_computes_default_reward_batch_size(tmp_pa
                 'num_generations': 4,
                 'supergroup_num_groups': 2,
                 'rl_algorithm': 'sgrpo',
+                'temperature': [0.5, 3.0],
                 'reward_compute_every_n_steps': [1, 2, 3, 4],
                 'rewards': {
                     'naturalness': {'model_name': 'esm2_t33_650M_UR50D'},
@@ -53,6 +54,7 @@ def test_load_config_accepts_sgrpo_and_computes_default_reward_batch_size(tmp_pa
     )
     config = load_config(config_path)
     assert config.rl_algorithm == 'sgrpo'
+    assert config.temperature == [0.5, 3.0]
     assert default_reward_batch_size(config) == 192
     assert config.reward_compute_every_n_steps == {
         'naturalness': 1,

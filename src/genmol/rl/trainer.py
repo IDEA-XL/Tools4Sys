@@ -14,6 +14,7 @@ from accelerate import Accelerator
 from accelerate.utils import set_seed
 
 from genmol.rl.cpgrpo import (
+    VALID_GROUP_REWRAD_CREDITS,
     VALID_SGRPO_HIERARCHIES,
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
@@ -25,7 +26,7 @@ from genmol.rl.cpgrpo import (
     validate_reward_threshold_names,
 )
 from genmol.rl.policy import GenMolCpGRPOPolicy
-from genmol.rl.reward import MolecularReward, compute_internal_diversity
+from genmol.rl.reward import MolecularReward, compute_internal_diversity, compute_internal_diversity_loo_credits
 from genmol.rl.specs import (
     deserialize_specs,
     expand_group_specs,
@@ -33,6 +34,7 @@ from genmol.rl.specs import (
     sample_supergroup_shared_specs,
     serialize_specs,
 )
+from rl_shared.sampling import normalize_scalar_or_range
 
 
 logger = logging.getLogger(__name__)
@@ -78,8 +80,8 @@ class TrainConfig:
     save_total_limit: int = 5
     random_masking: bool = True
     generation_batch_size: int = 16
-    generation_temperature: float = 1.0
-    randomness: float = 0.3
+    generation_temperature: float | list[float] = 1.0
+    randomness: float | list[float] = 0.3
     min_add_len: int = 60
     max_completion_length: int | None = None
     log_completions: bool = True
@@ -91,6 +93,8 @@ class TrainConfig:
     diversity_regularizer_weight: float = 0.0
     hierarchy: str = 'advantage_sum'
     individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
+    group_rewrad_credit: str = 'broadcast'
+    group_rewrad_credit_temperature: float = 1.0
 
 
 @dataclass
@@ -118,6 +122,16 @@ def load_config(path):
         raise ValueError('gradient_accumulation_steps must be positive')
     if config.generation_batch_size <= 0:
         raise ValueError('generation_batch_size must be positive')
+    config.generation_temperature = normalize_scalar_or_range(
+        config.generation_temperature,
+        name='generation_temperature',
+        min_exclusive=0.0,
+    )
+    config.randomness = normalize_scalar_or_range(
+        config.randomness,
+        name='randomness',
+        min_exclusive=0.0,
+    )
     if not 0.0 <= config.ref_model_mixup_alpha <= 1.0:
         raise ValueError('ref_model_mixup_alpha must be in [0, 1]')
     if config.rl_algorithm not in {'coupled_grpo', 'coupled_sgrpo'}:
@@ -138,6 +152,14 @@ def load_config(path):
         raise ValueError(
             f"hierarchy must be one of {sorted(VALID_SGRPO_HIERARCHIES)}, got {config.hierarchy!r}"
         )
+    if config.group_rewrad_credit not in VALID_GROUP_REWRAD_CREDITS:
+        raise ValueError(
+            f"group_rewrad_credit must be one of {sorted(VALID_GROUP_REWRAD_CREDITS)}, "
+            f'got {config.group_rewrad_credit!r}'
+        )
+    config.group_rewrad_credit_temperature = float(config.group_rewrad_credit_temperature)
+    if config.group_rewrad_credit_temperature <= 0.0:
+        raise ValueError('group_rewrad_credit_temperature must be positive')
     if config.rl_algorithm != 'coupled_sgrpo':
         has_active_threshold = any(
             threshold is not None for threshold in config.individual_reward_thresholds.values()
@@ -148,6 +170,10 @@ def load_config(path):
             )
         if config.hierarchy != 'advantage_sum':
             raise ValueError('hierarchy is only supported when rl_algorithm=coupled_sgrpo')
+        if config.group_rewrad_credit != 'broadcast':
+            raise ValueError('group_rewrad_credit is only supported when rl_algorithm=coupled_sgrpo')
+        if config.group_rewrad_credit_temperature != 1.0:
+            raise ValueError('group_rewrad_credit_temperature is only supported when rl_algorithm=coupled_sgrpo')
     return config
 
 
@@ -586,6 +612,7 @@ class GenMolCpGRPOTrainer:
         local_rewards = torch.tensor([record.reward for record in reward_records], device=self.device, dtype=torch.float32)
         global_rewards = self.accelerator.gather(local_rewards).detach()
         global_group_rewards = None
+        global_group_reward_credits = None
         global_group_mean_individual_rewards = None
         if self.config.rl_algorithm == 'coupled_sgrpo' or self.config.diversity_regularizer_weight > 0.0:
             global_smiles = self._all_gather_objects([record.smiles for record in reward_records])
@@ -594,11 +621,21 @@ class GenMolCpGRPOTrainer:
                     f'Expected {self.global_sample_count} gathered smiles, got {len(global_smiles)}'
                 )
             group_diversities = []
+            group_diversity_credits = []
             for group_start in range(0, len(global_smiles), self.config.num_generations):
+                group_smiles = global_smiles[group_start:group_start + self.config.num_generations]
                 group_diversities.append(
-                    compute_internal_diversity(global_smiles[group_start:group_start + self.config.num_generations])
+                    compute_internal_diversity(group_smiles)
                 )
+                if self.config.group_rewrad_credit == 'loo':
+                    group_diversity_credits.extend(compute_internal_diversity_loo_credits(group_smiles))
             global_group_rewards = torch.tensor(group_diversities, device=self.device, dtype=torch.float32)
+            if self.config.group_rewrad_credit == 'loo':
+                global_group_reward_credits = torch.tensor(
+                    group_diversity_credits,
+                    device=self.device,
+                    dtype=torch.float32,
+                )
         if self.config.rl_algorithm == 'coupled_sgrpo' and _has_active_individual_reward_thresholds(
             self.config.individual_reward_thresholds
         ):
@@ -639,6 +676,9 @@ class GenMolCpGRPOTrainer:
                 hierarchy=self.config.hierarchy,
                 group_mean_individual_rewards=global_group_mean_individual_rewards,
                 individual_reward_thresholds=self.config.individual_reward_thresholds,
+                group_rewrad_credit=self.config.group_rewrad_credit,
+                group_rewrad_credit_temperature=self.config.group_rewrad_credit_temperature,
+                group_reward_credits=global_group_reward_credits,
             )
             local_advantages = global_advantages[local_start:local_end].to(device=self.device)
             global_reward_std = torch.full_like(global_rewards, float(sgrpo_metrics['rollout_reward_std_mean']))
@@ -654,6 +694,9 @@ class GenMolCpGRPOTrainer:
                 'sgrpo/hierarchy_reward_sum_enabled': float(sgrpo_metrics['hierarchy_reward_sum_enabled']),
                 'sgrpo/hierarchy_hierarchical_sum_enabled': float(
                     sgrpo_metrics['hierarchy_hierarchical_sum_enabled']
+                ),
+                'sgrpo/group_rewrad_credit_loo_enabled': float(
+                    sgrpo_metrics['group_rewrad_credit_loo_enabled']
                 ),
             }
         if self.config.diversity_regularizer_weight > 0.0:

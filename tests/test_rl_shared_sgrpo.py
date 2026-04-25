@@ -103,3 +103,47 @@ def test_compute_sgrpo_advantages_hierarchical_sum_uses_hierarchical_baseline():
     assert abs(metrics['combined_reward_mean'] - 4.125) < 1e-6
     assert expanded_group_advantages.shape == rollout_rewards.shape
     assert rollout_advantages.shape == rollout_rewards.shape
+
+
+def test_compute_sgrpo_advantages_loo_credit_is_sign_aware():
+    rollout_rewards = torch.zeros(4)
+    group_rewards = torch.tensor([0.2, 0.8])
+    group_reward_credits = torch.tensor([[0.0, 1.0], [0.0, 1.0]])
+
+    final_advantages, expanded_group_advantages, _, metrics = compute_sgrpo_advantages(
+        rollout_rewards=rollout_rewards,
+        group_rewards=group_rewards,
+        num_generations=2,
+        supergroup_num_groups=2,
+        group_advantage_weight=1.0,
+        scale_rewards=False,
+        hierarchy='advantage_sum',
+        group_rewrad_credit='loo',
+        group_reward_credits=group_reward_credits,
+    )
+
+    assert torch.allclose(final_advantages, expanded_group_advantages)
+    assert expanded_group_advantages[0] < expanded_group_advantages[1]
+    assert expanded_group_advantages[3] > expanded_group_advantages[2]
+    assert torch.allclose(expanded_group_advantages[:2].sum(), torch.tensor(-1.2), atol=1e-5)
+    assert torch.allclose(expanded_group_advantages[2:].sum(), torch.tensor(1.2), atol=1e-5)
+    assert metrics['group_rewrad_credit_loo_enabled'] == 1.0
+
+
+def test_compute_sgrpo_advantages_loo_credit_requires_credit_tensor():
+    rollout_rewards = torch.zeros(4)
+    group_rewards = torch.tensor([0.2, 0.8])
+
+    try:
+        compute_sgrpo_advantages(
+            rollout_rewards=rollout_rewards,
+            group_rewards=group_rewards,
+            num_generations=2,
+            supergroup_num_groups=2,
+            group_advantage_weight=1.0,
+            group_rewrad_credit='loo',
+        )
+    except ValueError as exc:
+        assert 'group_reward_credits is required' in str(exc)
+    else:
+        raise AssertionError('expected missing group_reward_credits to fail')

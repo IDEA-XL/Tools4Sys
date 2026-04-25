@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
@@ -13,10 +14,16 @@ from accelerate.utils import set_seed
 from progen2.checkpoint import PROGEN2_SGRPO_VARIANT, stamp_checkpoint_variant
 from progen2.data.prompts import load_prompt_texts
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
-from progen2.rewards import CompositeProteinReward, compute_group_diversity_reward
+from progen2.rewards import (
+    CompositeProteinReward,
+    compute_group_diversity_loo_credits,
+    compute_group_diversity_reward_or_zero,
+)
 from progen2.rewards.composite import REWARD_NAME_ORDER, normalize_reward_compute_every_n_steps
-from progen2.rl.policy import ProGen2Policy
+from progen2.rl.policy import ProGen2Policy, ProGen2RolloutBatch
+from rl_shared.sampling import normalize_scalar_or_range, sample_scalar_or_range
 from rl_shared.sgrpo import (
+    VALID_GROUP_REWRAD_CREDITS,
     VALID_SGRPO_HIERARCHIES,
     compute_clipped_grpo_loss,
     compute_grouped_advantages,
@@ -66,12 +73,14 @@ class ProGen2TrainConfig:
     group_advantage_weight: float = 0.5
     hierarchy: str = 'advantage_sum'
     individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
+    group_rewrad_credit: str = 'broadcast'
+    group_rewrad_credit_temperature: float = 1.0
     reward_compute_every_n_steps: dict[str, int] = field(
         default_factory=default_reward_compute_every_n_steps
     )
     max_new_tokens: int = 128
     top_p: float = 0.95
-    temperature: float = 0.8
+    temperature: float | list[float] = 0.8
     reward_calibration_size: int = 4096
     reward_calibration_prompt_batch_size: int = 8
     rewards: dict = field(default_factory=dict)
@@ -105,7 +114,6 @@ def load_config(path):
         'epsilon',
         'group_advantage_weight',
         'top_p',
-        'temperature',
     ]
     for field_name in int_fields:
         if field_name in raw and raw[field_name] is not None:
@@ -113,6 +121,8 @@ def load_config(path):
     for field_name in float_fields:
         if field_name in raw and raw[field_name] is not None:
             raw[field_name] = float(raw[field_name])
+    if 'group_rewrad_credit_temperature' in raw and raw['group_rewrad_credit_temperature'] is not None:
+        raw['group_rewrad_credit_temperature'] = float(raw['group_rewrad_credit_temperature'])
     raw['reward_compute_every_n_steps'] = normalize_reward_compute_every_n_steps(
         raw.get('reward_compute_every_n_steps')
     )
@@ -141,6 +151,11 @@ def load_config(path):
         raise ValueError('supergroup_num_groups must be greater than 1 for sgrpo')
     if not 0.0 <= config.group_advantage_weight <= 1.0:
         raise ValueError('group_advantage_weight must be in [0, 1]')
+    config.temperature = normalize_scalar_or_range(
+        config.temperature,
+        name='temperature',
+        min_exclusive=0.0,
+    )
     config.individual_reward_thresholds = validate_reward_threshold_names(
         config.individual_reward_thresholds,
         REWARD_NAME_ORDER,
@@ -149,6 +164,13 @@ def load_config(path):
         raise ValueError(
             f"hierarchy must be one of {sorted(VALID_SGRPO_HIERARCHIES)}, got {config.hierarchy!r}"
         )
+    if config.group_rewrad_credit not in VALID_GROUP_REWRAD_CREDITS:
+        raise ValueError(
+            f"group_rewrad_credit must be one of {sorted(VALID_GROUP_REWRAD_CREDITS)}, "
+            f'got {config.group_rewrad_credit!r}'
+        )
+    if config.group_rewrad_credit_temperature <= 0.0:
+        raise ValueError('group_rewrad_credit_temperature must be positive')
     has_active_threshold = any(
         threshold is not None for threshold in config.individual_reward_thresholds.values()
     )
@@ -157,6 +179,10 @@ def load_config(path):
             raise ValueError('individual_reward_thresholds is only supported when rl_algorithm=sgrpo')
         if config.hierarchy != 'advantage_sum':
             raise ValueError('hierarchy is only supported when rl_algorithm=sgrpo')
+        if config.group_rewrad_credit != 'broadcast':
+            raise ValueError('group_rewrad_credit is only supported when rl_algorithm=sgrpo')
+        if config.group_rewrad_credit_temperature != 1.0:
+            raise ValueError('group_rewrad_credit_temperature is only supported when rl_algorithm=sgrpo')
     for reward_name, threshold in config.individual_reward_thresholds.items():
         if threshold is not None and config.reward_compute_every_n_steps[reward_name] != 1:
             raise ValueError(
@@ -201,6 +227,64 @@ def default_reward_batch_size(config):
         config.per_device_prompt_batch_size
         * config.num_generations
         * config.supergroup_num_groups
+    )
+
+
+def _merge_rollout_batches(batches, pad_token_id):
+    if not batches:
+        raise ValueError('cannot merge an empty rollout batch list')
+    if len(batches) == 1:
+        return batches[0]
+
+    max_len = max(batch.full_token_ids.size(1) for batch in batches)
+    padded_ids = []
+    padded_attention = []
+    padded_generated_mask = []
+    for batch in batches:
+        pad_len = max_len - batch.full_token_ids.size(1)
+        if pad_len < 0:
+            raise ValueError('internal error: negative rollout pad length')
+        if pad_len == 0:
+            padded_ids.append(batch.full_token_ids)
+            padded_attention.append(batch.full_attention_mask)
+            padded_generated_mask.append(batch.generated_mask)
+            continue
+        id_pad = torch.full(
+            (batch.full_token_ids.size(0), pad_len),
+            fill_value=pad_token_id,
+            device=batch.full_token_ids.device,
+            dtype=batch.full_token_ids.dtype,
+        )
+        zero_pad = torch.zeros(
+            (batch.full_token_ids.size(0), pad_len),
+            device=batch.full_token_ids.device,
+            dtype=batch.full_attention_mask.dtype,
+        )
+        mask_pad = torch.zeros(
+            (batch.full_token_ids.size(0), pad_len),
+            device=batch.full_token_ids.device,
+            dtype=batch.generated_mask.dtype,
+        )
+        padded_ids.append(torch.cat([batch.full_token_ids, id_pad], dim=1))
+        padded_attention.append(torch.cat([batch.full_attention_mask, zero_pad], dim=1))
+        padded_generated_mask.append(torch.cat([batch.generated_mask, mask_pad], dim=1))
+
+    prompt_texts = []
+    decoded_texts = []
+    protein_sequences = []
+    for batch in batches:
+        prompt_texts.extend(batch.prompt_texts)
+        decoded_texts.extend(batch.decoded_texts)
+        protein_sequences.extend(batch.protein_sequences)
+
+    return ProGen2RolloutBatch(
+        prompt_texts=prompt_texts,
+        prompt_lengths=torch.cat([batch.prompt_lengths for batch in batches], dim=0),
+        full_token_ids=torch.cat(padded_ids, dim=0),
+        full_attention_mask=torch.cat(padded_attention, dim=0),
+        generated_mask=torch.cat(padded_generated_mask, dim=0),
+        decoded_texts=decoded_texts,
+        protein_sequences=protein_sequences,
     )
 
 
@@ -291,6 +375,44 @@ class ProGen2SGRPOTrainer:
                 init_kwargs['wandb'] = {'name': os.path.basename(output_dir)}
             self.accelerator.init_trackers('progen2-sgrpo', config=asdict(config), init_kwargs=init_kwargs or None)
 
+    def _generate_rollouts(self, prompts, *, num_return_sequences, seed):
+        rng = random.Random(seed)
+        temperatures = [
+            sample_scalar_or_range(
+                self.config.temperature,
+                rng,
+                name='temperature',
+                min_exclusive=0.0,
+            )
+            for _ in prompts
+        ]
+        if all(temperature == temperatures[0] for temperature in temperatures):
+            return self.policy.generate_rollouts(
+                prompts,
+                num_return_sequences=num_return_sequences,
+                max_new_tokens=self.config.max_new_tokens,
+                top_p=self.config.top_p,
+                temperature=temperatures[0],
+                seed=seed,
+            )
+
+        batches = []
+        for prompt_idx, (prompt, temperature) in enumerate(zip(prompts, temperatures)):
+            batches.append(
+                self.policy.generate_rollouts(
+                    [prompt],
+                    num_return_sequences=num_return_sequences,
+                    max_new_tokens=self.config.max_new_tokens,
+                    top_p=self.config.top_p,
+                    temperature=temperature,
+                    seed=seed + prompt_idx,
+                )
+            )
+        return _merge_rollout_batches(
+            batches,
+            pad_token_id=self.policy.model.tokenizer.pad_token_id,
+        )
+
     def _next_prompt_batch(self):
         batch = _cycle_prompt_batch(self.prompts, self.config.per_device_prompt_batch_size, self._prompt_cursor)
         self._prompt_cursor = (self._prompt_cursor + self.config.per_device_prompt_batch_size) % len(self.prompts)
@@ -309,12 +431,9 @@ class ProGen2SGRPOTrainer:
         while remaining > 0:
             prompts = _cycle_prompt_batch(self.prompts, min(prompt_batch_size, remaining), calibration_cursor)
             calibration_cursor = (calibration_cursor + len(prompts)) % len(self.prompts)
-            rollout = self.policy.generate_rollouts(
+            rollout = self._generate_rollouts(
                 prompts,
                 num_return_sequences=1,
-                max_new_tokens=self.config.max_new_tokens,
-                top_p=self.config.top_p,
-                temperature=self.config.temperature,
                 seed=self.config.seed + len(collected),
             )
             valid = [sequence for sequence in rollout.protein_sequences if sequence]
@@ -372,12 +491,16 @@ class ProGen2SGRPOTrainer:
     def _score_group_rewards(self, sequences):
         group_rewards = []
         for start in range(0, len(sequences), self.config.num_generations):
-            group_sequences = [sequence for sequence in sequences[start:start + self.config.num_generations] if sequence]
-            if len(group_sequences) < 2:
-                group_rewards.append(0.0)
-            else:
-                group_rewards.append(float(compute_group_diversity_reward(group_sequences)))
+            group_sequences = sequences[start:start + self.config.num_generations]
+            group_rewards.append(float(compute_group_diversity_reward_or_zero(group_sequences)))
         return torch.tensor(group_rewards, device=self.device, dtype=torch.float32)
+
+    def _score_group_reward_credits(self, sequences):
+        group_credits = []
+        for start in range(0, len(sequences), self.config.num_generations):
+            group_sequences = sequences[start:start + self.config.num_generations]
+            group_credits.extend(compute_group_diversity_loo_credits(group_sequences))
+        return torch.tensor(group_credits, device=self.device, dtype=torch.float32)
 
     def _build_group_mean_individual_rewards(self, individual_reward_tensors):
         outputs = {}
@@ -392,7 +515,13 @@ class ProGen2SGRPOTrainer:
             outputs[reward_name] = reward_values.view(-1, self.config.num_generations).mean(dim=1)
         return outputs
 
-    def _compute_advantages(self, rollout_rewards, group_rewards, group_mean_individual_rewards=None):
+    def _compute_advantages(
+        self,
+        rollout_rewards,
+        group_rewards,
+        group_mean_individual_rewards=None,
+        group_reward_credits=None,
+    ):
         advantages = []
         expanded_group_advantages = []
         rollout_advantages = []
@@ -417,6 +546,9 @@ class ProGen2SGRPOTrainer:
                     for reward_name, reward_means in group_mean_individual_rewards.items()
                 }
             if self.config.rl_algorithm == 'sgrpo':
+                prompt_group_reward_credits = None
+                if group_reward_credits is not None:
+                    prompt_group_reward_credits = group_reward_credits[start:end]
                 prompt_adv, prompt_group_adv, prompt_rollout_adv, prompt_metrics = compute_sgrpo_advantages(
                     rollout_rewards=prompt_rollout_rewards,
                     group_rewards=prompt_group_rewards,
@@ -427,6 +559,9 @@ class ProGen2SGRPOTrainer:
                     hierarchy=self.config.hierarchy,
                     group_mean_individual_rewards=prompt_group_mean_individual_rewards,
                     individual_reward_thresholds=self.config.individual_reward_thresholds,
+                    group_rewrad_credit=self.config.group_rewrad_credit,
+                    group_rewrad_credit_temperature=self.config.group_rewrad_credit_temperature,
+                    group_reward_credits=prompt_group_reward_credits,
                 )
             else:
                 prompt_adv, _, zero_std_ratio = compute_grouped_advantages(
@@ -537,12 +672,9 @@ class ProGen2SGRPOTrainer:
             if self.device.type == 'cuda':
                 self._reset_cuda_phase_peak()
             prompts = self._next_prompt_batch()
-            rollout = self.policy.generate_rollouts(
+            rollout = self._generate_rollouts(
                 prompts,
                 num_return_sequences=self.num_return_sequences,
-                max_new_tokens=self.config.max_new_tokens,
-                top_p=self.config.top_p,
-                temperature=self.config.temperature,
                 seed=self.config.seed + step_idx,
             )
             if self.device.type == 'cuda':
@@ -557,6 +689,9 @@ class ProGen2SGRPOTrainer:
                 step_number=self.global_step + 1,
             )
             group_rewards = self._score_group_rewards(rollout.protein_sequences)
+            group_reward_credits = None
+            if self.config.rl_algorithm == 'sgrpo' and self.config.group_rewrad_credit == 'loo':
+                group_reward_credits = self._score_group_reward_credits(rollout.protein_sequences)
             group_mean_individual_rewards = None
             if any(threshold is not None for threshold in self.config.individual_reward_thresholds.values()):
                 group_mean_individual_rewards = self._build_group_mean_individual_rewards(individual_reward_tensors)
@@ -564,6 +699,7 @@ class ProGen2SGRPOTrainer:
                 rollout_rewards,
                 group_rewards,
                 group_mean_individual_rewards=group_mean_individual_rewards,
+                group_reward_credits=group_reward_credits,
             )
             if self.device.type == 'cuda':
                 reward_phase_metrics, reward_step_peak_reserved, reward_step_peak_allocated = (

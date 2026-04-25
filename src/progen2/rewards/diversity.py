@@ -41,3 +41,21 @@ def compute_group_diversity_reward(sequences):
     if not similarities:
         raise ValueError('group diversity requires at least one pairwise comparison')
     return 1.0 - (sum(similarities) / float(len(similarities)))
+
+
+def compute_group_diversity_reward_or_zero(sequences):
+    valid_sequences = [str(sequence).strip().upper() for sequence in sequences if str(sequence).strip()]
+    if len(valid_sequences) < 2:
+        return 0.0
+    return compute_group_diversity_reward(valid_sequences)
+
+
+def compute_group_diversity_loo_credits(sequences):
+    if len(sequences) < 2:
+        raise ValueError('LOO diversity credit requires at least two rollouts')
+    full_diversity = compute_group_diversity_reward_or_zero(sequences)
+    credits = []
+    for remove_idx in range(len(sequences)):
+        reduced = sequences[:remove_idx] + sequences[remove_idx + 1:]
+        credits.append(full_diversity - compute_group_diversity_reward_or_zero(reduced))
+    return credits

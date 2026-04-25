@@ -25,9 +25,9 @@ The intent is to keep three things in one place:
 ## Sweep Policy
 
 - `genmol de novo`: sweep `randomness = 0.1, 0.2, ..., 1.0`
-- `genmol de novo`: sweep `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0`
+- `genmol de novo`: sweep `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0`
 - `mmgenmol`: sweep `randomness = 0.1, 0.3, 0.6, 1.0`
-- `mmgenmol`: sweep `temperature = 0.5, 1.0, 5.0, 10.0`
+- `mmgenmol`: sweep `temperature = 0.5, 1.0, 5.0`
 - `mmgenmol`: report docking with `vina_dock` only for the main sweep; `qvina` is excluded from the current main-result plan.
 - `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 
@@ -553,6 +553,246 @@ Notes:
 - Training job: `43475`
 - Training completed successfully.
 
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 1000-step reward-sum SGRPO configuration.
+- Only changed `group_rewrad_credit = loo`.
+- `group_rewrad_credit_temperature = 1.0`.
+
+### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_tempsamp_rndsamp.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_tempsamp_rndsamp.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 1000-step reward-sum SGRPO configuration.
+- Only changed `generation_temperature = [0.5, 3.0]` and `randomness = [0.1, 1.0]`.
+- For SGRPO, each supergroup samples one temperature/randomness pair and shares it across groups in that supergroup.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit + Sampled Temperature/Randomness
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_tempsamp_rndsamp.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_tempsamp_rndsamp.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 1000-step reward-sum SGRPO configuration.
+- Changed `group_rewrad_credit = loo`, `generation_temperature = [0.5, 3.0]`, and `randomness = [0.1, 1.0]`.
+- `group_rewrad_credit_temperature = 1.0`.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 2000-step reward-sum SGRPO configuration.
+- Only changed `group_rewrad_credit = loo`.
+- `group_rewrad_credit_temperature = 1.0`.
+
+### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_tempsamp_rndsamp_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_tempsamp_rndsamp_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 2000-step reward-sum SGRPO configuration.
+- Only changed `generation_temperature = [0.5, 3.0]` and `randomness = [0.1, 1.0]`.
+- For SGRPO, each supergroup samples one temperature/randomness pair and shares it across groups in that supergroup.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit + Sampled Temperature/Randomness 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_tempsamp_rndsamp_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_tempsamp_rndsamp_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the 2000-step reward-sum SGRPO configuration.
+- Changed `group_rewrad_credit = loo`, `generation_temperature = [0.5, 3.0]`, and `randomness = [0.1, 1.0]`.
+- `group_rewrad_credit_temperature = 1.0`.
+
 ### SGRPO Hierarchical-Sum Hierarchy 2000-Step Variant
 
 Status: `Verified`
@@ -720,7 +960,7 @@ Notes:
 
 - Completed by eval job `44516`.
 - Previous eval job `44458` used the retired grid `temperature = 0.1, 0.2, ..., 1.0`.
-- Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0`
+- Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
@@ -1080,7 +1320,7 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Vina docking job: `44534`
 - Aggregation/replot job: `44587`
 - Previous plotted results used the retired grid `temperature = 0.1, 0.3, 0.6, 1.0`.
-- Sweep grid: `temperature = 0.5, 1.0, 5.0, 10.0`
+- Sweep grid: `temperature = 0.5, 1.0, 5.0`
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
 

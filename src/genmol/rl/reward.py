@@ -54,6 +54,17 @@ def compute_internal_diversity(smiles_list):
     return 1.0 - (similarity_sum / pair_count)
 
 
+def compute_internal_diversity_loo_credits(smiles_list):
+    if len(smiles_list) < 2:
+        raise ValueError('LOO diversity credit requires at least two rollouts')
+    full_diversity = compute_internal_diversity(smiles_list)
+    credits = []
+    for remove_idx in range(len(smiles_list)):
+        reduced = smiles_list[:remove_idx] + smiles_list[remove_idx + 1:]
+        credits.append(full_diversity - compute_internal_diversity(reduced))
+    return credits
+
+
 @dataclass(frozen=True)
 class RewardRecord:
     reward: float

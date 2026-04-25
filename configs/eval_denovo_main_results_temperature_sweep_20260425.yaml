@@ -16,7 +16,6 @@ generation_temperature_values:
   - 3.0
   - 5.0
   - 8.0
-  - 10.0
 min_add_len: 60
 max_completion_length: null
 experiments:
