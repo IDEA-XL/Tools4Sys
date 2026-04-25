@@ -658,27 +658,48 @@ Notes:
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
+- Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
 - Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl`
 
-#### `diversity` vs `qed`
+#### `diversity` vs `qed` for 1000-step models
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_20260425.png
+genmol-denovo/qed_vs_diversity_randomness_1000_20260425.png
 ```
 
-![GenMol De Novo QED vs Diversity](genmol-denovo/qed_vs_diversity_20260425.png)
+![GenMol De Novo QED vs Diversity Randomness Sweep 1000-Step Models](genmol-denovo/qed_vs_diversity_randomness_1000_20260425.png)
 
-#### `diversity` vs `sa_score`
+#### `diversity` vs `qed` for 2000-step models
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_20260425.png
+genmol-denovo/qed_vs_diversity_randomness_2000_20260425.png
 ```
 
-![GenMol De Novo SA Score vs Diversity](genmol-denovo/sa_score_vs_diversity_20260425.png)
+![GenMol De Novo QED vs Diversity Randomness Sweep 2000-Step Models](genmol-denovo/qed_vs_diversity_randomness_2000_20260425.png)
+
+#### `diversity` vs `sa_score` for 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_randomness_1000_20260425.png
+```
+
+![GenMol De Novo SA Score vs Diversity Randomness Sweep 1000-Step Models](genmol-denovo/sa_score_vs_diversity_randomness_1000_20260425.png)
+
+#### `diversity` vs `sa_score` for 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_randomness_2000_20260425.png
+```
+
+![GenMol De Novo SA Score vs Diversity Randomness Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_randomness_2000_20260425.png)
 
 #### Temperature Sweep
 
@@ -702,27 +723,48 @@ Notes:
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
+- Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
 - Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`
 
-#### `diversity` vs `qed` for temperature sweep
+#### `diversity` vs `qed` for temperature sweep, 1000-step models
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_temperature_20260425.png
+genmol-denovo/qed_vs_diversity_temperature_1000_20260425.png
 ```
 
-![GenMol De Novo QED vs Diversity Temperature Sweep](genmol-denovo/qed_vs_diversity_temperature_20260425.png)
+![GenMol De Novo QED vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/qed_vs_diversity_temperature_1000_20260425.png)
 
-#### `diversity` vs `sa_score` for temperature sweep
+#### `diversity` vs `qed` for temperature sweep, 2000-step models
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_temperature_20260425.png
+genmol-denovo/qed_vs_diversity_temperature_2000_20260425.png
 ```
 
-![GenMol De Novo SA Score vs Diversity Temperature Sweep](genmol-denovo/sa_score_vs_diversity_temperature_20260425.png)
+![GenMol De Novo QED vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/qed_vs_diversity_temperature_2000_20260425.png)
+
+#### `diversity` vs `sa_score` for temperature sweep, 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_temperature_1000_20260425.png
+```
+
+![GenMol De Novo SA Score vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_1000_20260425.png)
+
+#### `diversity` vs `sa_score` for temperature sweep, 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png
+```
+
+![GenMol De Novo SA Score vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png)
 
 ## mmGenMol
 
