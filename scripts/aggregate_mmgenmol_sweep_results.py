@@ -375,6 +375,13 @@ def parse_args():
     return parser.parse_args()
 
 
+def _resolve_plot_suffix(output_prefix):
+    parts = output_prefix.rsplit('_', 1)
+    if len(parts) == 2 and len(parts[1]) == 8 and parts[1].isdigit():
+        return parts[1]
+    return output_prefix
+
+
 def main():
     args = parse_args()
     tasks = _parse_task_manifest(args.tasks_path)
@@ -411,7 +418,12 @@ def main():
     _write_jsonl(output_rows_path, rows)
 
     plot_paths = []
-    for sweep_type in ['randomness', 'temperature']:
+    present_sweep_types = {row['sweep_type'] for row in rows}
+    sweep_types = [sweep_type for sweep_type in ['randomness', 'temperature'] if sweep_type in present_sweep_types]
+    if not sweep_types:
+        raise ValueError('No supported sweep types found; expected at least one of randomness or temperature')
+    plot_suffix = _resolve_plot_suffix(args.output_prefix)
+    for sweep_type in sweep_types:
         for metric_key, metric_label in [
             ('qed_mean', 'QED'),
             ('sa_score_mean', 'SA Score'),
@@ -419,7 +431,7 @@ def main():
         ]:
             plot_path = os.path.join(
                 args.output_dir,
-                f'mmgenmol_{sweep_type}_diversity_vs_{metric_key}_20260423.png',
+                f'mmgenmol_{sweep_type}_diversity_vs_{metric_key}_{plot_suffix}.png',
             )
             _plot_metric(rows, sweep_type, metric_key, metric_label, plot_path)
             plot_paths.append((f'{sweep_type} {metric_label} vs diversity', plot_path))

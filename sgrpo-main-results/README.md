@@ -25,9 +25,9 @@ The intent is to keep three things in one place:
 ## Sweep Policy
 
 - `genmol de novo`: sweep `randomness = 0.1, 0.2, ..., 1.0`
-- `genmol de novo`: sweep `temperature = 0.1, 0.2, ..., 1.0`
+- `genmol de novo`: sweep `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0`
 - `mmgenmol`: sweep `randomness = 0.1, 0.3, 0.6, 1.0`
-- `mmgenmol`: sweep `temperature = 0.1, 0.3, 0.6, 1.0`
+- `mmgenmol`: sweep `temperature = 0.5, 1.0, 5.0, 10.0`
 - `mmgenmol`: report docking with `vina_dock` only for the main sweep; `qvina` is excluded from the current main-result plan.
 - `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 
@@ -718,53 +718,46 @@ genmol-denovo/denovo_main_results_temperature_sweep_20260425.json
 
 Notes:
 
-- Completed by eval job `44458`.
-- Sweep grid: `temperature = 0.1, 0.2, ..., 1.0`
+- Status: `TODO` after the temperature grid update.
+- Previous eval job `44458` used the retired grid `temperature = 0.1, 0.2, ..., 1.0`.
+- Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
-- Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`
+- Remote raw rows: `TODO`
 
 #### `diversity` vs `qed` for temperature sweep, 1000-step models
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_temperature_1000_20260425.png
+TODO
 ```
-
-![GenMol De Novo QED vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/qed_vs_diversity_temperature_1000_20260425.png)
 
 #### `diversity` vs `qed` for temperature sweep, 2000-step models
 
 Plot:
 
 ```text
-genmol-denovo/qed_vs_diversity_temperature_2000_20260425.png
+TODO
 ```
-
-![GenMol De Novo QED vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/qed_vs_diversity_temperature_2000_20260425.png)
 
 #### `diversity` vs `sa_score` for temperature sweep, 1000-step models
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_temperature_1000_20260425.png
+TODO
 ```
-
-![GenMol De Novo SA Score vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_1000_20260425.png)
 
 #### `diversity` vs `sa_score` for temperature sweep, 2000-step models
 
 Plot:
 
 ```text
-genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png
+TODO
 ```
-
-![GenMol De Novo SA Score vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png)
 
 ## mmGenMol
 
@@ -955,10 +948,16 @@ Notes:
 
 ### Pareto Curves To Maintain
 
-Generation task manifest:
+Generation task manifest for the current randomness sweep:
 
 ```text
 sgrpo-main-results/mmgenmol/generation_sweep_tasks_20260423.tsv
+```
+
+Generation task manifest for the updated temperature sweep:
+
+```text
+sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv
 ```
 
 Generation launch script:
@@ -967,16 +966,28 @@ Generation launch script:
 scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
 ```
 
-Generation invocation:
+Generation invocation for the randomness sweep:
 
 ```text
 sbatch scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
 ```
 
-Generation output root:
+Generation invocation for the updated temperature sweep:
+
+```text
+TASKS_PATH=/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv MEMLOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_generation_20260425/logs sbatch --array=0-15 scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
+```
+
+Generation output root for the randomness sweep:
 
 ```text
 /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_generation_20260423
+```
+
+Generation output root for the updated temperature sweep:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_generation_20260425
 ```
 
 Vina docking launch script:
@@ -985,24 +996,48 @@ Vina docking launch script:
 scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
 ```
 
-Vina docking invocation:
+Vina docking invocation for the randomness sweep:
 
 ```text
 sbatch scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
 ```
 
-Vina docking output root:
+Vina docking invocation for the updated temperature sweep:
+
+```text
+TASKS_PATH=/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv OUTPUT_ROOT=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_vina_dock_20260425 sbatch --array=0-15 scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
+```
+
+Vina docking output root for the randomness sweep:
 
 ```text
 /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_vina_dock_20260423
 ```
 
-Aggregated result files:
+Vina docking output root for the updated temperature sweep:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_vina_dock_20260425
+```
+
+Aggregation invocation for the updated temperature sweep:
+
+```text
+python scripts/aggregate_mmgenmol_sweep_results.py --tasks_path sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv --docking_root /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_vina_dock_20260425 --output_dir sgrpo-main-results/mmgenmol --output_prefix mmgenmol_temperature_sweep_results_20260425 --expected_num_tasks 16
+```
+
+Aggregated result files for the current randomness sweep:
 
 ```text
 sgrpo-main-results/mmgenmol/mmgenmol_sweep_results_20260423.json
 sgrpo-main-results/mmgenmol/mmgenmol_sweep_results_20260423.rows.jsonl
 sgrpo-main-results/mmgenmol/mmgenmol_sweep_results_20260423.md
+```
+
+Aggregated result files for the updated temperature sweep:
+
+```text
+TODO
 ```
 
 Diversity definition:
@@ -1031,21 +1066,23 @@ For each model and sweep point, group generated molecules by source_index. Compu
 
 #### Temperature Sweep
 
-- Sweep grid: `temperature = 0.1, 0.3, 0.6, 1.0`
+- Status: `TODO` after the temperature grid update.
+- Previous plotted results used the retired grid `temperature = 0.1, 0.3, 0.6, 1.0`.
+- Sweep grid: `temperature = 0.5, 1.0, 5.0, 10.0`
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
 
 ##### `qed_mean` vs `diversity`
 
-![mmGenMol Temperature QED vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_qed_mean_20260423.png)
+TODO
 
 ##### `sa_score_mean` vs `diversity`
 
-![mmGenMol Temperature SA Score vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_sa_score_mean_20260423.png)
+TODO
 
 ##### `vina_dock_mean` vs `diversity`
 
-![mmGenMol Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_vina_dock_mean_20260423.png)
+TODO
 
 ## ProGen2
 
