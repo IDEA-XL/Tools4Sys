@@ -134,6 +134,26 @@
 | GenMol De Novo SGRPO Thr+RewardSum 2000 | generation_temperature | 0.800000 | 0.800000 | 0.300000 | 0.800907 | 0.877751 | 0.773323 | 0.835980 | 0.785662 | 1.000000 | 0.057000 | 0.000000 |
 | GenMol De Novo SGRPO Thr+RewardSum 2000 | generation_temperature | 0.900000 | 0.900000 | 0.300000 | 0.776581 | 0.873747 | 0.764940 | 0.830224 | 0.791854 | 0.999000 | 0.084000 | 0.001000 |
 | GenMol De Novo SGRPO Thr+RewardSum 2000 | generation_temperature | 1.000000 | 1.000000 | 0.300000 | 0.764663 | 0.866353 | 0.751772 | 0.820520 | 0.808639 | 0.999000 | 0.088000 | 0.001000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.100000 | 0.100000 | 0.300000 | 0.677661 | 0.833414 | 0.651565 | 0.760674 | 0.820720 | 1.000000 | 0.164000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.200000 | 0.200000 | 0.300000 | 0.712672 | 0.854532 | 0.682761 | 0.785824 | 0.807260 | 1.000000 | 0.133000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.300000 | 0.300000 | 0.300000 | 0.747442 | 0.864960 | 0.723116 | 0.808223 | 0.799683 | 1.000000 | 0.111000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.400000 | 0.400000 | 0.300000 | 0.779855 | 0.871117 | 0.751571 | 0.823299 | 0.792338 | 1.000000 | 0.075000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.500000 | 0.500000 | 0.300000 | 0.773570 | 0.870074 | 0.757241 | 0.824940 | 0.792090 | 1.000000 | 0.085000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.600000 | 0.600000 | 0.300000 | 0.781049 | 0.874626 | 0.766332 | 0.831308 | 0.791675 | 1.000000 | 0.083000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.700000 | 0.700000 | 0.300000 | 0.761732 | 0.867498 | 0.758637 | 0.823954 | 0.799016 | 1.000000 | 0.102000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.800000 | 0.800000 | 0.300000 | 0.757025 | 0.864869 | 0.757377 | 0.821872 | 0.805799 | 1.000000 | 0.106000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 0.900000 | 0.900000 | 0.300000 | 0.724438 | 0.853901 | 0.739680 | 0.808212 | 0.816075 | 1.000000 | 0.139000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 1000 | generation_temperature | 1.000000 | 1.000000 | 0.300000 | 0.719713 | 0.851960 | 0.731678 | 0.803847 | 0.821835 | 1.000000 | 0.141000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.100000 | 0.100000 | 0.300000 | 0.779544 | 0.865107 | 0.724190 | 0.808740 | 0.804344 | 0.999000 | 0.050000 | 0.001000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.200000 | 0.200000 | 0.300000 | 0.795873 | 0.877753 | 0.745615 | 0.824897 | 0.789862 | 1.000000 | 0.051000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.300000 | 0.300000 | 0.300000 | 0.804130 | 0.884316 | 0.756989 | 0.833385 | 0.783629 | 1.000000 | 0.050000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.400000 | 0.400000 | 0.300000 | 0.825133 | 0.884359 | 0.777407 | 0.841578 | 0.775956 | 0.999000 | 0.025000 | 0.001000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.500000 | 0.500000 | 0.300000 | 0.819746 | 0.879590 | 0.779287 | 0.839469 | 0.781882 | 0.999000 | 0.029000 | 0.001000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.600000 | 0.600000 | 0.300000 | 0.820125 | 0.884277 | 0.780508 | 0.842769 | 0.780634 | 1.000000 | 0.037000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.700000 | 0.700000 | 0.300000 | 0.805352 | 0.878509 | 0.775497 | 0.837304 | 0.784670 | 1.000000 | 0.053000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.800000 | 0.800000 | 0.300000 | 0.791392 | 0.870680 | 0.761532 | 0.827021 | 0.796792 | 1.000000 | 0.059000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 0.900000 | 0.900000 | 0.300000 | 0.776156 | 0.868755 | 0.752211 | 0.822137 | 0.803229 | 1.000000 | 0.074000 | 0.000000 |
+| GenMol De Novo SGRPO HierarchicalSum 2000 | generation_temperature | 1.000000 | 1.000000 | 0.300000 | 0.770835 | 0.864247 | 0.745594 | 0.816786 | 0.810833 | 1.000000 | 0.076000 | 0.000000 |
 
 Column notes:
 - `Overall De Novo Score`: mean final molecule-level reward after invalid handling and alert gating.
