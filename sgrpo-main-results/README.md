@@ -718,46 +718,54 @@ genmol-denovo/denovo_main_results_temperature_sweep_20260425.json
 
 Notes:
 
-- Status: `TODO` after the temperature grid update.
+- Completed by eval job `44516`.
 - Previous eval job `44458` used the retired grid `temperature = 0.1, 0.2, ..., 1.0`.
 - Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
-- Remote raw rows: `TODO`
+- Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`
 
 #### `diversity` vs `qed` for temperature sweep, 1000-step models
 
 Plot:
 
 ```text
-TODO
+genmol-denovo/qed_vs_diversity_temperature_1000_20260425.png
 ```
+
+![GenMol De Novo QED vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/qed_vs_diversity_temperature_1000_20260425.png)
 
 #### `diversity` vs `qed` for temperature sweep, 2000-step models
 
 Plot:
 
 ```text
-TODO
+genmol-denovo/qed_vs_diversity_temperature_2000_20260425.png
 ```
+
+![GenMol De Novo QED vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/qed_vs_diversity_temperature_2000_20260425.png)
 
 #### `diversity` vs `sa_score` for temperature sweep, 1000-step models
 
 Plot:
 
 ```text
-TODO
+genmol-denovo/sa_score_vs_diversity_temperature_1000_20260425.png
 ```
+
+![GenMol De Novo SA Score vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_1000_20260425.png)
 
 #### `diversity` vs `sa_score` for temperature sweep, 2000-step models
 
 Plot:
 
 ```text
-TODO
+genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png
 ```
+
+![GenMol De Novo SA Score vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png)
 
 ## mmGenMol
 
@@ -1037,7 +1045,9 @@ sgrpo-main-results/mmgenmol/mmgenmol_sweep_results_20260423.md
 Aggregated result files for the updated temperature sweep:
 
 ```text
-TODO
+sgrpo-main-results/mmgenmol/mmgenmol_temperature_sweep_results_20260425.json
+sgrpo-main-results/mmgenmol/mmgenmol_temperature_sweep_results_20260425.rows.jsonl
+sgrpo-main-results/mmgenmol/mmgenmol_temperature_sweep_results_20260425.md
 ```
 
 Diversity definition:
@@ -1066,7 +1076,9 @@ For each model and sweep point, group generated molecules by source_index. Compu
 
 #### Temperature Sweep
 
-- Status: `TODO` after the temperature grid update.
+- Generation job: `44517`
+- Vina docking job: `44534`
+- Aggregation/replot job: `44587`
 - Previous plotted results used the retired grid `temperature = 0.1, 0.3, 0.6, 1.0`.
 - Sweep grid: `temperature = 0.5, 1.0, 5.0, 10.0`
 - Docking mode for the main sweep: `vina_dock` only
@@ -1074,15 +1086,15 @@ For each model and sweep point, group generated molecules by source_index. Compu
 
 ##### `qed_mean` vs `diversity`
 
-TODO
+![mmGenMol Temperature QED vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_qed_mean_20260425.png)
 
 ##### `sa_score_mean` vs `diversity`
 
-TODO
+![mmGenMol Temperature SA Score vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_sa_score_mean_20260425.png)
 
 ##### `vina_dock_mean` vs `diversity`
 
-TODO
+![mmGenMol Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_vina_dock_mean_20260425.png)
 
 ## ProGen2
 
