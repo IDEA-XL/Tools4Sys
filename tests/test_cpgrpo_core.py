@@ -9,7 +9,13 @@ from genmol.rl.cpgrpo import (
     get_per_token_logps,
     split_tensor_dict,
 )
-from genmol.rl.reward import apply_reward_gate, compute_soft_reward, sa_to_score
+from genmol.rl.reward import (
+    apply_reward_gate,
+    compute_internal_diversity,
+    compute_internal_diversity_loo_credits,
+    compute_soft_reward,
+    sa_to_score,
+)
 
 
 class CpGrpoCoreTest(unittest.TestCase):
@@ -26,6 +32,19 @@ class CpGrpoCoreTest(unittest.TestCase):
         self.assertEqual(apply_reward_gate(0.7, is_valid=False, alert_hit=False), -1.0)
         self.assertAlmostEqual(apply_reward_gate(0.7, is_valid=True, alert_hit=True), 0.14)
         self.assertAlmostEqual(apply_reward_gate(0.7, is_valid=True, alert_hit=False), 0.7)
+
+    def test_internal_diversity_loo_credits_match_naive_formula(self):
+        smiles = ['CCO', 'CCN', 'c1ccccc1', None, 'not-a-smiles']
+        full_diversity = compute_internal_diversity(smiles)
+        expected = []
+        for remove_idx in range(len(smiles)):
+            reduced = smiles[:remove_idx] + smiles[remove_idx + 1:]
+            expected.append(full_diversity - compute_internal_diversity(reduced))
+
+        actual = compute_internal_diversity_loo_credits(smiles)
+        self.assertEqual(len(actual), len(smiles))
+        for left, right in zip(actual, expected):
+            self.assertAlmostEqual(left, right)
 
     def test_split_tensor_dict(self):
         payload = {
