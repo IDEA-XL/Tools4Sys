@@ -16,6 +16,7 @@ from progen2.data.prompts import load_prompt_texts
 from progen2.evaluation import classify_protein_sequence, compute_group_diversity_rewards, nanmean
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
 from progen2.rewards import CompositeProteinReward
+from progen2.rewards.composite import normalize_protein_reward_weights
 from progen2.rl.policy import ProGen2Policy
 
 
@@ -28,6 +29,10 @@ class EvalExperimentConfig:
     checkpoint_dir: str
     display_name: str | None = None
     checkpoint_subdir: str | None = None
+    naturalness: float | None = None
+    foldability: float | None = None
+    stability: float | None = None
+    developability: float | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +133,14 @@ def load_config(path):
             raise ValueError('experiment name must be non-empty')
         if not os.path.isdir(experiment.checkpoint_dir):
             raise FileNotFoundError(f'checkpoint_dir not found: {experiment.checkpoint_dir}')
+        normalize_protein_reward_weights(
+            {
+                'naturalness': experiment.naturalness,
+                'foldability': experiment.foldability,
+                'stability': experiment.stability,
+                'developability': experiment.developability,
+            }
+        )
     return config
 
 
@@ -347,6 +360,7 @@ def _build_markdown(config, results):
             '',
             'Column notes:',
             '- `Total Reward` is the mean final rollout reward with invalid sequences contributing zero, matching training-time invalid handling.',
+            '- Per-component weights come from the experiment config and default to `0.25 / 0.30 / 0.20 / 0.25` for nat/fold/stab/dev.',
             '- `Nat/Fold/Stab/Dev Reward` are the normalized reward components used by SGRPO.',
             '- `Solubility` and `Liability Reward` are the two developability subcomponents.',
             '- `Group Diversity` is the mean contiguous-group diversity reward using the configured `group_size`.',
@@ -376,6 +390,13 @@ def evaluate_experiment(config, experiment, prompts, device):
         config.rewards,
         device=device,
         default_reward_batch_size=_default_reward_batch_size(config),
+        reward_weights={
+            'naturalness': experiment.naturalness,
+            'foldability': experiment.foldability,
+            'stability': experiment.stability,
+            'developability': experiment.developability,
+        },
+        always_compute_metrics=True,
     )
     calibration_sequences = _collect_calibration_sequences(
         policy,
@@ -395,6 +416,7 @@ def evaluate_experiment(config, experiment, prompts, device):
         {
             'experiment': experiment.name,
             'display_name': _display_name(experiment),
+            'reward_weights': reward_model.reward_weights,
             'calibration': calibration,
         }
     )

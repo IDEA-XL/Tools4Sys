@@ -19,7 +19,11 @@ from progen2.rewards import (
     compute_group_diversity_loo_credits,
     compute_group_diversity_reward_or_zero,
 )
-from progen2.rewards.composite import REWARD_NAME_ORDER, normalize_reward_compute_every_n_steps
+from progen2.rewards.composite import (
+    REWARD_NAME_ORDER,
+    normalize_protein_reward_weights,
+    normalize_reward_compute_every_n_steps,
+)
 from progen2.rl.policy import ProGen2Policy, ProGen2RolloutBatch
 from rl_shared.sampling import normalize_scalar_or_range, sample_scalar_or_range
 from rl_shared.sgrpo import (
@@ -72,6 +76,10 @@ class ProGen2TrainConfig:
     supergroup_num_groups: int = 2
     group_advantage_weight: float = 0.5
     hierarchy: str = 'advantage_sum'
+    naturalness: float | None = None
+    foldability: float | None = None
+    stability: float | None = None
+    developability: float | None = None
     individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
     group_rewrad_credit: str = 'broadcast'
     group_rewrad_credit_temperature: float = 1.0
@@ -151,6 +159,14 @@ def load_config(path):
         raise ValueError('supergroup_num_groups must be greater than 1 for sgrpo')
     if not 0.0 <= config.group_advantage_weight <= 1.0:
         raise ValueError('group_advantage_weight must be in [0, 1]')
+    config.rollout_reward_weights = normalize_protein_reward_weights(
+        {
+            'naturalness': config.naturalness,
+            'foldability': config.foldability,
+            'stability': config.stability,
+            'developability': config.developability,
+        }
+    )
     config.temperature = normalize_scalar_or_range(
         config.temperature,
         name='temperature',
@@ -159,6 +175,10 @@ def load_config(path):
     config.individual_reward_thresholds = validate_reward_threshold_names(
         config.individual_reward_thresholds,
         REWARD_NAME_ORDER,
+    )
+    _validate_active_protein_reward_thresholds(
+        config.individual_reward_thresholds,
+        config.rollout_reward_weights,
     )
     if config.hierarchy not in VALID_SGRPO_HIERARCHIES:
         raise ValueError(
@@ -208,6 +228,16 @@ def resolve_output_dir(config, config_path):
     config_name = os.path.splitext(os.path.basename(config_path))[0]
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     return os.path.join(base_dir, f'{config_name}_{timestamp}')
+
+
+def _validate_active_protein_reward_thresholds(thresholds, reward_weights):
+    for reward_name in REWARD_NAME_ORDER:
+        threshold = thresholds.get(reward_name)
+        if threshold is not None and reward_weights[reward_name] <= 0.0:
+            raise ValueError(
+                f'individual_reward_thresholds[{reward_name!r}] requires a positive rollout reward weight, '
+                f'got {reward_weights[reward_name]}'
+            )
 
 
 def _cycle_prompt_batch(prompts, batch_size, start_index):
@@ -352,6 +382,7 @@ class ProGen2SGRPOTrainer:
             device=self.device,
             default_reward_batch_size=default_reward_batch_size(config),
             reward_compute_every_n_steps=config.reward_compute_every_n_steps,
+            reward_weights=config.rollout_reward_weights,
         )
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')

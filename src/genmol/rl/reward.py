@@ -6,14 +6,53 @@ from dataclasses import dataclass
 
 
 _PROCESS_KERNEL = None
+MOLECULAR_REWARD_NAME_ORDER = (
+    'qed',
+    'sa_score',
+)
+DEFAULT_MOLECULAR_REWARD_WEIGHTS = {
+    'qed': 0.6,
+    'sa_score': 0.4,
+}
 
 
 def sa_to_score(sa_value):
     return max(0.0, min((6.0 - float(sa_value)) / 5.0, 1.0))
 
 
-def compute_soft_reward(qed_value, sa_value):
-    return 0.6 * float(qed_value) + 0.4 * sa_to_score(sa_value)
+def normalize_molecular_reward_weights(config):
+    if config is None:
+        raw = dict(DEFAULT_MOLECULAR_REWARD_WEIGHTS)
+    else:
+        raw = dict(DEFAULT_MOLECULAR_REWARD_WEIGHTS)
+        for reward_name in MOLECULAR_REWARD_NAME_ORDER:
+            if reward_name in config and config[reward_name] is not None:
+                raw[reward_name] = config[reward_name]
+    normalized = {}
+    for reward_name in MOLECULAR_REWARD_NAME_ORDER:
+        value = raw[reward_name]
+        try:
+            weight = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'molecular reward weight for {reward_name!r} must be numeric, got {value!r}') from exc
+        if weight < 0.0:
+            raise ValueError(f'molecular reward weight for {reward_name!r} must be non-negative, got {weight}')
+        normalized[reward_name] = weight
+    return normalized
+
+
+def compute_soft_reward(qed_value, sa_score_value, reward_weights=None):
+    normalized_weights = normalize_molecular_reward_weights(reward_weights)
+    outputs = 0.0
+    if normalized_weights['qed'] > 0.0:
+        if qed_value is None:
+            raise ValueError('qed_value is required when qed reward weight is positive')
+        outputs += normalized_weights['qed'] * float(qed_value)
+    if normalized_weights['sa_score'] > 0.0:
+        if sa_score_value is None:
+            raise ValueError('sa_score_value is required when sa_score reward weight is positive')
+        outputs += normalized_weights['sa_score'] * float(sa_score_value)
+    return float(outputs)
 
 
 def apply_reward_gate(soft_reward, is_valid, alert_hit):
@@ -193,19 +232,35 @@ def _resolve_reward_workers():
 
 
 class _RewardKernel:
-    def __init__(self):
+    def __init__(self, reward_weights=None, always_compute_metrics=False):
         from rdkit import Chem
         from rdkit.Chem import QED
         from tdc import Oracle
 
+        self.reward_weights = normalize_molecular_reward_weights(reward_weights)
+        self.always_compute_metrics = bool(always_compute_metrics)
+        self.compute_qed = self.always_compute_metrics or self.reward_weights['qed'] > 0.0
+        self.compute_sa = self.always_compute_metrics or self.reward_weights['sa_score'] > 0.0
+        self.require_qed_for_reward = self.reward_weights['qed'] > 0.0
+        self.require_sa_for_reward = self.reward_weights['sa_score'] > 0.0
         self._chem = Chem
-        self._qed = QED
-        self._sa_oracle = Oracle('sa')
+        self._qed = QED if self.compute_qed else None
+        self._sa_oracle = Oracle('sa') if self.compute_sa else None
         self._filter = _AlertFilter()
 
     def _safe_sa_score(self, smiles):
+        if self._sa_oracle is None:
+            return None
         try:
             return float(self._sa_oracle([smiles])[0])
+        except Exception:
+            return None
+
+    def _safe_qed_score(self, mol):
+        if self._qed is None:
+            return None
+        try:
+            return float(self._qed.qed(mol))
         except Exception:
             return None
 
@@ -250,11 +305,30 @@ class _RewardKernel:
 
         if valid_indices:
             pass_smiles = set(self._filter(canonical_smiles))
-            qed_scores = [float(self._qed.qed(mol)) for mol in mols]
-            sa_scores = [self._safe_sa_score(smiles) for smiles in canonical_smiles]
+            if self.compute_qed:
+                qed_scores = [self._safe_qed_score(mol) for mol in mols]
+            else:
+                qed_scores = [None] * len(mols)
+            if self.compute_sa:
+                sa_scores = [self._safe_sa_score(smiles) for smiles in canonical_smiles]
+            else:
+                sa_scores = [None] * len(canonical_smiles)
 
             for index, smiles, qed_score, sa_score in zip(valid_indices, canonical_smiles, qed_scores, sa_scores):
-                if sa_score is None:
+                sa_score_value = None if sa_score is None else sa_to_score(sa_score)
+                if self.require_qed_for_reward and qed_score is None:
+                    records[index] = RewardRecord(
+                        reward=-1.0,
+                        is_valid=False,
+                        alert_hit=False,
+                        qed=None,
+                        sa=sa_score,
+                        sa_score=sa_score_value,
+                        soft_reward=None,
+                        smiles=smiles,
+                    )
+                    continue
+                if self.require_sa_for_reward and sa_score is None:
                     records[index] = RewardRecord(
                         reward=-1.0,
                         is_valid=False,
@@ -267,14 +341,18 @@ class _RewardKernel:
                     )
                     continue
                 alert_hit = smiles not in pass_smiles
-                soft_reward = compute_soft_reward(qed_score, sa_score)
+                soft_reward = compute_soft_reward(
+                    qed_score,
+                    sa_score_value,
+                    reward_weights=self.reward_weights,
+                )
                 records[index] = RewardRecord(
                     reward=apply_reward_gate(soft_reward, is_valid=True, alert_hit=alert_hit),
                     is_valid=True,
                     alert_hit=alert_hit,
                     qed=qed_score,
                     sa=sa_score,
-                    sa_score=sa_to_score(sa_score),
+                    sa_score=sa_score_value,
                     soft_reward=soft_reward,
                     smiles=smiles,
                 )
@@ -282,9 +360,12 @@ class _RewardKernel:
         return records
 
 
-def _initialize_process_reward_kernel():
+def _initialize_process_reward_kernel(reward_weights, always_compute_metrics):
     global _PROCESS_KERNEL
-    _PROCESS_KERNEL = _RewardKernel()
+    _PROCESS_KERNEL = _RewardKernel(
+        reward_weights=reward_weights,
+        always_compute_metrics=always_compute_metrics,
+    )
 
 
 def _score_reward_chunk(smiles_chunk):
@@ -294,15 +375,21 @@ def _score_reward_chunk(smiles_chunk):
 
 
 class MolecularReward:
-    def __init__(self):
+    def __init__(self, reward_weights=None, always_compute_metrics=False):
         self.num_workers = _resolve_reward_workers()
-        self._kernel = _RewardKernel()
+        self.reward_weights = normalize_molecular_reward_weights(reward_weights)
+        self.always_compute_metrics = bool(always_compute_metrics)
+        self._kernel = _RewardKernel(
+            reward_weights=self.reward_weights,
+            always_compute_metrics=self.always_compute_metrics,
+        )
         self._pool = None
         if self.num_workers > 1:
             self._pool = ProcessPoolExecutor(
                 max_workers=self.num_workers,
                 mp_context=mp.get_context('spawn'),
                 initializer=_initialize_process_reward_kernel,
+                initargs=(self.reward_weights, self.always_compute_metrics),
             )
 
     def close(self):

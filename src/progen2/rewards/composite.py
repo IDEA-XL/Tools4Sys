@@ -14,6 +14,12 @@ REWARD_NAME_ORDER = (
     'stability',
     'developability',
 )
+DEFAULT_PROTEIN_REWARD_WEIGHTS = {
+    'naturalness': 0.25,
+    'foldability': 0.30,
+    'stability': 0.20,
+    'developability': 0.25,
+}
 
 
 def _quantiles(values):
@@ -36,6 +42,8 @@ def _scale_quantile(raw_values, q10, q90):
 
 
 def _resolve_reward_batch_size(config, default_batch_size, field_name):
+    if config is None:
+        raise ValueError(f'{field_name} config is required')
     if 'batch_size' in config and config['batch_size'] is not None:
         return config['batch_size']
     if default_batch_size is None:
@@ -43,6 +51,27 @@ def _resolve_reward_batch_size(config, default_batch_size, field_name):
             f'{field_name} must be set explicitly when no default_reward_batch_size is provided'
         )
     return default_batch_size
+
+
+def normalize_protein_reward_weights(config):
+    if config is None:
+        raw = dict(DEFAULT_PROTEIN_REWARD_WEIGHTS)
+    else:
+        raw = dict(DEFAULT_PROTEIN_REWARD_WEIGHTS)
+        for reward_name in REWARD_NAME_ORDER:
+            if reward_name in config and config[reward_name] is not None:
+                raw[reward_name] = config[reward_name]
+    normalized = {}
+    for reward_name in REWARD_NAME_ORDER:
+        value = raw[reward_name]
+        try:
+            weight = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'protein reward weight for {reward_name!r} must be numeric, got {value!r}') from exc
+        if weight < 0.0:
+            raise ValueError(f'protein reward weight for {reward_name!r} must be non-negative, got {weight}')
+        normalized[reward_name] = weight
+    return normalized
 
 
 def normalize_reward_compute_every_n_steps(config):
@@ -106,54 +135,70 @@ class CompositeProteinReward:
         device='cpu',
         default_reward_batch_size=None,
         reward_compute_every_n_steps=None,
+        reward_weights=None,
+        always_compute_metrics=False,
     ):
         self.device = torch.device(device)
+        self.reward_weights = normalize_protein_reward_weights(reward_weights)
+        self.always_compute_metrics = bool(always_compute_metrics)
         self.reward_compute_every_n_steps = normalize_reward_compute_every_n_steps(
             reward_compute_every_n_steps
         )
-        naturalness_cfg = dict(config['naturalness'])
-        foldability_cfg = dict(config.get('foldability', {}))
-        stability_cfg = dict(config['stability'])
-        developability_cfg = dict(config['developability'])
-        self.naturalness = ESM2NaturalnessScorer(
-            model_name=str(naturalness_cfg['model_name']),
-            device=naturalness_cfg.get('device', self.device),
-            batch_size=_resolve_reward_batch_size(
-                naturalness_cfg,
-                default_batch_size=default_reward_batch_size,
-                field_name='naturalness.batch_size',
-            ),
-        )
-        self.foldability = ESMFoldFoldabilityScorer(
-            device=foldability_cfg.get('device', self.device),
-            batch_size=_resolve_reward_batch_size(
-                foldability_cfg,
-                default_batch_size=default_reward_batch_size,
-                field_name='foldability.batch_size',
-            ),
-            num_recycles=foldability_cfg.get('num_recycles'),
-        )
-        self.stability = TemBERTureTmScorer(
-            model_name_or_path=str(stability_cfg['model_name_or_path']),
-            tokenizer_name_or_path=stability_cfg.get('tokenizer_name_or_path'),
-            device=stability_cfg.get('device', self.device),
-            batch_size=_resolve_reward_batch_size(
-                stability_cfg,
-                default_batch_size=default_reward_batch_size,
-                field_name='stability.batch_size',
-            ),
-            base_model_name_or_path=stability_cfg.get('base_model_name_or_path'),
-        )
-        self.developability = ProteinSolScorer(
-            model_name_or_path=str(developability_cfg['model_name_or_path']),
-            tokenizer_name_or_path=developability_cfg.get('tokenizer_name_or_path'),
-            device=developability_cfg.get('device', self.device),
-            batch_size=_resolve_reward_batch_size(
-                developability_cfg,
-                default_batch_size=default_reward_batch_size,
-                field_name='developability.batch_size',
-            ),
-        )
+        self._compute_flags = {
+            reward_name: self.always_compute_metrics or self.reward_weights[reward_name] > 0.0
+            for reward_name in REWARD_NAME_ORDER
+        }
+        naturalness_cfg = dict(config['naturalness']) if self._compute_flags['naturalness'] else None
+        foldability_cfg = dict(config.get('foldability', {})) if self._compute_flags['foldability'] else None
+        stability_cfg = dict(config['stability']) if self._compute_flags['stability'] else None
+        developability_cfg = dict(config['developability']) if self._compute_flags['developability'] else None
+        self.naturalness = None
+        if self._compute_flags['naturalness']:
+            self.naturalness = ESM2NaturalnessScorer(
+                model_name=str(naturalness_cfg['model_name']),
+                device=naturalness_cfg.get('device', self.device),
+                batch_size=_resolve_reward_batch_size(
+                    naturalness_cfg,
+                    default_batch_size=default_reward_batch_size,
+                    field_name='naturalness.batch_size',
+                ),
+            )
+        self.foldability = None
+        if self._compute_flags['foldability']:
+            self.foldability = ESMFoldFoldabilityScorer(
+                device=foldability_cfg.get('device', self.device),
+                batch_size=_resolve_reward_batch_size(
+                    foldability_cfg,
+                    default_batch_size=default_reward_batch_size,
+                    field_name='foldability.batch_size',
+                ),
+                num_recycles=foldability_cfg.get('num_recycles'),
+            )
+        self.stability = None
+        if self._compute_flags['stability']:
+            self.stability = TemBERTureTmScorer(
+                model_name_or_path=str(stability_cfg['model_name_or_path']),
+                tokenizer_name_or_path=stability_cfg.get('tokenizer_name_or_path'),
+                device=stability_cfg.get('device', self.device),
+                batch_size=_resolve_reward_batch_size(
+                    stability_cfg,
+                    default_batch_size=default_reward_batch_size,
+                    field_name='stability.batch_size',
+                ),
+                base_model_name_or_path=stability_cfg.get('base_model_name_or_path'),
+            )
+        self.developability = None
+        if self._compute_flags['developability']:
+            self.developability = ProteinSolScorer(
+                model_name_or_path=str(developability_cfg['model_name_or_path']),
+                tokenizer_name_or_path=developability_cfg.get('tokenizer_name_or_path'),
+                device=developability_cfg.get('device', self.device),
+                batch_size=_resolve_reward_batch_size(
+                    developability_cfg,
+                    default_batch_size=default_reward_batch_size,
+                    field_name='developability.batch_size',
+                ),
+            )
         self.calibration = None
 
     def _timed_score_raw(self, scorer, sequences):
@@ -179,16 +224,18 @@ class CompositeProteinReward:
         return elapsed, transfer_out
 
     def calibrate(self, sequences):
-        nat_raw, _, _ = self._timed_score_raw(self.naturalness, sequences)
-        stab_raw, _, _ = self._timed_score_raw(self.stability, sequences)
-        nat_q10, nat_q90 = _quantiles(nat_raw)
-        stab_q10, stab_q90 = _quantiles(stab_raw)
-        self.calibration = {
-            'naturalness_q10': nat_q10,
-            'naturalness_q90': nat_q90,
-            'stability_q10': stab_q10,
-            'stability_q90': stab_q90,
-        }
+        calibration = {}
+        if self._compute_flags['naturalness']:
+            nat_raw, _, _ = self._timed_score_raw(self.naturalness, sequences)
+            nat_q10, nat_q90 = _quantiles(nat_raw)
+            calibration['naturalness_q10'] = nat_q10
+            calibration['naturalness_q90'] = nat_q90
+        if self._compute_flags['stability']:
+            stab_raw, _, _ = self._timed_score_raw(self.stability, sequences)
+            stab_q10, stab_q90 = _quantiles(stab_raw)
+            calibration['stability_q10'] = stab_q10
+            calibration['stability_q90'] = stab_q90
+        self.calibration = calibration
         return dict(self.calibration)
 
     def _should_compute_reward(self, reward_name, step_number):
@@ -207,7 +254,7 @@ class CompositeProteinReward:
         step_number = _normalize_step_number(step_number)
         num_sequences = len(sequences)
 
-        if self._should_compute_reward('naturalness', step_number):
+        if self._compute_flags['naturalness'] and self._should_compute_reward('naturalness', step_number):
             nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(self.naturalness, sequences)
             nat = _scale_quantile(
                 nat_raw,
@@ -222,7 +269,7 @@ class CompositeProteinReward:
             nat = [0.0] * num_sequences
             nat_skipped = 1.0
 
-        if self._should_compute_reward('foldability', step_number):
+        if self._compute_flags['foldability'] and self._should_compute_reward('foldability', step_number):
             fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(self.foldability, sequences)
             fold_skipped = 0.0
         else:
@@ -231,7 +278,7 @@ class CompositeProteinReward:
             fold_cpu_to_gpu_sec = 0.0
             fold_skipped = 1.0
 
-        if self._should_compute_reward('stability', step_number):
+        if self._compute_flags['stability'] and self._should_compute_reward('stability', step_number):
             stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(self.stability, sequences)
             stab = _scale_quantile(
                 stab_raw,
@@ -246,7 +293,7 @@ class CompositeProteinReward:
             stab = [0.0] * num_sequences
             stab_skipped = 1.0
 
-        if self._should_compute_reward('developability', step_number):
+        if self._compute_flags['developability'] and self._should_compute_reward('developability', step_number):
             dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(self.developability, sequences)
             developability_components = score_developability_components(dev_raw, sequences)
             dev = developability_components['developability']
@@ -275,10 +322,10 @@ class CompositeProteinReward:
         total = []
         for idx in range(len(sequences)):
             total.append(
-                0.25 * nat[idx]
-                + 0.30 * fold[idx]
-                + 0.20 * stab[idx]
-                + 0.25 * dev[idx]
+                self.reward_weights['naturalness'] * nat[idx]
+                + self.reward_weights['foldability'] * fold[idx]
+                + self.reward_weights['stability'] * stab[idx]
+                + self.reward_weights['developability'] * dev[idx]
             )
 
         details = {
@@ -324,6 +371,10 @@ class CompositeProteinReward:
             'reward_fold_release_sec': fold_release_sec,
             'reward_stab_release_sec': stab_release_sec,
             'reward_dev_release_sec': dev_release_sec,
+            'reward_nat_weight': float(self.reward_weights['naturalness']),
+            'reward_fold_weight': float(self.reward_weights['foldability']),
+            'reward_stab_weight': float(self.reward_weights['stability']),
+            'reward_dev_weight': float(self.reward_weights['developability']),
             'reward_score_sec_total': nat_score_sec + fold_score_sec + stab_score_sec + dev_score_sec,
             'reward_cpu_to_gpu_sec_total': nat_cpu_to_gpu_sec + fold_cpu_to_gpu_sec + stab_cpu_to_gpu_sec + dev_cpu_to_gpu_sec,
             'reward_gpu_to_cpu_sec_total': nat_gpu_to_cpu_sec + fold_gpu_to_cpu_sec + stab_gpu_to_cpu_sec + dev_gpu_to_cpu_sec,

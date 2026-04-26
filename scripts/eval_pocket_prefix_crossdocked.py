@@ -16,6 +16,7 @@ from genmol.mm.crossdocked import load_crossdocked_manifest
 from genmol.mm.docking import CrossDockedDockingEvaluator, SUPPORTED_DOCKING_MODES, summarize_docking_records
 from genmol.mm.evaluation import PocketPrefixEvaluationKernel, build_rows, select_manifest_entries
 from genmol.mm.policy import PocketPrefixCpGRPOPolicy
+from genmol.rl.reward import MolecularReward, normalize_molecular_reward_weights
 from genmol.rl.specs import sample_group_specs
 from genmol.rl.trainer import write_jsonl
 
@@ -28,6 +29,8 @@ class EvalExperimentConfig:
     name: str
     checkpoint_path: str
     display_name: str | None = None
+    qed: float | None = None
+    sa_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,12 @@ def load_config(path):
     for experiment in config.experiments:
         if not os.path.exists(experiment.checkpoint_path):
             raise FileNotFoundError(f'checkpoint not found: {experiment.checkpoint_path}')
+        normalize_molecular_reward_weights(
+            {
+                'qed': experiment.qed,
+                'sa_score': experiment.sa_score,
+            }
+        )
     return config
 
 
@@ -303,19 +312,29 @@ def _build_markdown(config, results):
             '- `Official Quality` is the fraction of generated outputs that are valid, unique, satisfy `QED >= 0.6`, and satisfy `SA <= 4`.',
             '- `QED` and `SA` are the means over the unique valid set used by the official metric computation.',
             '- `Reward Mean`, `Alert Hit Rate`, `SA Score`, and `Soft Reward` are auxiliary diagnostics from the current training reward implementation.',
+            '- `Soft Reward` uses the experiment-specific rollout reward weights and defaults to `0.6 * QED + 0.4 * SA Score`.',
             '',
         ]
         )
     return '\n'.join(lines)
 
 
-def evaluate_experiment(config, experiment, device, selected_entries, specs, evaluation_kernel, docking_models):
+def evaluate_experiment(config, experiment, device, selected_entries, specs, docking_models):
     logger.info('Evaluating %s on %d pockets', experiment.name, len(selected_entries))
     policy = PocketPrefixCpGRPOPolicy(
         checkpoint_path=experiment.checkpoint_path,
         device=device,
         bf16=config.bf16,
         trainable=False,
+    )
+    evaluation_kernel = PocketPrefixEvaluationKernel(
+        reward_model=MolecularReward(
+            reward_weights={
+                'qed': experiment.qed,
+                'sa_score': experiment.sa_score,
+            },
+            always_compute_metrics=True,
+        )
     )
     try:
         pocket_raw_embeddings, pocket_mask = policy.get_pocket_raw_embeddings(
@@ -353,6 +372,8 @@ def evaluate_experiment(config, experiment, device, selected_entries, specs, eva
             'experiment': experiment.name,
             'display_name': _display_name(experiment),
             'checkpoint_path': experiment.checkpoint_path,
+            'qed_weight': evaluation_kernel.reward_model.reward_weights['qed'],
+            'sa_score_weight': evaluation_kernel.reward_model.reward_weights['sa_score'],
             'split': config.split,
             'num_samples': len(rows),
             **official_metrics,
@@ -362,6 +383,7 @@ def evaluate_experiment(config, experiment, device, selected_entries, specs, eva
             summary.update(_flatten_docking_metrics(mode, docking_metrics_by_mode[mode]))
         return summary, rows
     finally:
+        evaluation_kernel.close()
         del policy
         if device.type == 'cuda':
             torch.cuda.empty_cache()
@@ -393,7 +415,6 @@ def main():
         json_root, _ = os.path.splitext(config.output_json_path)
         docking_cache_dir = json_root + '.docking_cache'
 
-    evaluation_kernel = PocketPrefixEvaluationKernel()
     docking_models = {
         mode: CrossDockedDockingEvaluator(
             crossdocked_root=config.crossdocked_root,
@@ -419,7 +440,6 @@ def main():
                 device=device,
                 selected_entries=selected_entries,
                 specs=specs,
-                evaluation_kernel=evaluation_kernel,
                 docking_models=docking_models,
             )
             results.append(summary)
@@ -427,7 +447,6 @@ def main():
                 for row in rows:
                     all_rows.append({'experiment': experiment.name, 'display_name': _display_name(experiment), **row})
     finally:
-        evaluation_kernel.close()
         for docking_model in docking_models.values():
             docking_model.close()
 

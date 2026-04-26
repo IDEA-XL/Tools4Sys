@@ -24,7 +24,12 @@ from genmol.rl.cpgrpo import (
     validate_reward_threshold_names,
     split_tensor_dict,
 )
-from genmol.rl.reward import MolecularReward, compute_internal_diversity, compute_internal_diversity_loo_credits
+from genmol.rl.reward import (
+    MolecularReward,
+    compute_internal_diversity,
+    compute_internal_diversity_loo_credits,
+    normalize_molecular_reward_weights,
+)
 from genmol.rl.specs import (
     deserialize_specs,
     expand_group_specs,
@@ -37,6 +42,7 @@ from genmol.rl.trainer import (
     _aggregate_scalar_list,
     _build_group_mean_individual_rewards,
     _has_active_individual_reward_thresholds,
+    _validate_active_molecular_reward_thresholds,
     _nanmean,
     _nanreduce,
     GENMOL_SGRPO_THRESHOLD_REWARD_NAMES,
@@ -103,6 +109,8 @@ class PocketPrefixTrainConfig:
     group_advantage_weight: float = 0.5
     diversity_regularizer_weight: float = 0.0
     hierarchy: str = 'advantage_sum'
+    qed: float | None = None
+    sa_score: float | None = None
     individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
     group_rewrad_credit: str = 'broadcast'
     group_rewrad_credit_temperature: float = 1.0
@@ -163,9 +171,19 @@ def load_config(path):
         raise ValueError('group_advantage_weight must be in [0, 1]')
     if config.diversity_regularizer_weight < 0.0:
         raise ValueError('diversity_regularizer_weight must be non-negative')
+    config.rollout_reward_weights = normalize_molecular_reward_weights(
+        {
+            'qed': config.qed,
+            'sa_score': config.sa_score,
+        }
+    )
     config.individual_reward_thresholds = validate_reward_threshold_names(
         config.individual_reward_thresholds,
         GENMOL_SGRPO_THRESHOLD_REWARD_NAMES,
+    )
+    _validate_active_molecular_reward_thresholds(
+        config.individual_reward_thresholds,
+        config.rollout_reward_weights,
     )
     if config.hierarchy not in VALID_SGRPO_HIERARCHIES:
         raise ValueError(
@@ -312,7 +330,7 @@ class PocketPrefixCpGRPOTrainer:
             scheduler,
         )
 
-        self.reward_model = MolecularReward()
+        self.reward_model = MolecularReward(reward_weights=self.config.rollout_reward_weights)
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.text_logs_path = os.path.join(output_dir, 'completions.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')

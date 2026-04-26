@@ -20,7 +20,7 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from genmol.rl.policy import GenMolCpGRPOPolicy
-from genmol.rl.reward import MolecularReward, compute_internal_diversity
+from genmol.rl.reward import MolecularReward, compute_internal_diversity, normalize_molecular_reward_weights
 from genmol.rl.specs import sample_group_specs
 from genmol.rl.trainer import write_jsonl
 
@@ -33,6 +33,8 @@ class EvalExperimentConfig:
     name: str
     checkpoint_path: str
     display_name: str | None = None
+    qed: float | None = None
+    sa_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +168,12 @@ def load_config(path):
             raise ValueError('experiment name must be non-empty')
         if not os.path.exists(experiment.checkpoint_path):
             raise FileNotFoundError(f'checkpoint not found: {experiment.checkpoint_path}')
+        normalize_molecular_reward_weights(
+            {
+                'qed': experiment.qed,
+                'sa_score': experiment.sa_score,
+            }
+        )
     return config
 
 
@@ -296,7 +304,8 @@ def _build_markdown(config, results):
             '- `Overall De Novo Score`: mean final molecule-level reward after invalid handling and alert gating.',
             '- `QED`: mean QED over valid generated molecules.',
             '- `SA Score`: mean bounded SA-derived score used by training. Higher is better.',
-            '- `Soft Quality Score`: mean of `0.6 * QED + 0.4 * SA Score` over valid molecules.',
+            '- `Soft Quality Score`: mean weighted rollout-level reward before invalid handling and alert gating. '
+            'Weights come from the experiment config and default to `0.6 * QED + 0.4 * SA Score`.',
             '- `Internal Diversity`: `1 - mean(pairwise Tanimoto similarity)` computed over all generated valid molecules for that run.',
             '- `Valid Molecule Rate`: fraction of generated outputs that decode to valid molecules.',
             '- `Alert Hit Rate`: fraction of generated outputs that hit the alert rule set.',
@@ -311,13 +320,20 @@ def _build_markdown(config, results):
     return '\n'.join(lines)
 
 
-def evaluate_model(config, experiment, device, reward_model):
+def evaluate_model(config, experiment, device):
     logger.info('Evaluating %s', experiment.name)
     policy = GenMolCpGRPOPolicy(
         checkpoint_path=experiment.checkpoint_path,
         device=device,
         bf16=config.bf16,
         trainable=False,
+    )
+    reward_model = MolecularReward(
+        reward_weights={
+            'qed': experiment.qed,
+            'sa_score': experiment.sa_score,
+        },
+        always_compute_metrics=True,
     )
 
     results = []
@@ -367,6 +383,8 @@ def evaluate_model(config, experiment, device, reward_model):
                     'experiment': experiment.name,
                     'display_name': _display_name(experiment),
                     'checkpoint_path': experiment.checkpoint_path,
+                    'qed_weight': reward_model.reward_weights['qed'],
+                    'sa_score_weight': reward_model.reward_weights['sa_score'],
                     'num_samples': len(records),
                     'sweep_axis': config.sweep_axis,
                     'sweep_value': float(sweep_value),
@@ -392,6 +410,8 @@ def evaluate_model(config, experiment, device, reward_model):
                             'experiment': experiment.name,
                             'display_name': _display_name(experiment),
                             'checkpoint_path': experiment.checkpoint_path,
+                            'qed_weight': reward_model.reward_weights['qed'],
+                            'sa_score_weight': reward_model.reward_weights['sa_score'],
                             'sample_index': idx,
                             'sweep_axis': config.sweep_axis,
                             'sweep_value': float(sweep_value),
@@ -408,6 +428,7 @@ def evaluate_model(config, experiment, device, reward_model):
                         },
                     )
     finally:
+        reward_model.close()
         del policy
         if device.type == 'cuda':
             torch.cuda.empty_cache()
@@ -429,13 +450,9 @@ def main():
         if os.path.exists(config.output_rows_path):
             os.remove(config.output_rows_path)
 
-    reward_model = MolecularReward()
-    try:
-        results = []
-        for experiment in config.experiments:
-            results.extend(evaluate_model(config, experiment, device, reward_model))
-    finally:
-        reward_model.close()
+    results = []
+    for experiment in config.experiments:
+        results.extend(evaluate_model(config, experiment, device))
 
     experiment_order = {experiment.name: idx for idx, experiment in enumerate(config.experiments)}
     sweep_values = _get_sweep_values(config)
