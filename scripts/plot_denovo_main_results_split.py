@@ -30,6 +30,48 @@ PLOT_GROUPS = (
         experiments=(
             'original_genmol_v2',
             'genmol_denovo_grpo',
+            'genmol_denovo_grpo_q08_sa02_1000',
+            'genmol_denovo_sgrpo',
+            'genmol_denovo_sgrpo_thr_q085_sa072_1000',
+            'genmol_denovo_sgrpo_rewardsum_1000',
+            'genmol_denovo_sgrpo_thr_q085_sa072_rewardsum_1000',
+            'genmol_denovo_sgrpo_hierarchicalsum_1000',
+            'genmol_denovo_sgrpo_rewardsum_loo_1000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_1000',
+            'genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_1000',
+            'genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_1000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_q08_sa02_1000',
+        ),
+    ),
+    PlotGroup(
+        suffix='2000',
+        title_suffix='2000-step models',
+        experiments=(
+            'original_genmol_v2',
+            'genmol_denovo_grpo_2000',
+            'genmol_denovo_grpo_q08_sa02_2000',
+            'genmol_denovo_sgrpo_2000',
+            'genmol_denovo_grpo_divreg005_2000',
+            'genmol_denovo_sgrpo_thr_q085_sa072_2000',
+            'genmol_denovo_sgrpo_rewardsum_2000',
+            'genmol_denovo_sgrpo_thr_q085_sa072_rewardsum_2000',
+            'genmol_denovo_sgrpo_hierarchicalsum_2000',
+            'genmol_denovo_sgrpo_rewardsum_loo_2000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_2000',
+            'genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_2000',
+            'genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_2000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_q08_sa02_2000',
+        ),
+    ),
+)
+
+LEGACY_SOFT_REWARD_PLOT_GROUPS = (
+    PlotGroup(
+        suffix='1000',
+        title_suffix='1000-step legacy-weight models',
+        experiments=(
+            'original_genmol_v2',
+            'genmol_denovo_grpo',
             'genmol_denovo_sgrpo',
             'genmol_denovo_sgrpo_thr_q085_sa072_1000',
             'genmol_denovo_sgrpo_rewardsum_1000',
@@ -42,7 +84,7 @@ PLOT_GROUPS = (
     ),
     PlotGroup(
         suffix='2000',
-        title_suffix='2000-step models',
+        title_suffix='2000-step legacy-weight models',
         experiments=(
             'original_genmol_v2',
             'genmol_denovo_grpo_2000',
@@ -59,11 +101,34 @@ PLOT_GROUPS = (
     ),
 )
 
-METRICS = (
+NEW_VARIANT_SOFT_REWARD_PLOT_GROUPS = (
+    PlotGroup(
+        suffix='new_1000',
+        title_suffix='1000-step new variants',
+        experiments=(
+            'genmol_denovo_grpo_q08_sa02_1000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_1000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_q08_sa02_1000',
+        ),
+    ),
+    PlotGroup(
+        suffix='new_2000',
+        title_suffix='2000-step new variants',
+        experiments=(
+            'genmol_denovo_grpo_q08_sa02_2000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_2000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_q08_sa02_2000',
+        ),
+    ),
+)
+
+MAIN_METRICS = (
     ('qed_mean', 'QED', 'qed'),
     ('sa_score_mean', 'SA Score', 'sa_score'),
-    ('soft_reward_mean', 'Soft Quality Score', 'soft_reward'),
 )
+
+LEGACY_SOFT_REWARD_METRIC = ('soft_reward_mean', 'Soft Quality Score', 'soft_reward')
+NEW_VARIANT_SOFT_REWARD_METRIC = ('soft_reward_mean', 'Soft Quality Score', 'soft_reward_new_variants')
 
 
 def _load_rows(path: Path) -> list[dict]:
@@ -150,11 +215,21 @@ def _plot_group(rows: list[dict], group: PlotGroup, metric_key: str, metric_labe
 def _plot_split_summary(summary_path: Path, output_dir: Path, name_prefix: str) -> list[Path]:
     rows = _load_rows(summary_path)
     output_paths = []
-    for metric_key, metric_label, metric_name in METRICS:
+    for metric_key, metric_label, metric_name in MAIN_METRICS:
         for group in PLOT_GROUPS:
             output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_20260425.png'
             _plot_group(rows, group, metric_key, metric_label, output_path)
             output_paths.append(output_path)
+    metric_key, metric_label, metric_name = LEGACY_SOFT_REWARD_METRIC
+    for group in LEGACY_SOFT_REWARD_PLOT_GROUPS:
+        output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_20260425.png'
+        _plot_group(rows, group, metric_key, metric_label, output_path)
+        output_paths.append(output_path)
+    metric_key, metric_label, metric_name = NEW_VARIANT_SOFT_REWARD_METRIC
+    for group in NEW_VARIANT_SOFT_REWARD_PLOT_GROUPS:
+        output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_20260427.png'
+        _plot_group(rows, group, metric_key, metric_label, output_path)
+        output_paths.append(output_path)
     return output_paths
 
 

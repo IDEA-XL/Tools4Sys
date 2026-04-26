@@ -162,6 +162,84 @@ Notes:
 - All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step GRPO run.
 - Training job: `41711`
 
+### GRPO + `qed = 0.8, sa_score = 0.2`
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_q08_sa02.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_q08_sa02.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Notes:
+
+- Baseline is the locked 1000-step GRPO configuration.
+- Only changed rollout-level reward weights to `qed = 0.8` and `sa_score = 0.2`.
+
+### GRPO + `qed = 0.8, sa_score = 0.2` 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_q08_sa02_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_q08_sa02_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Notes:
+
+- Baseline is the new 1000-step `qed = 0.8, sa_score = 0.2` GRPO configuration.
+- Only changed `max_steps = 2000`.
+
 ### GRPO Diversity-Regularizer 2000-Step
 
 Status: `Verified`
@@ -638,6 +716,47 @@ Notes:
 - Training job: `46469`
 - Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_20260426_210520`
 
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5` 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the new 1000-step reward-sum + LOO SGRPO configuration with `group_advantage_weight = 0.5`.
+- Only changed `max_steps = 2000`.
+- `group_rewrad_credit = loo`.
+- `group_rewrad_credit_temperature = 1.0`.
+
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5` + `qed = 0.8, sa_score = 0.2`
 
 Status: `Running`
@@ -680,6 +799,47 @@ Notes:
 - `group_rewrad_credit_temperature = 1.0`.
 - Training job: `46470`
 - Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_20260426_210521`
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5` + `qed = 0.8, sa_score = 0.2` 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Baseline is the new 1000-step reward-sum + LOO SGRPO configuration with `group_advantage_weight = 0.5`, `qed = 0.8`, and `sa_score = 0.2`.
+- Only changed `max_steps = 2000`.
+- `group_rewrad_credit = loo`.
+- `group_rewrad_credit_temperature = 1.0`.
 
 ### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness
 
