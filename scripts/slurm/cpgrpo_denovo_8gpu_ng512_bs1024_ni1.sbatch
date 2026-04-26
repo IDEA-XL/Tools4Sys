@@ -15,9 +15,10 @@ REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1.yaml}
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
+WANDB_NETRC_PATH="${WANDB_NETRC_PATH:-$HOME/.netrc}"
 
-if [[ -z "${WANDB_API_KEY:-}" ]]; then
-  echo "WANDB_API_KEY is required" >&2
+if [[ -z "${WANDB_API_KEY:-}" && ! -f "${WANDB_NETRC_PATH}" ]]; then
+  echo "Either WANDB_API_KEY or ~/.netrc is required for wandb auth" >&2
   exit 1
 fi
 
