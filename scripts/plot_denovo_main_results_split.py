@@ -52,6 +52,9 @@ PLOT_GROUPS = (
             'genmol_denovo_sgrpo_rewardsum_2000',
             'genmol_denovo_sgrpo_thr_q085_sa072_rewardsum_2000',
             'genmol_denovo_sgrpo_hierarchicalsum_2000',
+            'genmol_denovo_sgrpo_rewardsum_loo_2000',
+            'genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_2000',
+            'genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_2000',
         ),
     ),
 )
