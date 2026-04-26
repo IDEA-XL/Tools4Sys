@@ -900,7 +900,8 @@ genmol-denovo/denovo_main_results_randomness_sweep_20260425.json
 
 Notes:
 
-- Completed by eval job `44457`.
+- Latest eval job: `45933`.
+- Latest split-plot job: `45935`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000
@@ -985,7 +986,8 @@ genmol-denovo/denovo_main_results_temperature_sweep_20260425.json
 
 Notes:
 
-- Completed by eval job `44516`.
+- Latest eval job: `45934`.
+- Latest split-plot job: `45935`.
 - Previous eval job `44458` used the retired grid `temperature = 0.1, 0.2, ..., 1.0`.
 - Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0`
 - Fixed `randomness = 0.3`
@@ -1346,6 +1348,7 @@ For each model and sweep point, group generated molecules by source_index. Compu
 
 #### Randomness Sweep
 
+- Aggregation/replot job: `45936`
 - Sweep grid: `randomness = 0.1, 0.3, 0.6, 1.0`
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
@@ -1371,7 +1374,7 @@ For each model and sweep point, group generated molecules by source_index. Compu
 
 - Generation job: `44517`
 - Vina docking job: `44534`
-- Aggregation/replot job: `44587`
+- Aggregation/replot job: `45937`
 - Previous plotted results used the retired grid `temperature = 0.1, 0.3, 0.6, 1.0`.
 - Sweep grid: `temperature = 0.5, 1.0, 5.0`
 - Docking mode for the main sweep: `vina_dock` only
