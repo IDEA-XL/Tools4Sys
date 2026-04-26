@@ -992,14 +992,16 @@ genmol-denovo/denovo_main_results_randomness_sweep_20260425.json
 
 Notes:
 
-- Latest eval job: `45933`.
-- Latest split-plot job: `45935`.
+- Latest incremental eval job: `46907`.
+- Latest merge+split-plot job: `46913`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000
 - `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
-- Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl`
+- This update reused the legacy `20260425` summary for the old models and incrementally added the 3 new 2000-step models.
+- Legacy remote raw rows remain at `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl`.
+- The 3 new 2000-step models in this merged update were added from incremental summary JSON, not from a newly materialized combined rows file.
 
 #### `diversity` vs `qed` for 1000-step models
 
@@ -1078,8 +1080,8 @@ genmol-denovo/denovo_main_results_temperature_sweep_20260425.json
 
 Notes:
 
-- Latest eval job: `45934`.
-- Latest split-plot job: `45935`.
+- Latest incremental eval job: `46906`.
+- Latest merge+split-plot job: `46913`.
 - Previous eval job `44458` used the retired grid `temperature = 0.1, 0.2, ..., 1.0`.
 - Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0`
 - Fixed `randomness = 0.3`
@@ -1087,7 +1089,9 @@ Notes:
 - Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000
 - `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
-- Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`
+- This update reused the legacy `20260425` summary for the old models and incrementally added the 3 new 2000-step models.
+- Legacy remote raw rows remain at `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`.
+- The 3 new 2000-step models in this merged update were added from incremental summary JSON, not from a newly materialized combined rows file.
 
 #### `diversity` vs `qed` for temperature sweep, 1000-step models
 

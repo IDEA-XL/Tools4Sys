@@ -185,12 +185,42 @@
 | GenMol De Novo SGRPO HierarchicalSum 2000 | randomness | 0.800000 | 1.000000 | 0.800000 | 0.691396 | 0.835031 | 0.674034 | 0.770632 | 0.851497 | 0.998000 | 0.133000 | 0.002000 |
 | GenMol De Novo SGRPO HierarchicalSum 2000 | randomness | 0.900000 | 1.000000 | 0.900000 | 0.694421 | 0.832985 | 0.665273 | 0.765900 | 0.854716 | 1.000000 | 0.126000 | 0.000000 |
 | GenMol De Novo SGRPO HierarchicalSum 2000 | randomness | 1.000000 | 1.000000 | 1.000000 | 0.679343 | 0.827095 | 0.654444 | 0.758035 | 0.858731 | 0.997000 | 0.133000 | 0.003000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.100000 | 1.000000 | 0.100000 | 0.788316 | 0.856125 | 0.787440 | 0.828651 | 0.804036 | 1.000000 | 0.063000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.200000 | 1.000000 | 0.200000 | 0.775562 | 0.856644 | 0.770488 | 0.822181 | 0.811720 | 1.000000 | 0.075000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.300000 | 1.000000 | 0.300000 | 0.764331 | 0.849696 | 0.751817 | 0.810545 | 0.824339 | 1.000000 | 0.078000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.400000 | 1.000000 | 0.400000 | 0.742619 | 0.850454 | 0.738037 | 0.805487 | 0.831963 | 0.999000 | 0.101000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.500000 | 1.000000 | 0.500000 | 0.736510 | 0.842327 | 0.724108 | 0.795039 | 0.840220 | 1.000000 | 0.099000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.600000 | 1.000000 | 0.600000 | 0.726217 | 0.844962 | 0.706405 | 0.789539 | 0.844564 | 0.999000 | 0.103000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.700000 | 1.000000 | 0.700000 | 0.727726 | 0.837999 | 0.702901 | 0.783960 | 0.847561 | 1.000000 | 0.098000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.800000 | 1.000000 | 0.800000 | 0.710259 | 0.833169 | 0.682029 | 0.772713 | 0.853614 | 0.999000 | 0.107000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 0.900000 | 1.000000 | 0.900000 | 0.696877 | 0.829477 | 0.672519 | 0.766694 | 0.855305 | 0.998000 | 0.121000 | 0.002000 |
+| GenMol De Novo SGRPO RewardSum LOO 2000 | randomness | 1.000000 | 1.000000 | 1.000000 | 0.696556 | 0.829777 | 0.661834 | 0.762600 | 0.858546 | 1.000000 | 0.118000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.100000 | 1.000000 | 0.100000 | 0.782231 | 0.846940 | 0.802407 | 0.829127 | 0.798557 | 1.000000 | 0.074000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.200000 | 1.000000 | 0.200000 | 0.765512 | 0.846978 | 0.787918 | 0.823354 | 0.806419 | 1.000000 | 0.093000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.300000 | 1.000000 | 0.300000 | 0.745533 | 0.842941 | 0.773432 | 0.815137 | 0.821603 | 1.000000 | 0.113000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.400000 | 1.000000 | 0.400000 | 0.750553 | 0.841849 | 0.755030 | 0.807121 | 0.831303 | 1.000000 | 0.093000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.500000 | 1.000000 | 0.500000 | 0.723737 | 0.836282 | 0.738663 | 0.797235 | 0.839729 | 0.999000 | 0.119000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.600000 | 1.000000 | 0.600000 | 0.724501 | 0.836146 | 0.722445 | 0.790665 | 0.843654 | 0.999000 | 0.109000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.700000 | 1.000000 | 0.700000 | 0.709852 | 0.828841 | 0.711642 | 0.781962 | 0.847929 | 0.997000 | 0.114000 | 0.003000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.800000 | 1.000000 | 0.800000 | 0.714455 | 0.829432 | 0.703710 | 0.779143 | 0.852033 | 0.998000 | 0.107000 | 0.002000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 0.900000 | 1.000000 | 0.900000 | 0.702873 | 0.823478 | 0.693875 | 0.771637 | 0.857692 | 0.998000 | 0.116000 | 0.002000 |
+| GenMol De Novo SGRPO RewardSum Temp/Rand 2000 | randomness | 1.000000 | 1.000000 | 1.000000 | 0.696864 | 0.818945 | 0.676359 | 0.761910 | 0.860078 | 1.000000 | 0.117000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.100000 | 1.000000 | 0.100000 | 0.766366 | 0.848496 | 0.784622 | 0.822947 | 0.806705 | 1.000000 | 0.089000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.200000 | 1.000000 | 0.200000 | 0.759325 | 0.842267 | 0.781068 | 0.817788 | 0.812930 | 1.000000 | 0.095000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.300000 | 1.000000 | 0.300000 | 0.738632 | 0.837401 | 0.757625 | 0.805491 | 0.827870 | 1.000000 | 0.112000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.400000 | 1.000000 | 0.400000 | 0.744226 | 0.837440 | 0.748436 | 0.801838 | 0.833474 | 1.000000 | 0.097000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.500000 | 1.000000 | 0.500000 | 0.720958 | 0.831802 | 0.732835 | 0.792215 | 0.843370 | 1.000000 | 0.119000 | 0.000000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.600000 | 1.000000 | 0.600000 | 0.715258 | 0.829406 | 0.714676 | 0.783514 | 0.847647 | 0.999000 | 0.113000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.700000 | 1.000000 | 0.700000 | 0.708581 | 0.826904 | 0.705320 | 0.778270 | 0.852385 | 0.999000 | 0.118000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.800000 | 1.000000 | 0.800000 | 0.709105 | 0.825083 | 0.692992 | 0.772246 | 0.857023 | 0.999000 | 0.107000 | 0.001000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 0.900000 | 1.000000 | 0.900000 | 0.693044 | 0.823619 | 0.681470 | 0.766760 | 0.859119 | 0.998000 | 0.125000 | 0.002000 |
+| GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 2000 | randomness | 1.000000 | 1.000000 | 1.000000 | 0.686867 | 0.823107 | 0.672639 | 0.762920 | 0.860544 | 1.000000 | 0.137000 | 0.000000 |
 
 Column notes:
 - `Overall De Novo Score`: mean final molecule-level reward after invalid handling and alert gating.
 - `QED`: mean QED over valid generated molecules.
 - `SA Score`: mean bounded SA-derived score used by training. Higher is better.
-- `Soft Quality Score`: mean of `0.6 * QED + 0.4 * SA Score` over valid molecules.
+- `Soft Quality Score`: mean weighted rollout-level reward before invalid handling and alert gating. Weights come from the experiment config and default to `0.6 * QED + 0.4 * SA Score`.
 - `Internal Diversity`: `1 - mean(pairwise Tanimoto similarity)` computed over all generated valid molecules for that run.
 - `Valid Molecule Rate`: fraction of generated outputs that decode to valid molecules.
 - `Alert Hit Rate`: fraction of generated outputs that hit the alert rule set.
