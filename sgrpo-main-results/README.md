@@ -555,12 +555,12 @@ Notes:
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_20260426_112205/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -592,15 +592,17 @@ Notes:
 - Baseline is the 1000-step reward-sum SGRPO configuration.
 - Only changed `group_rewrad_credit = loo`.
 - `group_rewrad_credit_temperature = 1.0`.
+- Training job: `45684`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_tempsamp_rndsamp_20260426_011105/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -632,15 +634,17 @@ Notes:
 - Baseline is the 1000-step reward-sum SGRPO configuration.
 - Only changed `generation_temperature = [0.5, 3.0]` and `randomness = [0.1, 1.0]`.
 - For SGRPO, each supergroup samples one temperature/randomness pair and shares it across groups in that supergroup.
+- Training job: `45099`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit + Sampled Temperature/Randomness
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_tempsamp_rndsamp_20260426_112204/checkpoint-001000/model.ckpt
 ```
 
 Training config:
@@ -672,6 +676,8 @@ Notes:
 - Baseline is the 1000-step reward-sum SGRPO configuration.
 - Changed `group_rewrad_credit = loo`, `generation_temperature = [0.5, 3.0]`, and `randomness = [0.1, 1.0]`.
 - `group_rewrad_credit_temperature = 1.0`.
+- Training job: `45685`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant
 
@@ -897,7 +903,8 @@ Notes:
 - Completed by eval job `44457`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000
+- `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
 - Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl`
 
@@ -941,6 +948,26 @@ genmol-denovo/sa_score_vs_diversity_randomness_2000_20260425.png
 
 ![GenMol De Novo SA Score vs Diversity Randomness Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_randomness_2000_20260425.png)
 
+#### `diversity` vs `soft_reward` for 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_vs_diversity_randomness_1000_20260425.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Randomness Sweep 1000-Step Models](genmol-denovo/soft_reward_vs_diversity_randomness_1000_20260425.png)
+
+#### `diversity` vs `soft_reward` for 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_vs_diversity_randomness_2000_20260425.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Randomness Sweep 2000-Step Models](genmol-denovo/soft_reward_vs_diversity_randomness_2000_20260425.png)
+
 #### Temperature Sweep
 
 Sweep config:
@@ -963,7 +990,8 @@ Notes:
 - Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0, 5.0, 8.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 1000, SGRPO HierarchicalSum 2000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000
+- `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
 - Remote raw rows: `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`
 
@@ -1006,6 +1034,26 @@ genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png
 ```
 
 ![GenMol De Novo SA Score vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_temperature_2000_20260425.png)
+
+#### `diversity` vs `soft_reward` for temperature sweep, 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_vs_diversity_temperature_1000_20260425.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/soft_reward_vs_diversity_temperature_1000_20260425.png)
+
+#### `diversity` vs `soft_reward` for temperature sweep, 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_vs_diversity_temperature_2000_20260425.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/soft_reward_vs_diversity_temperature_2000_20260425.png)
 
 ## mmGenMol
 
@@ -1301,6 +1349,7 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Sweep grid: `randomness = 0.1, 0.3, 0.6, 1.0`
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
+- `soft_reward_mean` is the rollout-level quality reward: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 
 ##### `qed_mean` vs `diversity`
 
@@ -1309,6 +1358,10 @@ For each model and sweep point, group generated molecules by source_index. Compu
 ##### `sa_score_mean` vs `diversity`
 
 ![mmGenMol Randomness SA Score vs Diversity](mmgenmol/mmgenmol_randomness_diversity_vs_sa_score_mean_20260423.png)
+
+##### `soft_reward_mean` vs `diversity`
+
+![mmGenMol Randomness Soft Reward vs Diversity](mmgenmol/mmgenmol_randomness_diversity_vs_soft_reward_mean_20260423.png)
 
 ##### `vina_dock_mean` vs `diversity`
 
@@ -1323,6 +1376,7 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Sweep grid: `temperature = 0.5, 1.0, 5.0`
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
+- `soft_reward_mean` is the rollout-level quality reward: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 
 ##### `qed_mean` vs `diversity`
 
@@ -1331,6 +1385,10 @@ For each model and sweep point, group generated molecules by source_index. Compu
 ##### `sa_score_mean` vs `diversity`
 
 ![mmGenMol Temperature SA Score vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_sa_score_mean_20260425.png)
+
+##### `soft_reward_mean` vs `diversity`
+
+![mmGenMol Temperature Soft Reward vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_soft_reward_mean_20260425.png)
 
 ##### `vina_dock_mean` vs `diversity`
 

@@ -2,6 +2,7 @@ output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-ma
 output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.json
 output_qed_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/qed_vs_diversity_20260425.png
 output_sa_score_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/sa_score_vs_diversity_20260425.png
+output_soft_reward_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/soft_reward_vs_diversity_20260425.png
 output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl
 seed: 42
 bf16: true
@@ -62,6 +63,15 @@ experiments:
   - name: genmol_denovo_sgrpo_hierarchicalsum_1000
     display_name: GenMol De Novo SGRPO HierarchicalSum 1000
     checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_20260424_204857/checkpoint-001000/model.ckpt
+  - name: genmol_denovo_sgrpo_rewardsum_loo_1000
+    display_name: GenMol De Novo SGRPO RewardSum LOO 1000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_20260426_112205/checkpoint-001000/model.ckpt
+  - name: genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_1000
+    display_name: GenMol De Novo SGRPO RewardSum Temp/Rand 1000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_tempsamp_rndsamp_20260426_011105/checkpoint-001000/model.ckpt
+  - name: genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_1000
+    display_name: GenMol De Novo SGRPO RewardSum LOO+Temp/Rand 1000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_tempsamp_rndsamp_20260426_112204/checkpoint-001000/model.ckpt
   - name: genmol_denovo_sgrpo_hierarchicalsum_2000
     display_name: GenMol De Novo SGRPO HierarchicalSum 2000
     checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_hierarchicalsum_ms2000_20260424_211108/checkpoint-002000/model.ckpt

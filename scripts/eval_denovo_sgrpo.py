@@ -41,6 +41,7 @@ class EvalConfig:
     output_json_path: str
     output_qed_diversity_plot_path: str
     output_sa_score_diversity_plot_path: str
+    output_soft_reward_diversity_plot_path: str
     output_rows_path: str | None = None
     seed: int = 42
     bf16: bool = True
@@ -261,6 +262,7 @@ def _build_markdown(config, results):
         '',
         f'- `QED vs Diversity plot`: `{config.output_qed_diversity_plot_path}`',
         f'- `SA Score vs Diversity plot`: `{config.output_sa_score_diversity_plot_path}`',
+        f'- `Soft Quality Score vs Diversity plot`: `{config.output_soft_reward_diversity_plot_path}`',
         '',
         '| Model | Sweep Axis | Sweep Value | Generation Temperature | Randomness | Overall De Novo Score | QED | SA Score | Soft Quality Score | Internal Diversity | Valid Molecule Rate | Alert Hit Rate | Invalid Rate |',
         '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -464,6 +466,18 @@ def main():
         title='SA Score vs Internal Diversity',
         output_path=config.output_sa_score_diversity_plot_path,
     )
+    _plot_metric_tradeoff(
+        results=results,
+        experiments=config.experiments,
+        sweep_values=sweep_values,
+        sweep_axis=config.sweep_axis,
+        x_key='soft_reward_mean',
+        x_label='Soft Quality Score',
+        y_key='diversity',
+        y_label='Internal Diversity',
+        title='Soft Quality Score vs Internal Diversity',
+        output_path=config.output_soft_reward_diversity_plot_path,
+    )
 
     markdown = _build_markdown(config, results)
     _ensure_parent_dir(config.output_markdown_path)
@@ -478,6 +492,10 @@ def main():
     logger.info('Wrote JSON results to %s', config.output_json_path)
     logger.info('Wrote QED-vs-diversity plot to %s', config.output_qed_diversity_plot_path)
     logger.info('Wrote SA-score-vs-diversity plot to %s', config.output_sa_score_diversity_plot_path)
+    logger.info(
+        'Wrote soft-quality-score-vs-diversity plot to %s',
+        config.output_soft_reward_diversity_plot_path,
+    )
 
 
 if __name__ == '__main__':

@@ -35,6 +35,9 @@ PLOT_GROUPS = (
             'genmol_denovo_sgrpo_rewardsum_1000',
             'genmol_denovo_sgrpo_thr_q085_sa072_rewardsum_1000',
             'genmol_denovo_sgrpo_hierarchicalsum_1000',
+            'genmol_denovo_sgrpo_rewardsum_loo_1000',
+            'genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_1000',
+            'genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_1000',
         ),
     ),
     PlotGroup(
@@ -56,6 +59,7 @@ PLOT_GROUPS = (
 METRICS = (
     ('qed_mean', 'QED', 'qed'),
     ('sa_score_mean', 'SA Score', 'sa_score'),
+    ('soft_reward_mean', 'Soft Quality Score', 'soft_reward'),
 )
 
 

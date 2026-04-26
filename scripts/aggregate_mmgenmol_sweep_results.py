@@ -222,6 +222,11 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
     qeds = [qed_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
     sa_values = [sa_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
     sa_scores = [sa_score_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
+    soft_rewards = [
+        0.6 * qed_by_smiles[smiles] + 0.4 * sa_score_by_smiles[smiles]
+        for smiles in canonical_smiles_by_row
+        if smiles is not None
+    ]
 
     valid_count = len(qeds)
     valid_fraction = float(valid_count / len(generated_rows))
@@ -247,6 +252,7 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         'qed_mean': _mean(qeds),
         'sa_mean': _mean(sa_values),
         'sa_score_mean': _mean(sa_scores),
+        'soft_reward_mean': _mean(soft_rewards),
         'diversity': _mean(pocket_diversities),
         'diversity_definition': (
             'mean over pockets of 1 - mean pairwise Morgan-fingerprint Tanimoto similarity '
@@ -260,7 +266,7 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         'vina_dock_median': float(docking_summary['vina_dock_median']),
         'docking_elapsed_sec': float(docking_payload['elapsed_sec']),
     }
-    for key in ['qed_mean', 'sa_score_mean', 'diversity', 'vina_dock_mean']:
+    for key in ['qed_mean', 'sa_score_mean', 'soft_reward_mean', 'diversity', 'vina_dock_mean']:
         if not math.isfinite(float(row[key])):
             raise ValueError(f'Non-finite {key} for task {task["task_id"]}: {row[key]}')
     return row
@@ -332,10 +338,11 @@ def _build_markdown(rows, plot_paths, json_path, rows_path):
         '- `docking_mode`: `vina_dock`',
         '- `diversity`: per sweep point, compute internal diversity separately within each pocket group, then average over pockets.',
         '- `qed_mean` and `sa_score_mean`: means over valid generated molecules in the sweep point.',
+        '- `soft_reward_mean`: `0.6 * qed_mean + 0.4 * sa_score_mean`, matching the rollout-level training reward before invalid and alert gating.',
         '- `vina_dock_mean`: mean Vina dock affinity over successful dockings; lower is better.',
         '',
-        '| Model | Sweep | Value | Diversity | QED | SA Score | Vina Dock Mean | Dock Success | Valid Fraction |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        '| Model | Sweep | Value | Diversity | QED | SA Score | Soft Quality Score | Vina Dock Mean | Dock Success | Valid Fraction |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ]
     for row in rows:
         lines.append(
@@ -348,6 +355,7 @@ def _build_markdown(rows, plot_paths, json_path, rows_path):
                     _format_metric(row['diversity']),
                     _format_metric(row['qed_mean']),
                     _format_metric(row['sa_score_mean']),
+                    _format_metric(row['soft_reward_mean']),
                     _format_metric(row['vina_dock_mean']),
                     _format_metric(row['vina_dock_success_fraction']),
                     _format_metric(row['valid_fraction']),
@@ -427,6 +435,7 @@ def main():
         for metric_key, metric_label in [
             ('qed_mean', 'QED'),
             ('sa_score_mean', 'SA Score'),
+            ('soft_reward_mean', 'Soft Quality Score'),
             ('vina_dock_mean', 'Vina Dock Mean'),
         ]:
             plot_path = os.path.join(
