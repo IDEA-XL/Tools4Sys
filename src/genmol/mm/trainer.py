@@ -436,6 +436,22 @@ class PocketPrefixCpGRPOTrainer:
             'reward_score_sec_total': float(metadata['reward_score_sec_total']),
             'reward_base_score_sec': float(metadata['reward_base_score_sec']),
             'reward_drugclip_score_sec': float(metadata['reward_drugclip_score_sec']),
+            'base_valid_count': float(metadata['base_valid_count']),
+            'base_valid_fraction': float(metadata['base_valid_fraction']),
+            'drugclip_input_count': float(metadata['drugclip_input_count']),
+            'drugclip_unique_smiles_count': float(metadata['drugclip_unique_smiles_count']),
+            'drugclip_unique_pocket_count': float(metadata['drugclip_unique_pocket_count']),
+            'drugclip_molecule_cache_hit_count': float(metadata['drugclip_molecule_cache_hit_count']),
+            'drugclip_molecule_cache_miss_count': float(metadata['drugclip_molecule_cache_miss_count']),
+            'drugclip_unique_smiles_success_count': float(metadata['drugclip_unique_smiles_success_count']),
+            'drugclip_unique_smiles_failure_count': float(metadata['drugclip_unique_smiles_failure_count']),
+            'drugclip_score_success_count': float(metadata['drugclip_score_success_count']),
+            'drugclip_score_failure_count': float(metadata['drugclip_score_failure_count']),
+            'drugclip_score_success_fraction': float(metadata['drugclip_score_success_fraction']),
+            'drugclip_fail_smiles_parse_count': float(metadata['drugclip_fail_smiles_parse_count']),
+            'drugclip_fail_embed_exception_count': float(metadata['drugclip_fail_embed_exception_count']),
+            'drugclip_fail_zero_conformer_count': float(metadata['drugclip_fail_zero_conformer_count']),
+            'drugclip_fail_empty_atom_list_count': float(metadata['drugclip_fail_empty_atom_list_count']),
         }
         if 'rollout_advantage_mean' in metadata:
             self._last_reward_metrics[mode]['rollout_advantage_mean'] = float(metadata['rollout_advantage_mean'])
@@ -475,6 +491,22 @@ class PocketPrefixCpGRPOTrainer:
         bucket['reward_score_sec_total'].append(float(metadata['reward_score_sec_total']))
         bucket['reward_base_score_sec'].append(float(metadata['reward_base_score_sec']))
         bucket['reward_drugclip_score_sec'].append(float(metadata['reward_drugclip_score_sec']))
+        bucket['base_valid_count'].append(float(metadata['base_valid_count']))
+        bucket['base_valid_fraction'].append(float(metadata['base_valid_fraction']))
+        bucket['drugclip_input_count'].append(float(metadata['drugclip_input_count']))
+        bucket['drugclip_unique_smiles_count'].append(float(metadata['drugclip_unique_smiles_count']))
+        bucket['drugclip_unique_pocket_count'].append(float(metadata['drugclip_unique_pocket_count']))
+        bucket['drugclip_molecule_cache_hit_count'].append(float(metadata['drugclip_molecule_cache_hit_count']))
+        bucket['drugclip_molecule_cache_miss_count'].append(float(metadata['drugclip_molecule_cache_miss_count']))
+        bucket['drugclip_unique_smiles_success_count'].append(float(metadata['drugclip_unique_smiles_success_count']))
+        bucket['drugclip_unique_smiles_failure_count'].append(float(metadata['drugclip_unique_smiles_failure_count']))
+        bucket['drugclip_score_success_count'].append(float(metadata['drugclip_score_success_count']))
+        bucket['drugclip_score_failure_count'].append(float(metadata['drugclip_score_failure_count']))
+        bucket['drugclip_score_success_fraction'].append(float(metadata['drugclip_score_success_fraction']))
+        bucket['drugclip_fail_smiles_parse_count'].append(float(metadata['drugclip_fail_smiles_parse_count']))
+        bucket['drugclip_fail_embed_exception_count'].append(float(metadata['drugclip_fail_embed_exception_count']))
+        bucket['drugclip_fail_zero_conformer_count'].append(float(metadata['drugclip_fail_zero_conformer_count']))
+        bucket['drugclip_fail_empty_atom_list_count'].append(float(metadata['drugclip_fail_empty_atom_list_count']))
         if 'rollout_advantage_mean' in metadata:
             bucket['rollout_advantage_mean'].append(float(metadata['rollout_advantage_mean']))
         if 'group_advantage_mean' in metadata:
@@ -982,6 +1014,22 @@ class PocketPrefixCpGRPOTrainer:
             'reward_score_sec_total': _reward_metric('reward_score_sec_total'),
             'reward_base_score_sec': _reward_metric('reward_base_score_sec'),
             'reward_drugclip_score_sec': _reward_metric('reward_drugclip_score_sec'),
+            'base_valid_count': _reward_metric('base_valid_count'),
+            'base_valid_fraction': _reward_metric('base_valid_fraction'),
+            'drugclip_input_count': _reward_metric('drugclip_input_count'),
+            'drugclip_unique_smiles_count': _reward_metric('drugclip_unique_smiles_count'),
+            'drugclip_unique_pocket_count': _reward_metric('drugclip_unique_pocket_count'),
+            'drugclip_molecule_cache_hit_count': _reward_metric('drugclip_molecule_cache_hit_count'),
+            'drugclip_molecule_cache_miss_count': _reward_metric('drugclip_molecule_cache_miss_count'),
+            'drugclip_unique_smiles_success_count': _reward_metric('drugclip_unique_smiles_success_count'),
+            'drugclip_unique_smiles_failure_count': _reward_metric('drugclip_unique_smiles_failure_count'),
+            'drugclip_score_success_count': _reward_metric('drugclip_score_success_count'),
+            'drugclip_score_failure_count': _reward_metric('drugclip_score_failure_count'),
+            'drugclip_score_success_fraction': _reward_metric('drugclip_score_success_fraction'),
+            'drugclip_fail_smiles_parse_count': _reward_metric('drugclip_fail_smiles_parse_count'),
+            'drugclip_fail_embed_exception_count': _reward_metric('drugclip_fail_embed_exception_count'),
+            'drugclip_fail_zero_conformer_count': _reward_metric('drugclip_fail_zero_conformer_count'),
+            'drugclip_fail_empty_atom_list_count': _reward_metric('drugclip_fail_empty_atom_list_count'),
             'ratio_mean': _aggregate_scalar_list(bucket['ratio_mean']),
             'clip_ratio/low_mean': _aggregate_scalar_list(bucket['clip_ratio/low_mean']),
             'clip_ratio/low_min': _aggregate_scalar_list(bucket['clip_ratio/low_min']),
@@ -1063,6 +1111,28 @@ class PocketPrefixCpGRPOTrainer:
                 metrics['grad_norm'],
                 metrics['lr'],
                 (
+                    ''
+                    if metrics['drugclip_input_count'] <= 0.0
+                    else (
+                        f" base_valid_count={metrics['base_valid_count']:.0f}"
+                        f" base_valid_fraction={metrics['base_valid_fraction']:.6f}"
+                        f" drugclip_input_count={metrics['drugclip_input_count']:.0f}"
+                        f" drugclip_unique_smiles_count={metrics['drugclip_unique_smiles_count']:.0f}"
+                        f" drugclip_unique_pocket_count={metrics['drugclip_unique_pocket_count']:.0f}"
+                        f" drugclip_molecule_cache_hit_count={metrics['drugclip_molecule_cache_hit_count']:.0f}"
+                        f" drugclip_molecule_cache_miss_count={metrics['drugclip_molecule_cache_miss_count']:.0f}"
+                        f" drugclip_unique_smiles_success_count={metrics['drugclip_unique_smiles_success_count']:.0f}"
+                        f" drugclip_unique_smiles_failure_count={metrics['drugclip_unique_smiles_failure_count']:.0f}"
+                        f" drugclip_score_success_count={metrics['drugclip_score_success_count']:.0f}"
+                        f" drugclip_score_failure_count={metrics['drugclip_score_failure_count']:.0f}"
+                        f" drugclip_score_success_fraction={metrics['drugclip_score_success_fraction']:.6f}"
+                        f" drugclip_fail_smiles_parse_count={metrics['drugclip_fail_smiles_parse_count']:.0f}"
+                        f" drugclip_fail_embed_exception_count={metrics['drugclip_fail_embed_exception_count']:.0f}"
+                        f" drugclip_fail_zero_conformer_count={metrics['drugclip_fail_zero_conformer_count']:.0f}"
+                        f" drugclip_fail_empty_atom_list_count={metrics['drugclip_fail_empty_atom_list_count']:.0f}"
+                    )
+                )
+                + (
                     ''
                     if 'rollout_advantage_mean' not in metrics
                     else (

@@ -419,6 +419,22 @@ class MolecularReward:
             'reward_score_sec_total': 0.0,
             'reward_base_score_sec': 0.0,
             'reward_drugclip_score_sec': 0.0,
+            'base_valid_count': 0,
+            'base_valid_fraction': 0.0,
+            'drugclip_input_count': 0,
+            'drugclip_unique_smiles_count': 0,
+            'drugclip_unique_pocket_count': 0,
+            'drugclip_molecule_cache_hit_count': 0,
+            'drugclip_molecule_cache_miss_count': 0,
+            'drugclip_unique_smiles_success_count': 0,
+            'drugclip_unique_smiles_failure_count': 0,
+            'drugclip_score_success_count': 0,
+            'drugclip_score_failure_count': 0,
+            'drugclip_score_success_fraction': 0.0,
+            'drugclip_fail_smiles_parse_count': 0,
+            'drugclip_fail_embed_exception_count': 0,
+            'drugclip_fail_zero_conformer_count': 0,
+            'drugclip_fail_empty_atom_list_count': 0,
         }
 
     def _reset_last_stats(self):
@@ -426,6 +442,22 @@ class MolecularReward:
             'reward_score_sec_total': 0.0,
             'reward_base_score_sec': 0.0,
             'reward_drugclip_score_sec': 0.0,
+            'base_valid_count': 0,
+            'base_valid_fraction': 0.0,
+            'drugclip_input_count': 0,
+            'drugclip_unique_smiles_count': 0,
+            'drugclip_unique_pocket_count': 0,
+            'drugclip_molecule_cache_hit_count': 0,
+            'drugclip_molecule_cache_miss_count': 0,
+            'drugclip_unique_smiles_success_count': 0,
+            'drugclip_unique_smiles_failure_count': 0,
+            'drugclip_score_success_count': 0,
+            'drugclip_score_failure_count': 0,
+            'drugclip_score_success_fraction': 0.0,
+            'drugclip_fail_smiles_parse_count': 0,
+            'drugclip_fail_embed_exception_count': 0,
+            'drugclip_fail_zero_conformer_count': 0,
+            'drugclip_fail_empty_atom_list_count': 0,
         }
 
     @staticmethod
@@ -491,6 +523,8 @@ class MolecularReward:
             active_indices.append(index)
             active_smiles.append(record.smiles)
             active_pocket_entries.append(pocket_entries[index])
+        self.last_stats['base_valid_count'] = int(len(active_indices))
+        self.last_stats['base_valid_fraction'] = float(len(active_indices) / len(records))
 
         if not active_indices:
             self.last_stats['reward_score_sec_total'] = time.perf_counter() - total_start
@@ -501,6 +535,7 @@ class MolecularReward:
         drugclip_scores = self._drugclip.score(active_smiles, active_pocket_entries)
         self._synchronize_cuda(self._drugclip.device)
         self.last_stats['reward_drugclip_score_sec'] = time.perf_counter() - drugclip_start
+        self.last_stats.update(self._drugclip.last_score_stats)
         if len(drugclip_scores) != len(active_indices):
             raise RuntimeError(
                 'DrugCLIP scorer returned mismatched score count: '

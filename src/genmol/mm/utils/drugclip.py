@@ -34,6 +34,12 @@ class _DrugCLIPFeatures:
     edge_type: torch.Tensor
 
 
+@dataclass(frozen=True)
+class _PreparedMoleculeFeatureResult:
+    feature: _DrugCLIPFeatures | None
+    failure_reason: str | None
+
+
 class _DrugCLIPDictionary:
     def __init__(self, tokens: list[str]):
         if not tokens:
@@ -219,7 +225,7 @@ def _prepare_molecule_features(
 
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None:
-        return None
+        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='smiles_parse')
 
     try:
         molecule = Chem.AddHs(molecule)
@@ -238,20 +244,23 @@ def _prepare_molecule_features(
             pass
         molecule = Chem.RemoveHs(molecule)
     except Exception:
-        return None
+        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='embed_exception')
 
     if molecule.GetNumConformers() <= 0:
-        return None
+        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='zero_conformer')
 
     coordinates = np.asarray(molecule.GetConformer(0).GetPositions(), dtype=np.float32)
     atoms = [atom.GetSymbol() for atom in molecule.GetAtoms()]
     if len(atoms) != coordinates.shape[0]:
         raise ValueError('DrugCLIP molecule atom labels and coordinates must have matching lengths')
     if not atoms:
-        return None
+        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='empty_atom_list')
 
     coordinates = coordinates - coordinates.mean(axis=0)
-    return _build_features(atoms, coordinates, dictionary)
+    return _PreparedMoleculeFeatureResult(
+        feature=_build_features(atoms, coordinates, dictionary),
+        failure_reason=None,
+    )
 
 
 def _build_features(atom_tokens: list[str], coordinates: np.ndarray, dictionary: _DrugCLIPDictionary):
@@ -349,6 +358,26 @@ class DrugCLIPScorer:
         self.raw_entry_store = _CrossDockedRawEntryStore(config.crossdocked_lmdb_path)
         self._mol_embedding_cache: OrderedDict[str, torch.Tensor] = OrderedDict()
         self._pocket_embedding_cache: OrderedDict[int, torch.Tensor] = OrderedDict()
+        self.last_score_stats = self._empty_last_score_stats()
+
+    @staticmethod
+    def _empty_last_score_stats():
+        return {
+            'drugclip_input_count': 0,
+            'drugclip_unique_smiles_count': 0,
+            'drugclip_unique_pocket_count': 0,
+            'drugclip_molecule_cache_hit_count': 0,
+            'drugclip_molecule_cache_miss_count': 0,
+            'drugclip_unique_smiles_success_count': 0,
+            'drugclip_unique_smiles_failure_count': 0,
+            'drugclip_score_success_count': 0,
+            'drugclip_score_failure_count': 0,
+            'drugclip_score_success_fraction': 0.0,
+            'drugclip_fail_smiles_parse_count': 0,
+            'drugclip_fail_embed_exception_count': 0,
+            'drugclip_fail_zero_conformer_count': 0,
+            'drugclip_fail_empty_atom_list_count': 0,
+        }
 
     def close(self):
         self.raw_entry_store.close()
@@ -366,27 +395,45 @@ class DrugCLIPScorer:
         while len(cache) > max_size:
             cache.popitem(last=False)
 
-    def _encode_missing_molecules(self, smiles_list: list[str]) -> dict[str, torch.Tensor | None]:
+    def _encode_missing_molecules(self, smiles_list: list[str]) -> tuple[dict[str, torch.Tensor | None], dict[str, int]]:
         outputs = {}
+        stats = {
+            'drugclip_molecule_cache_hit_count': 0,
+            'drugclip_molecule_cache_miss_count': 0,
+            'drugclip_unique_smiles_success_count': 0,
+            'drugclip_unique_smiles_failure_count': 0,
+            'drugclip_fail_smiles_parse_count': 0,
+            'drugclip_fail_embed_exception_count': 0,
+            'drugclip_fail_zero_conformer_count': 0,
+            'drugclip_fail_empty_atom_list_count': 0,
+        }
         pending_smiles = []
         pending_features = []
         for smiles in smiles_list:
             cached = self._get_from_cache(self._mol_embedding_cache, smiles)
             if cached is not None:
+                stats['drugclip_molecule_cache_hit_count'] += 1
+                stats['drugclip_unique_smiles_success_count'] += 1
                 outputs[smiles] = cached
                 continue
-            feature = _prepare_molecule_features(
+            stats['drugclip_molecule_cache_miss_count'] += 1
+            feature_result = _prepare_molecule_features(
                 smiles,
                 num_conformers=self.config.num_conformers,
                 conformer_num_workers=self.config.conformer_num_workers,
                 seed=self.config.seed + _stable_uint32(smiles),
                 dictionary=self.mol_dictionary,
             )
-            if feature is None:
+            if feature_result.feature is None:
+                failure_reason = feature_result.failure_reason
+                if failure_reason is None:
+                    raise ValueError('DrugCLIP molecule feature preparation failed without a failure reason')
+                stats['drugclip_unique_smiles_failure_count'] += 1
+                stats[f'drugclip_fail_{failure_reason}_count'] += 1
                 outputs[smiles] = None
                 continue
             pending_smiles.append(smiles)
-            pending_features.append(feature)
+            pending_features.append(feature_result.feature)
 
         for start in range(0, len(pending_features), self.config.batch_size):
             batch_smiles = pending_smiles[start:start + self.config.batch_size]
@@ -410,7 +457,8 @@ class DrugCLIPScorer:
                     self.config.mol_cache_size,
                 )
                 outputs[smiles] = embedding
-        return outputs
+                stats['drugclip_unique_smiles_success_count'] += 1
+        return outputs, stats
 
     def _pocket_cache_key(self, pocket_entry: dict) -> int:
         if pocket_entry.get('lmdb_key') is not None:
@@ -469,10 +517,15 @@ class DrugCLIPScorer:
                 f'{len(smiles_list)} vs {len(pocket_entries)}'
             )
         if not smiles_list:
+            self.last_score_stats = self._empty_last_score_stats()
             return []
 
+        self.last_score_stats = self._empty_last_score_stats()
+        self.last_score_stats['drugclip_input_count'] = int(len(smiles_list))
         unique_smiles = list(dict.fromkeys(smiles_list))
-        molecule_embeddings = self._encode_missing_molecules(unique_smiles)
+        self.last_score_stats['drugclip_unique_smiles_count'] = int(len(unique_smiles))
+        molecule_embeddings, molecule_stats = self._encode_missing_molecules(unique_smiles)
+        self.last_score_stats.update(molecule_stats)
 
         unique_pocket_entries = []
         seen_pocket_keys = set()
@@ -482,15 +535,22 @@ class DrugCLIPScorer:
                 continue
             seen_pocket_keys.add(pocket_key)
             unique_pocket_entries.append(pocket_entry)
+        self.last_score_stats['drugclip_unique_pocket_count'] = int(len(unique_pocket_entries))
         pocket_embeddings = self._encode_missing_pockets(unique_pocket_entries)
 
         outputs: list[float | None] = []
         for smiles, pocket_entry in zip(smiles_list, pocket_entries):
             mol_embedding = molecule_embeddings.get(smiles)
             if mol_embedding is None:
+                self.last_score_stats['drugclip_score_failure_count'] += 1
                 outputs.append(None)
                 continue
             pocket_embedding = pocket_embeddings[self._pocket_cache_key(pocket_entry)]
             score = torch.sum(mol_embedding.float() * pocket_embedding.float()).item()
+            self.last_score_stats['drugclip_score_success_count'] += 1
             outputs.append(float(score))
+        if self.last_score_stats['drugclip_input_count'] > 0:
+            self.last_score_stats['drugclip_score_success_fraction'] = (
+                self.last_score_stats['drugclip_score_success_count'] / self.last_score_stats['drugclip_input_count']
+            )
         return outputs
