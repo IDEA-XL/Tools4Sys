@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol_drugclip_runtime}
+REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol}
 CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol_drugclip}
 CONDA_BASE=/public/home/xinwuye/miniconda
 SOURCE_ENV_DIR=${CONDA_BASE}/envs/genmol

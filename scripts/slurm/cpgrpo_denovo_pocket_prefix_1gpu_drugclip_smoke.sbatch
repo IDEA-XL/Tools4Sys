@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol_drugclip_runtime}
+REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol}
 CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_smoke.yaml}
 CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol_drugclip}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
