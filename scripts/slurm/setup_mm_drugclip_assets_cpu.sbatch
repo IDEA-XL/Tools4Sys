@@ -78,7 +78,7 @@ fi
 
 (
   cd "${UNICORE_SOURCE_DIR}"
-  python setup.py install --disable-cuda-ext
+  python setup.py install
 )
 
 if [[ ! -s "${DRUGCLIP_CHECKPOINT_PATH}" ]]; then
