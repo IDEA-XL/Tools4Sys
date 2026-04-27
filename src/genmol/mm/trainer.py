@@ -901,6 +901,28 @@ class PocketPrefixCpGRPOTrainer:
             'reward_score_sec_total': float(self.reward_model.last_stats['reward_score_sec_total']),
             'reward_base_score_sec': float(self.reward_model.last_stats['reward_base_score_sec']),
             'reward_drugclip_score_sec': float(self.reward_model.last_stats['reward_drugclip_score_sec']),
+            'base_valid_count': float(self.reward_model.last_stats['base_valid_count']),
+            'base_valid_fraction': float(self.reward_model.last_stats['base_valid_fraction']),
+            'drugclip_input_count': float(self.reward_model.last_stats['drugclip_input_count']),
+            'drugclip_unique_smiles_count': float(self.reward_model.last_stats['drugclip_unique_smiles_count']),
+            'drugclip_unique_pocket_count': float(self.reward_model.last_stats['drugclip_unique_pocket_count']),
+            'drugclip_molecule_cache_hit_count': float(self.reward_model.last_stats['drugclip_molecule_cache_hit_count']),
+            'drugclip_molecule_cache_miss_count': float(self.reward_model.last_stats['drugclip_molecule_cache_miss_count']),
+            'drugclip_unique_smiles_success_count': float(
+                self.reward_model.last_stats['drugclip_unique_smiles_success_count']
+            ),
+            'drugclip_unique_smiles_failure_count': float(
+                self.reward_model.last_stats['drugclip_unique_smiles_failure_count']
+            ),
+            'drugclip_score_success_count': float(self.reward_model.last_stats['drugclip_score_success_count']),
+            'drugclip_score_failure_count': float(self.reward_model.last_stats['drugclip_score_failure_count']),
+            'drugclip_score_success_fraction': float(self.reward_model.last_stats['drugclip_score_success_fraction']),
+            'drugclip_fail_smiles_parse_count': float(self.reward_model.last_stats['drugclip_fail_smiles_parse_count']),
+            'drugclip_fail_embed_exception_count': float(
+                self.reward_model.last_stats['drugclip_fail_embed_exception_count']
+            ),
+            'drugclip_fail_zero_conformer_count': float(self.reward_model.last_stats['drugclip_fail_zero_conformer_count']),
+            'drugclip_fail_empty_atom_list_count': float(self.reward_model.last_stats['drugclip_fail_empty_atom_list_count']),
         }
         metadata.update(extra_advantage_metrics)
         self._record_reward_metrics(mode, metadata)
