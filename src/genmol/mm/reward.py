@@ -7,6 +7,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 
+import torch
+
 from genmol.mm.utils import DrugCLIPConfig, DrugCLIPScorer
 
 
