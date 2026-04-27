@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 _PYPLOT = None
 _TORCH = None
 _YAML = None
+_MARKER_CYCLE = ('o', '^', 's', 'D', 'P', 'X', 'v', '<', '>')
 
 
 def _get_yaml():
@@ -52,6 +53,19 @@ def _get_pyplot():
     return _PYPLOT
 
 
+def _series_style(series_index):
+    plt = _get_pyplot()
+    color_cycle = plt.rcParams['axes.prop_cycle'].by_key().get('color')
+    if not color_cycle:
+        raise ValueError('Matplotlib color cycle is empty')
+    color_index = series_index % len(color_cycle)
+    marker_index = (series_index // len(color_cycle)) % len(_MARKER_CYCLE)
+    return {
+        'color': color_cycle[color_index],
+        'marker': _MARKER_CYCLE[marker_index],
+    }
+
+
 @dataclass(frozen=True)
 class EvalExperimentConfig:
     name: str
@@ -59,6 +73,20 @@ class EvalExperimentConfig:
     display_name: str | None = None
     qed: float | None = None
     sa_score: float | None = None
+
+
+@dataclass(frozen=True)
+class EvalSweepPairConfig:
+    randomness: float
+    generation_temperature: float
+
+
+@dataclass(frozen=True)
+class EvalSweepPoint:
+    sweep_value: float
+    generation_temperature: float
+    randomness: float
+    sweep_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +106,7 @@ class EvalConfig:
     generation_temperature_values: list[float] | None = None
     randomness: float = 0.3
     randomness_values: list[float] | None = None
+    randomness_temperature_pairs: list[EvalSweepPairConfig] | None = None
     sweep_axis: str = 'randomness'
     min_add_len: int = 60
     max_completion_length: int | None = None
@@ -115,13 +144,36 @@ def _resolve_generation_temperature_values(raw_config):
     return list(values)
 
 
+def _resolve_randomness_temperature_pairs(raw_config):
+    if 'randomness_temperature_pairs' not in raw_config:
+        return None
+    values = raw_config['randomness_temperature_pairs']
+    if values is None:
+        return None
+    if not isinstance(values, list):
+        raise TypeError(
+            'randomness_temperature_pairs must be a list of {randomness, generation_temperature} mappings'
+        )
+    return list(values)
+
+
 def _resolve_sweep_axis(raw_config):
     randomness_values = _resolve_randomness_values(raw_config) if (
         'randomness_values' in raw_config and raw_config['randomness_values'] is not None
     ) else None
     generation_temperature_values = _resolve_generation_temperature_values(raw_config)
-    if randomness_values is not None and generation_temperature_values is not None:
-        raise ValueError('Specify exactly one of randomness_values or generation_temperature_values')
+    randomness_temperature_pairs = _resolve_randomness_temperature_pairs(raw_config)
+    configured_sweeps = [
+        randomness_values is not None,
+        generation_temperature_values is not None,
+        randomness_temperature_pairs is not None,
+    ]
+    if sum(configured_sweeps) > 1:
+        raise ValueError(
+            'Specify exactly one of randomness_values, generation_temperature_values, or randomness_temperature_pairs'
+        )
+    if randomness_temperature_pairs is not None:
+        return 'randomness_temperature_pair', randomness_temperature_pairs
     if generation_temperature_values is not None:
         return 'generation_temperature', generation_temperature_values
     if randomness_values is not None:
@@ -134,6 +186,8 @@ def _get_sweep_values(config):
         return config.randomness_values
     if config.sweep_axis == 'generation_temperature':
         return config.generation_temperature_values
+    if config.sweep_axis == 'randomness_temperature_pair':
+        return [float(idx) for idx in range(1, len(config.randomness_temperature_pairs or []) + 1)]
     raise ValueError(f'Unsupported sweep_axis: {config.sweep_axis}')
 
 
@@ -142,7 +196,45 @@ def _format_sweep_label(sweep_axis, value):
         return f'r={float(value):.1f}'
     if sweep_axis == 'generation_temperature':
         return f't={float(value):.1f}'
+    if sweep_axis == 'randomness_temperature_pair':
+        return f'pair={int(float(value))}'
     raise ValueError(f'Unsupported sweep_axis: {sweep_axis}')
+
+
+def _build_sweep_points(config):
+    if config.sweep_axis == 'randomness':
+        return [
+            EvalSweepPoint(
+                sweep_value=float(value),
+                generation_temperature=float(config.generation_temperature),
+                randomness=float(value),
+                sweep_label=_format_sweep_label(config.sweep_axis, value),
+            )
+            for value in config.randomness_values or []
+        ]
+    if config.sweep_axis == 'generation_temperature':
+        return [
+            EvalSweepPoint(
+                sweep_value=float(value),
+                generation_temperature=float(value),
+                randomness=float(config.randomness),
+                sweep_label=_format_sweep_label(config.sweep_axis, value),
+            )
+            for value in config.generation_temperature_values or []
+        ]
+    if config.sweep_axis == 'randomness_temperature_pair':
+        return [
+            EvalSweepPoint(
+                sweep_value=float(idx),
+                generation_temperature=float(pair.generation_temperature),
+                randomness=float(pair.randomness),
+                sweep_label=(
+                    f'r={float(pair.randomness):.1f},t={float(pair.generation_temperature):.1f}'
+                ),
+            )
+            for idx, pair in enumerate(config.randomness_temperature_pairs or [], start=1)
+        ]
+    raise ValueError(f'Unsupported sweep_axis: {config.sweep_axis}')
 
 
 def load_config(path):
@@ -154,12 +246,19 @@ def load_config(path):
     sweep_axis, sweep_values = _resolve_sweep_axis(raw)
     raw.pop('randomness_values', None)
     raw.pop('generation_temperature_values', None)
+    raw.pop('randomness_temperature_pairs', None)
     if sweep_axis == 'randomness':
         raw['randomness_values'] = sweep_values
         raw['generation_temperature_values'] = None
+        raw['randomness_temperature_pairs'] = None
     elif sweep_axis == 'generation_temperature':
         raw['randomness_values'] = None
         raw['generation_temperature_values'] = sweep_values
+        raw['randomness_temperature_pairs'] = None
+    elif sweep_axis == 'randomness_temperature_pair':
+        raw['randomness_values'] = None
+        raw['generation_temperature_values'] = None
+        raw['randomness_temperature_pairs'] = [EvalSweepPairConfig(**item) for item in sweep_values]
     else:
         raise ValueError(f'Unsupported sweep_axis: {sweep_axis}')
     config = EvalConfig(experiments=experiments, sweep_axis=sweep_axis, **raw)
@@ -174,7 +273,12 @@ def load_config(path):
         raise ValueError(f'randomness must be positive, got {config.randomness}')
     if config.min_add_len <= 0:
         raise ValueError(f'min_add_len must be positive, got {config.min_add_len}')
-    if config.randomness_values is not None and config.generation_temperature_values is not None:
+    configured_sweeps = [
+        config.randomness_values is not None,
+        config.generation_temperature_values is not None,
+        config.randomness_temperature_pairs is not None,
+    ]
+    if sum(configured_sweeps) != 1:
         raise ValueError('Exactly one sweep grid must be configured')
     sweep_values = _get_sweep_values(config)
     if sweep_values is None or not sweep_values:
@@ -184,6 +288,20 @@ def load_config(path):
             raise ValueError(f'Sweep value must be positive, got {sweep_value}')
     if len(set(float(value) for value in sweep_values)) != len(sweep_values):
         raise ValueError(f'Sweep values must be unique, got {sweep_values}')
+    if config.randomness_temperature_pairs is not None:
+        seen_pairs = set()
+        for pair in config.randomness_temperature_pairs:
+            if float(pair.randomness) <= 0:
+                raise ValueError(f'Pair randomness must be positive, got {pair.randomness}')
+            if float(pair.generation_temperature) <= 0:
+                raise ValueError(
+                    'Pair generation_temperature must be positive, '
+                    f'got {pair.generation_temperature}'
+                )
+            pair_key = (float(pair.randomness), float(pair.generation_temperature))
+            if pair_key in seen_pairs:
+                raise ValueError(f'Paired sweep values must be unique, got duplicate {pair_key}')
+            seen_pairs.add(pair_key)
     if config.experiments is None or not config.experiments:
         raise ValueError('experiments must be non-empty')
     experiment_names = [experiment.name for experiment in config.experiments]
@@ -240,7 +358,8 @@ def _plot_metric_tradeoff(results, experiments, sweep_values, sweep_axis, x_key,
     sweep_order = {float(value): idx for idx, value in enumerate(sweep_values)}
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    for experiment in sorted(experiments, key=lambda item: experiment_order[item.name]):
+    ordered_experiments = sorted(experiments, key=lambda item: experiment_order[item.name])
+    for series_index, experiment in enumerate(ordered_experiments):
         rows = [row for row in results if row['experiment'] == experiment.name]
         if len(rows) != len(sweep_values):
             raise ValueError(
@@ -263,10 +382,19 @@ def _plot_metric_tradeoff(results, experiments, sweep_values, sweep_axis, x_key,
             x_values.append(x_value)
             y_values.append(y_value)
 
-        ax.plot(x_values, y_values, marker='o', linewidth=2, label=_display_name(experiment))
+        style = _series_style(series_index)
+        ax.plot(
+            x_values,
+            y_values,
+            color=style['color'],
+            marker=style['marker'],
+            linewidth=2,
+            label=_display_name(experiment),
+        )
         for row, x_value, y_value in zip(rows, x_values, y_values):
+            sweep_label = row.get('sweep_label') or _format_sweep_label(sweep_axis, row['sweep_value'])
             ax.annotate(
-                _format_sweep_label(sweep_axis, row['sweep_value']),
+                sweep_label,
                 (x_value, y_value),
                 textcoords='offset points',
                 xytext=(4, 4),
@@ -286,6 +414,27 @@ def _plot_metric_tradeoff(results, experiments, sweep_values, sweep_axis, x_key,
 
 def _build_markdown(config, results):
     sweep_values = _get_sweep_values(config)
+    sweep_lines = []
+    if config.sweep_axis == 'randomness_temperature_pair':
+        sweep_lines.extend(
+            [
+                '- `generation_temperature`: paired',
+                '- `randomness`: paired',
+                '- `randomness_temperature_pairs`: '
+                + ', '.join(
+                    f'({float(pair.randomness):.1f}, {float(pair.generation_temperature):.1f})'
+                    for pair in config.randomness_temperature_pairs or []
+                ),
+            ]
+        )
+    else:
+        sweep_lines.extend(
+            [
+                f'- `generation_temperature`: {config.generation_temperature}',
+                f'- `randomness`: {config.randomness}',
+                f'- `sweep_values`: {", ".join(str(float(value)) for value in sweep_values)}',
+            ]
+        )
     lines = [
         '# De Novo Evaluation',
         '',
@@ -294,9 +443,7 @@ def _build_markdown(config, results):
         f'- `min_add_len`: {config.min_add_len}',
         f'- `max_completion_length`: {config.max_completion_length}',
         f'- `sweep_axis`: {config.sweep_axis}',
-        f'- `generation_temperature`: {config.generation_temperature}',
-        f'- `randomness`: {config.randomness}',
-        f'- `sweep_values`: {", ".join(str(float(value)) for value in sweep_values)}',
+        *sweep_lines,
         '',
         f'- `QED vs Diversity plot`: `{config.output_qed_diversity_plot_path}`',
         f'- `SA Score vs Diversity plot`: `{config.output_sa_score_diversity_plot_path}`',
@@ -344,6 +491,8 @@ def _build_markdown(config, results):
             'Row notes:',
             '- Each row is one model evaluated at one sweep value.',
             '- The line plots connect rows for the same model in increasing sweep order.',
+            '- For paired sweeps, `Sweep Value` is the 1-based pair index while `Generation Temperature` '
+            'and `Randomness` record the actual pair values.',
             '',
         ]
     )
@@ -373,20 +522,19 @@ def evaluate_model(config, experiment, device):
 
     results = []
     try:
-        for sweep_value in _get_sweep_values(config):
-            if config.sweep_axis == 'randomness':
-                generation_temperature = float(config.generation_temperature)
-                randomness = float(sweep_value)
-            elif config.sweep_axis == 'generation_temperature':
-                generation_temperature = float(sweep_value)
-                randomness = float(config.randomness)
-            else:
-                raise ValueError(f'Unsupported sweep_axis: {config.sweep_axis}')
-            logger.info('Evaluating %s at %s=%s', experiment.name, config.sweep_axis, sweep_value)
+        for sweep_point in _build_sweep_points(config):
+            logger.info(
+                'Evaluating %s at %s=%s (randomness=%s generation_temperature=%s)',
+                experiment.name,
+                config.sweep_axis,
+                sweep_point.sweep_label or sweep_point.sweep_value,
+                sweep_point.randomness,
+                sweep_point.generation_temperature,
+            )
             group_specs = sample_group_specs(
                 num_groups=config.num_samples,
-                generation_temperature=generation_temperature,
-                randomness=randomness,
+                generation_temperature=sweep_point.generation_temperature,
+                randomness=sweep_point.randomness,
                 min_add_len=config.min_add_len,
                 seed=config.seed,
                 max_completion_length=config.max_completion_length,
@@ -422,9 +570,10 @@ def evaluate_model(config, experiment, device):
                     'sa_score_weight': reward_model.reward_weights['sa_score'],
                     'num_samples': len(records),
                     'sweep_axis': config.sweep_axis,
-                    'sweep_value': float(sweep_value),
-                    'generation_temperature': generation_temperature,
-                    'randomness': randomness,
+                    'sweep_value': sweep_point.sweep_value,
+                    'sweep_label': sweep_point.sweep_label,
+                    'generation_temperature': sweep_point.generation_temperature,
+                    'randomness': sweep_point.randomness,
                     'reward_mean': float(sum(rewards) / len(rewards)),
                     'qed_mean': _nanmean(qeds),
                     'sa_mean': _nanmean(sas),
@@ -449,9 +598,10 @@ def evaluate_model(config, experiment, device):
                             'sa_score_weight': reward_model.reward_weights['sa_score'],
                             'sample_index': idx,
                             'sweep_axis': config.sweep_axis,
-                            'sweep_value': float(sweep_value),
-                            'generation_temperature': generation_temperature,
-                            'randomness': randomness,
+                            'sweep_value': sweep_point.sweep_value,
+                            'sweep_label': sweep_point.sweep_label,
+                            'generation_temperature': sweep_point.generation_temperature,
+                            'randomness': sweep_point.randomness,
                             'reward': float(record.reward),
                             'is_valid': bool(record.is_valid),
                             'alert_hit': bool(record.alert_hit),
@@ -492,7 +642,7 @@ def main():
         results.extend(evaluate_model(config, experiment, device))
 
     experiment_order = {experiment.name: idx for idx, experiment in enumerate(config.experiments)}
-    sweep_values = _get_sweep_values(config)
+    sweep_values = [point.sweep_value for point in _build_sweep_points(config)]
     sweep_order = {float(value): idx for idx, value in enumerate(sweep_values)}
     results.sort(key=lambda row: (experiment_order[row['experiment']], sweep_order[float(row['sweep_value'])]))
 

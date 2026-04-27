@@ -15,6 +15,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+MARKER_CYCLE = ('o', '^', 's', 'D', 'P', 'X', 'v', '<', '>')
+
 
 @dataclass(frozen=True)
 class PlotGroup:
@@ -78,6 +80,7 @@ LEGACY_SOFT_REWARD_PLOT_GROUPS = (
             'genmol_denovo_sgrpo_thr_q085_sa072_rewardsum_1000',
             'genmol_denovo_sgrpo_hierarchicalsum_1000',
             'genmol_denovo_sgrpo_rewardsum_loo_1000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_1000',
             'genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_1000',
             'genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_1000',
         ),
@@ -95,6 +98,7 @@ LEGACY_SOFT_REWARD_PLOT_GROUPS = (
             'genmol_denovo_sgrpo_thr_q085_sa072_rewardsum_2000',
             'genmol_denovo_sgrpo_hierarchicalsum_2000',
             'genmol_denovo_sgrpo_rewardsum_loo_2000',
+            'genmol_denovo_sgrpo_gw05_rewardsum_loo_2000',
             'genmol_denovo_sgrpo_rewardsum_tempsamp_rndsamp_2000',
             'genmol_denovo_sgrpo_rewardsum_loo_tempsamp_rndsamp_2000',
         ),
@@ -104,19 +108,19 @@ LEGACY_SOFT_REWARD_PLOT_GROUPS = (
 NEW_VARIANT_SOFT_REWARD_PLOT_GROUPS = (
     PlotGroup(
         suffix='new_1000',
-        title_suffix='1000-step new variants',
+        title_suffix='1000-step q0.8/sa0.2 reweighted variants',
         experiments=(
+            'original_genmol_v2',
             'genmol_denovo_grpo_q08_sa02_1000',
-            'genmol_denovo_sgrpo_gw05_rewardsum_loo_1000',
             'genmol_denovo_sgrpo_gw05_rewardsum_loo_q08_sa02_1000',
         ),
     ),
     PlotGroup(
         suffix='new_2000',
-        title_suffix='2000-step new variants',
+        title_suffix='2000-step q0.8/sa0.2 reweighted variants',
         experiments=(
+            'original_genmol_v2',
             'genmol_denovo_grpo_q08_sa02_2000',
-            'genmol_denovo_sgrpo_gw05_rewardsum_loo_2000',
             'genmol_denovo_sgrpo_gw05_rewardsum_loo_q08_sa02_2000',
         ),
     ),
@@ -145,6 +149,13 @@ def _format_sweep_value(value: float) -> str:
     return f'{value:.1f}'
 
 
+def _format_sweep_annotation(row: dict) -> str:
+    sweep_label = row.get('sweep_label')
+    if sweep_label:
+        return str(sweep_label)
+    return _format_sweep_value(float(row['sweep_value']))
+
+
 def _require_finite(row: dict, key: str) -> float:
     value = float(row[key])
     if not math.isfinite(value):
@@ -164,6 +175,18 @@ def _validate_sweep(rows: Iterable[dict]) -> tuple[str, list[float]]:
     if not values:
         raise ValueError('No sweep values found')
     return axis, values
+
+
+def _series_style(series_index: int) -> dict[str, str]:
+    color_cycle = plt.rcParams['axes.prop_cycle'].by_key().get('color')
+    if not color_cycle:
+        raise ValueError('Matplotlib color cycle is empty')
+    color_index = series_index % len(color_cycle)
+    marker_index = (series_index // len(color_cycle)) % len(MARKER_CYCLE)
+    return {
+        'color': color_cycle[color_index],
+        'marker': MARKER_CYCLE[marker_index],
+    }
 
 
 def _plot_group(rows: list[dict], group: PlotGroup, metric_key: str, metric_label: str, output_path: Path) -> None:
@@ -186,15 +209,23 @@ def _plot_group(rows: list[dict], group: PlotGroup, metric_key: str, metric_labe
         raise ValueError(f'Missing {len(missing)} required rows for {group.suffix}: {preview}')
 
     fig, ax = plt.subplots(figsize=(8.5, 6.2))
-    for experiment in group.experiments:
+    for series_index, experiment in enumerate(group.experiments):
         experiment_rows = [row_index[(experiment, value)] for value in sweep_values]
         x_values = [_require_finite(row, metric_key) for row in experiment_rows]
         y_values = [_require_finite(row, 'diversity') for row in experiment_rows]
         display_name = str(experiment_rows[0].get('display_name') or experiment)
-        ax.plot(x_values, y_values, marker='o', linewidth=2, label=display_name)
+        style = _series_style(series_index)
+        ax.plot(
+            x_values,
+            y_values,
+            color=style['color'],
+            marker=style['marker'],
+            linewidth=2,
+            label=display_name,
+        )
         for row, x_value, y_value in zip(experiment_rows, x_values, y_values):
             ax.annotate(
-                _format_sweep_value(float(row['sweep_value'])),
+                _format_sweep_annotation(row),
                 (x_value, y_value),
                 textcoords='offset points',
                 xytext=(4, 4),
@@ -212,22 +243,33 @@ def _plot_group(rows: list[dict], group: PlotGroup, metric_key: str, metric_labe
     plt.close(fig)
 
 
+def _resolve_plot_date(name_prefix: str, metric_name: str) -> str:
+    if name_prefix == 'paired':
+        return '20260427'
+    if metric_name == 'soft_reward_new_variants':
+        return '20260427'
+    return '20260425'
+
+
 def _plot_split_summary(summary_path: Path, output_dir: Path, name_prefix: str) -> list[Path]:
     rows = _load_rows(summary_path)
     output_paths = []
     for metric_key, metric_label, metric_name in MAIN_METRICS:
         for group in PLOT_GROUPS:
-            output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_20260425.png'
+            plot_date = _resolve_plot_date(name_prefix, metric_name)
+            output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_{plot_date}.png'
             _plot_group(rows, group, metric_key, metric_label, output_path)
             output_paths.append(output_path)
     metric_key, metric_label, metric_name = LEGACY_SOFT_REWARD_METRIC
     for group in LEGACY_SOFT_REWARD_PLOT_GROUPS:
-        output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_20260425.png'
+        plot_date = _resolve_plot_date(name_prefix, metric_name)
+        output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_{plot_date}.png'
         _plot_group(rows, group, metric_key, metric_label, output_path)
         output_paths.append(output_path)
     metric_key, metric_label, metric_name = NEW_VARIANT_SOFT_REWARD_METRIC
     for group in NEW_VARIANT_SOFT_REWARD_PLOT_GROUPS:
-        output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_20260427.png'
+        plot_date = _resolve_plot_date(name_prefix, metric_name)
+        output_path = output_dir / f'{metric_name}_vs_diversity_{name_prefix}_{group.suffix}_{plot_date}.png'
         _plot_group(rows, group, metric_key, metric_label, output_path)
         output_paths.append(output_path)
     return output_paths
@@ -235,14 +277,25 @@ def _plot_split_summary(summary_path: Path, output_dir: Path, name_prefix: str) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--randomness-json', type=Path, required=True)
-    parser.add_argument('--temperature-json', type=Path, required=True)
+    parser.add_argument('--randomness-json', type=Path)
+    parser.add_argument('--temperature-json', type=Path)
+    parser.add_argument('--paired-json', type=Path)
     parser.add_argument('--output-dir', type=Path, required=True)
     args = parser.parse_args()
 
     outputs = []
-    outputs.extend(_plot_split_summary(args.randomness_json, args.output_dir, 'randomness'))
-    outputs.extend(_plot_split_summary(args.temperature_json, args.output_dir, 'temperature'))
+    summary_specs = []
+    if args.randomness_json is not None:
+        summary_specs.append(('randomness', args.randomness_json))
+    if args.temperature_json is not None:
+        summary_specs.append(('temperature', args.temperature_json))
+    if args.paired_json is not None:
+        summary_specs.append(('paired', args.paired_json))
+    if not summary_specs:
+        parser.error('At least one of --randomness-json, --temperature-json, or --paired-json is required')
+
+    for name_prefix, summary_path in summary_specs:
+        outputs.extend(_plot_split_summary(summary_path, args.output_dir, name_prefix))
     for output in outputs:
         print(output)
 
