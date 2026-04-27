@@ -13,6 +13,7 @@ set -euo pipefail
 REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol_drugclip_runtime}
 CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol_drugclip}
 CONDA_BASE=/public/home/xinwuye/miniconda
+SOURCE_ENV_DIR=${CONDA_BASE}/envs/genmol
 TARGET_ENV_DIR=${CONDA_BASE}/envs/${CONDA_ENV_NAME}
 DRUGCLIP_RUN_DIR=${DRUGCLIP_RUN_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/drugclip_official}
 DRUGCLIP_CHECKPOINT_PATH=${DRUGCLIP_CHECKPOINT_PATH:-${DRUGCLIP_RUN_DIR}/checkpoint_best.pt}
@@ -45,16 +46,24 @@ if [[ -d "${TARGET_ENV_DIR}" && ! -x "${TARGET_ENV_DIR}/bin/python" ]]; then
   rm -rf "${TARGET_ENV_DIR}"
 fi
 
-if [[ ! -x "${TARGET_ENV_DIR}/bin/python" ]]; then
-  conda create --offline -y -n "${CONDA_ENV_NAME}" --clone genmol
+if [[ -x "${TARGET_ENV_DIR}/bin/python" ]]; then
+  if ! "${TARGET_ENV_DIR}/bin/python" -c "import torch, rdkit, tdc, rd_filters" >/dev/null 2>&1; then
+    rm -rf "${TARGET_ENV_DIR}"
+  fi
 fi
 
-conda activate "${CONDA_ENV_NAME}"
+if [[ ! -x "${TARGET_ENV_DIR}/bin/python" ]]; then
+  conda create --offline -y -p "${TARGET_ENV_DIR}" --clone "${SOURCE_ENV_DIR}"
+fi
+
+conda activate "${TARGET_ENV_DIR}"
 
 if [[ ! -x "${TARGET_ENV_DIR}/bin/python" ]]; then
   echo "Cloned env is missing python executable: ${TARGET_ENV_DIR}/bin/python" >&2
   exit 1
 fi
+
+python -c "import torch, rdkit, tdc, rd_filters"
 
 if ! python -c "import gdown" >/dev/null 2>&1; then
   python -m pip install --ignore-installed --no-user gdown
