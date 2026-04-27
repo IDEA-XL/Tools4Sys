@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import pickle
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,8 @@ import numpy as np
 import torch
 
 from genmol.mm.crossdocked import _open_lmdb
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,7 @@ class _DrugCLIPFeatures:
 class _PreparedMoleculeFeatureResult:
     feature: _DrugCLIPFeatures | None
     failure_reason: str | None
+    failure_detail: str | None = None
 
 
 class _DrugCLIPDictionary:
@@ -226,7 +230,11 @@ def _prepare_molecule_features(
 
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None:
-        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='smiles_parse')
+        return _PreparedMoleculeFeatureResult(
+            feature=None,
+            failure_reason='smiles_parse',
+            failure_detail='MolFromSmiles returned None',
+        )
 
     try:
         if int(num_conformers) != 1:
@@ -239,19 +247,35 @@ def _prepare_molecule_features(
         params.randomSeed = int(seed)
         status = AllChem.EmbedMolecule(molecule, params)
         if int(status) != 0:
-            return _PreparedMoleculeFeatureResult(feature=None, failure_reason='zero_conformer')
-    except Exception:
-        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='embed_exception')
+            return _PreparedMoleculeFeatureResult(
+                feature=None,
+                failure_reason='zero_conformer',
+                failure_detail=f'EmbedMolecule returned status={status}',
+            )
+    except Exception as exc:
+        return _PreparedMoleculeFeatureResult(
+            feature=None,
+            failure_reason='embed_exception',
+            failure_detail=f'{type(exc).__name__}: {exc}',
+        )
 
     if molecule.GetNumConformers() <= 0:
-        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='zero_conformer')
+        return _PreparedMoleculeFeatureResult(
+            feature=None,
+            failure_reason='zero_conformer',
+            failure_detail='GetNumConformers() <= 0 after EmbedMolecule',
+        )
 
     coordinates = np.asarray(molecule.GetConformer(0).GetPositions(), dtype=np.float32)
     atoms = [atom.GetSymbol() for atom in molecule.GetAtoms()]
     if len(atoms) != coordinates.shape[0]:
         raise ValueError('DrugCLIP molecule atom labels and coordinates must have matching lengths')
     if not atoms:
-        return _PreparedMoleculeFeatureResult(feature=None, failure_reason='empty_atom_list')
+        return _PreparedMoleculeFeatureResult(
+            feature=None,
+            failure_reason='empty_atom_list',
+            failure_detail='Prepared conformer contains zero atoms',
+        )
 
     coordinates = coordinates - coordinates.mean(axis=0)
     return _PreparedMoleculeFeatureResult(
@@ -356,6 +380,8 @@ class DrugCLIPScorer:
         self._mol_embedding_cache: OrderedDict[str, torch.Tensor] = OrderedDict()
         self._pocket_embedding_cache: OrderedDict[int, torch.Tensor] = OrderedDict()
         self.last_score_stats = self._empty_last_score_stats()
+        self.last_failure_examples: list[dict[str, str]] = []
+        self.last_failure_detail_counts: dict[str, int] = {}
 
     @staticmethod
     def _empty_last_score_stats():
@@ -399,7 +425,9 @@ class DrugCLIPScorer:
         while len(cache) > max_size:
             cache.popitem(last=False)
 
-    def _encode_missing_molecules(self, smiles_list: list[str]) -> tuple[dict[str, torch.Tensor | None], dict[str, int]]:
+    def _encode_missing_molecules(
+        self, smiles_list: list[str]
+    ) -> tuple[dict[str, torch.Tensor | None], dict[str, int | float], dict[str, object]]:
         outputs = {}
         stats = {
             'drugclip_molecule_cache_hit_count': 0,
@@ -413,6 +441,8 @@ class DrugCLIPScorer:
             'drugclip_fail_zero_conformer_count': 0,
             'drugclip_fail_empty_atom_list_count': 0,
         }
+        failure_examples: list[dict[str, str]] = []
+        failure_detail_counter: Counter[str] = Counter()
         pending_smiles = []
         pending_features = []
         for smiles in smiles_list:
@@ -436,8 +466,18 @@ class DrugCLIPScorer:
                 failure_reason = feature_result.failure_reason
                 if failure_reason is None:
                     raise ValueError('DrugCLIP molecule feature preparation failed without a failure reason')
+                failure_detail = feature_result.failure_detail or failure_reason
                 stats['drugclip_unique_smiles_failure_count'] += 1
                 stats[f'drugclip_fail_{failure_reason}_count'] += 1
+                failure_detail_counter[failure_detail] += 1
+                if len(failure_examples) < 5:
+                    failure_examples.append(
+                        {
+                            'smiles': smiles,
+                            'reason': failure_reason,
+                            'detail': failure_detail,
+                        }
+                    )
                 outputs[smiles] = None
                 continue
             pending_smiles.append(smiles)
@@ -468,7 +508,11 @@ class DrugCLIPScorer:
                 )
                 outputs[smiles] = embedding
                 stats['drugclip_unique_smiles_success_count'] += 1
-        return outputs, stats
+        debug = {
+            'failure_examples': failure_examples,
+            'failure_detail_counts': dict(failure_detail_counter),
+        }
+        return outputs, stats, debug
 
     def _pocket_cache_key(self, pocket_entry: dict) -> int:
         if pocket_entry.get('lmdb_key') is not None:
@@ -540,14 +584,31 @@ class DrugCLIPScorer:
             )
         if not smiles_list:
             self.last_score_stats = self._empty_last_score_stats()
+            self.last_failure_examples = []
+            self.last_failure_detail_counts = {}
             return []
 
         self.last_score_stats = self._empty_last_score_stats()
+        self.last_failure_examples = []
+        self.last_failure_detail_counts = {}
         self.last_score_stats['drugclip_input_count'] = int(len(smiles_list))
         unique_smiles = list(dict.fromkeys(smiles_list))
         self.last_score_stats['drugclip_unique_smiles_count'] = int(len(unique_smiles))
-        molecule_embeddings, molecule_stats = self._encode_missing_molecules(unique_smiles)
+        molecule_embeddings, molecule_stats, molecule_debug = self._encode_missing_molecules(unique_smiles)
         self.last_score_stats.update(molecule_stats)
+        self.last_failure_examples = list(molecule_debug['failure_examples'])
+        self.last_failure_detail_counts = dict(molecule_debug['failure_detail_counts'])
+        if self.last_failure_detail_counts:
+            top_failure_details = sorted(
+                self.last_failure_detail_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:5]
+            logger.info(
+                'DrugCLIP molecule prep unique_failures=%d top_failure_details=%s failure_examples=%s',
+                int(self.last_score_stats['drugclip_unique_smiles_failure_count']),
+                top_failure_details,
+                self.last_failure_examples,
+            )
 
         unique_pocket_entries = []
         seen_pocket_keys = set()
