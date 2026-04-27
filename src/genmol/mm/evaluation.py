@@ -3,7 +3,7 @@ import random
 from dataclasses import asdict
 
 from genmol.mm.docking import summarize_docking_records
-from genmol.rl.reward import MolecularReward
+from genmol.mm.reward import MolecularReward
 
 
 def order_preserving_unique(items):
@@ -81,6 +81,7 @@ def summarize_reward_records(records):
         'qed_mean': nanmean([record.qed for record in records]),
         'sa_mean': nanmean([record.sa for record in records]),
         'sa_score_mean': nanmean([record.sa_score for record in records]),
+        'drugclip_score_mean': nanmean([record.drugclip_score for record in records]),
         'soft_reward_mean': nanmean([record.soft_reward for record in records]),
     }
 
@@ -132,6 +133,7 @@ def build_rows(entries, specs, rollout, reward_records, docking_records_by_mode=
             'qed': record.qed,
             'sa': record.sa,
             'sa_score': record.sa_score,
+            'drugclip_score': record.drugclip_score,
             'soft_reward': record.soft_reward,
         }
         if docking_records_by_mode is not None:
@@ -174,7 +176,7 @@ class PocketPrefixEvaluationKernel:
 
     def summarize(self, smiles_list, entries=None):
         official_metrics = self.metric_suite.summarize(smiles_list)
-        reward_records = self.reward_model.score(smiles_list)
+        reward_records = self.reward_model.score(smiles_list, pocket_entries=entries)
         reward_metrics = summarize_reward_records(reward_records)
         docking_metrics = None
         docking_records = None

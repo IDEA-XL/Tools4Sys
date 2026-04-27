@@ -14,6 +14,13 @@ from accelerate.utils import set_seed
 
 from genmol.mm.crossdocked import load_crossdocked_manifest
 from genmol.mm.policy import PocketPrefixCpGRPOPolicy
+from genmol.mm.reward import (
+    MolecularReward,
+    compute_internal_diversity,
+    compute_internal_diversity_loo_credits,
+    normalize_molecular_reward_weights,
+)
+from genmol.mm.utils import DrugCLIPConfig
 from genmol.rl.cpgrpo import (
     VALID_GROUP_REWRAD_CREDITS,
     VALID_SGRPO_HIERARCHIES,
@@ -23,12 +30,6 @@ from genmol.rl.cpgrpo import (
     compute_sgrpo_advantages,
     validate_reward_threshold_names,
     split_tensor_dict,
-)
-from genmol.rl.reward import (
-    MolecularReward,
-    compute_internal_diversity,
-    compute_internal_diversity_loo_credits,
-    normalize_molecular_reward_weights,
 )
 from genmol.rl.specs import (
     deserialize_specs,
@@ -111,6 +112,7 @@ class PocketPrefixTrainConfig:
     hierarchy: str = 'advantage_sum'
     qed: float | None = None
     sa_score: float | None = None
+    drugclip_score: float | None = None
     individual_reward_thresholds: dict[str, float | None] = field(default_factory=dict)
     group_rewrad_credit: str = 'broadcast'
     group_rewrad_credit_temperature: float = 1.0
@@ -118,6 +120,12 @@ class PocketPrefixTrainConfig:
     split: str = 'train'
     crossdocked_lmdb_path: str = ''
     crossdocked_split_path: str = ''
+    drugclip_checkpoint_path: str | None = None
+    drugclip_batch_size: int = 64
+    drugclip_max_pocket_atoms: int = 256
+    drugclip_num_conformers: int = 1
+    drugclip_conformer_num_workers: int = 1
+    drugclip_use_fp16: bool = True
     pocket_encoder: dict = field(default_factory=dict)
     conditioning: dict = field(default_factory=dict)
 
@@ -175,8 +183,22 @@ def load_config(path):
         {
             'qed': config.qed,
             'sa_score': config.sa_score,
+            'drugclip_score': config.drugclip_score,
         }
     )
+    if config.rollout_reward_weights['drugclip_score'] > 0.0:
+        if not config.crossdocked_lmdb_path:
+            raise ValueError('crossdocked_lmdb_path is required when drugclip_score reward weight is positive')
+        if not config.drugclip_checkpoint_path:
+            raise ValueError('drugclip_checkpoint_path is required when drugclip_score reward weight is positive')
+        if config.drugclip_batch_size <= 0:
+            raise ValueError('drugclip_batch_size must be positive')
+        if config.drugclip_max_pocket_atoms <= 0:
+            raise ValueError('drugclip_max_pocket_atoms must be positive')
+        if config.drugclip_num_conformers <= 0:
+            raise ValueError('drugclip_num_conformers must be positive')
+        if config.drugclip_conformer_num_workers <= 0:
+            raise ValueError('drugclip_conformer_num_workers must be positive')
     config.individual_reward_thresholds = validate_reward_threshold_names(
         config.individual_reward_thresholds,
         GENMOL_SGRPO_THRESHOLD_REWARD_NAMES,
@@ -297,6 +319,9 @@ class PocketPrefixCpGRPOTrainer:
         ensure_exists(config.init_ckpt_path, 'init checkpoint')
         ensure_exists(config.ref_ckpt_path, 'reference checkpoint')
         ensure_exists(config.manifest_path, 'manifest')
+        if config.rollout_reward_weights['drugclip_score'] > 0.0:
+            ensure_exists(config.crossdocked_lmdb_path, 'CrossDocked LMDB')
+            ensure_exists(config.drugclip_checkpoint_path, 'DrugCLIP checkpoint')
 
         set_seed(config.seed, device_specific=True)
 
@@ -330,7 +355,23 @@ class PocketPrefixCpGRPOTrainer:
             scheduler,
         )
 
-        self.reward_model = MolecularReward(reward_weights=self.config.rollout_reward_weights)
+        drugclip_config = None
+        if self.config.rollout_reward_weights['drugclip_score'] > 0.0:
+            drugclip_config = DrugCLIPConfig(
+                checkpoint_path=str(self.config.drugclip_checkpoint_path),
+                crossdocked_lmdb_path=str(self.config.crossdocked_lmdb_path),
+                device=str(self.device),
+                batch_size=int(self.config.drugclip_batch_size),
+                max_pocket_atoms=int(self.config.drugclip_max_pocket_atoms),
+                num_conformers=int(self.config.drugclip_num_conformers),
+                conformer_num_workers=int(self.config.drugclip_conformer_num_workers),
+                use_fp16=bool(self.config.drugclip_use_fp16),
+                seed=int(self.config.seed),
+            )
+        self.reward_model = MolecularReward(
+            reward_weights=self.config.rollout_reward_weights,
+            drugclip_config=drugclip_config,
+        )
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.text_logs_path = os.path.join(output_dir, 'completions.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
@@ -390,7 +431,11 @@ class PocketPrefixCpGRPOTrainer:
             'rewards/qed_mean': float(metadata['rewards/qed_mean']),
             'rewards/sa_mean': float(metadata['rewards/sa_mean']),
             'rewards/sa_score_mean': float(metadata['rewards/sa_score_mean']),
+            'rewards/drugclip_score_mean': float(metadata['rewards/drugclip_score_mean']),
             'rewards/soft_mean': float(metadata['rewards/soft_mean']),
+            'reward_score_sec_total': float(metadata['reward_score_sec_total']),
+            'reward_base_score_sec': float(metadata['reward_base_score_sec']),
+            'reward_drugclip_score_sec': float(metadata['reward_drugclip_score_sec']),
         }
         if 'rollout_advantage_mean' in metadata:
             self._last_reward_metrics[mode]['rollout_advantage_mean'] = float(metadata['rollout_advantage_mean'])
@@ -425,7 +470,11 @@ class PocketPrefixCpGRPOTrainer:
         bucket['rewards/qed_mean'].append(float(metadata['rewards/qed_mean']))
         bucket['rewards/sa_mean'].append(float(metadata['rewards/sa_mean']))
         bucket['rewards/sa_score_mean'].append(float(metadata['rewards/sa_score_mean']))
+        bucket['rewards/drugclip_score_mean'].append(float(metadata['rewards/drugclip_score_mean']))
         bucket['rewards/soft_mean'].append(float(metadata['rewards/soft_mean']))
+        bucket['reward_score_sec_total'].append(float(metadata['reward_score_sec_total']))
+        bucket['reward_base_score_sec'].append(float(metadata['reward_base_score_sec']))
+        bucket['reward_drugclip_score_sec'].append(float(metadata['reward_drugclip_score_sec']))
         if 'rollout_advantage_mean' in metadata:
             bucket['rollout_advantage_mean'].append(float(metadata['rollout_advantage_mean']))
         if 'group_advantage_mean' in metadata:
@@ -601,7 +650,7 @@ class PocketPrefixCpGRPOTrainer:
             seed=rollout_seed,
         )
 
-        reward_records = self.reward_model.score(rollout.smiles)
+        reward_records = self.reward_model.score(rollout.smiles, pocket_entries=local_pocket_entries)
         local_rewards = torch.tensor([record.reward for record in reward_records], device=self.device, dtype=torch.float32)
         global_rewards = self.accelerator.gather(local_rewards).detach()
         global_group_rewards = None
@@ -727,6 +776,10 @@ class PocketPrefixCpGRPOTrainer:
             [float('nan') if record.sa_score is None else float(record.sa_score) for record in reward_records],
             device=self.device,
         )
+        local_drugclip_score = torch.tensor(
+            [float('nan') if record.drugclip_score is None else float(record.drugclip_score) for record in reward_records],
+            device=self.device,
+        )
         local_soft = torch.tensor(
             [float('nan') if record.soft_reward is None else float(record.soft_reward) for record in reward_records],
             device=self.device,
@@ -738,6 +791,7 @@ class PocketPrefixCpGRPOTrainer:
         gathered_qed = self.accelerator.gather(local_qed)
         gathered_sa = self.accelerator.gather(local_sa)
         gathered_sa_score = self.accelerator.gather(local_sa_score)
+        gathered_drugclip_score = self.accelerator.gather(local_drugclip_score)
         gathered_soft = self.accelerator.gather(local_soft)
         gathered_lengths = self.accelerator.gather(local_lengths)
         gathered_advantages = self.accelerator.gather(local_advantages.detach())
@@ -790,6 +844,7 @@ class PocketPrefixCpGRPOTrainer:
                     'qed': record.qed,
                     'sa': record.sa,
                     'sa_score': record.sa_score,
+                    'drugclip_score': record.drugclip_score,
                     'soft_reward': record.soft_reward,
                     'is_valid': record.is_valid,
                     'alert_hit': record.alert_hit,
@@ -809,7 +864,11 @@ class PocketPrefixCpGRPOTrainer:
             'rewards/qed_mean': _nanmean(gathered_qed),
             'rewards/sa_mean': _nanmean(gathered_sa),
             'rewards/sa_score_mean': _nanmean(gathered_sa_score),
+            'rewards/drugclip_score_mean': _nanmean(gathered_drugclip_score),
             'rewards/soft_mean': _nanmean(gathered_soft),
+            'reward_score_sec_total': float(self.reward_model.last_stats['reward_score_sec_total']),
+            'reward_base_score_sec': float(self.reward_model.last_stats['reward_base_score_sec']),
+            'reward_drugclip_score_sec': float(self.reward_model.last_stats['reward_drugclip_score_sec']),
         }
         metadata.update(extra_advantage_metrics)
         self._record_reward_metrics(mode, metadata)
@@ -918,7 +977,11 @@ class PocketPrefixCpGRPOTrainer:
             'rewards/qed_mean': _reward_metric('rewards/qed_mean'),
             'rewards/sa_mean': _reward_metric('rewards/sa_mean'),
             'rewards/sa_score_mean': _reward_metric('rewards/sa_score_mean'),
+            'rewards/drugclip_score_mean': _reward_metric('rewards/drugclip_score_mean'),
             'rewards/soft_mean': _reward_metric('rewards/soft_mean'),
+            'reward_score_sec_total': _reward_metric('reward_score_sec_total'),
+            'reward_base_score_sec': _reward_metric('reward_base_score_sec'),
+            'reward_drugclip_score_sec': _reward_metric('reward_drugclip_score_sec'),
             'ratio_mean': _aggregate_scalar_list(bucket['ratio_mean']),
             'clip_ratio/low_mean': _aggregate_scalar_list(bucket['clip_ratio/low_mean']),
             'clip_ratio/low_min': _aggregate_scalar_list(bucket['clip_ratio/low_min']),
@@ -969,7 +1032,9 @@ class PocketPrefixCpGRPOTrainer:
                 'clip_ratio/low_mean=%.6f clip_ratio/low_min=%.6f clip_ratio/high_mean=%.6f '
                 'clip_ratio/high_max=%.6f clip_ratio/region_mean=%.6f completion_length=%.6f '
                 'zero_std_ratio=%.6f valid_fraction=%.6f alert_hit_fraction=%.6f invalid_fraction=%.6f '
-                'rewards/qed_mean=%.6f rewards/sa_mean=%.6f rewards/sa_score_mean=%.6f rewards/soft_mean=%.6f '
+                'rewards/qed_mean=%.6f rewards/sa_mean=%.6f rewards/sa_score_mean=%.6f '
+                'rewards/drugclip_score_mean=%.6f rewards/soft_mean=%.6f '
+                'reward_score_sec_total=%.6f reward_base_score_sec=%.6f reward_drugclip_score_sec=%.6f '
                 'grad_norm=%.6f lr=%.8f%s',
                 split,
                 metrics['step'],
@@ -990,7 +1055,11 @@ class PocketPrefixCpGRPOTrainer:
                 metrics['rewards/qed_mean'],
                 metrics['rewards/sa_mean'],
                 metrics['rewards/sa_score_mean'],
+                metrics['rewards/drugclip_score_mean'],
                 metrics['rewards/soft_mean'],
+                metrics['reward_score_sec_total'],
+                metrics['reward_base_score_sec'],
+                metrics['reward_drugclip_score_sec'],
                 metrics['grad_norm'],
                 metrics['lr'],
                 (
