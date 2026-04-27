@@ -9,23 +9,47 @@ import os
 import sys
 from dataclasses import dataclass
 
-import matplotlib
-import torch
-import yaml
-
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
 sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
-from genmol.rl.policy import GenMolCpGRPOPolicy
-from genmol.rl.reward import MolecularReward, compute_internal_diversity, normalize_molecular_reward_weights
-from genmol.rl.specs import sample_group_specs
-from genmol.rl.trainer import write_jsonl
-
 
 logger = logging.getLogger(__name__)
+_PYPLOT = None
+_TORCH = None
+_YAML = None
+
+
+def _get_yaml():
+    global _YAML
+    if _YAML is None:
+        logger.info('Importing yaml')
+        import yaml
+
+        _YAML = yaml
+    return _YAML
+
+
+def _get_torch():
+    global _TORCH
+    if _TORCH is None:
+        logger.info('Importing torch')
+        import torch
+
+        _TORCH = torch
+    return _TORCH
+
+
+def _get_pyplot():
+    global _PYPLOT
+    if _PYPLOT is None:
+        logger.info('Importing matplotlib.pyplot')
+        import matplotlib
+
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        _PYPLOT = plt
+    return _PYPLOT
 
 
 @dataclass(frozen=True)
@@ -122,6 +146,8 @@ def _format_sweep_label(sweep_axis, value):
 
 
 def load_config(path):
+    yaml = _get_yaml()
+    logger.info('Loading config from %s', path)
     with open(path) as handle:
         raw = yaml.safe_load(handle)
     experiments = [EvalExperimentConfig(**item) for item in raw.pop('experiments')]
@@ -168,6 +194,8 @@ def load_config(path):
             raise ValueError('experiment name must be non-empty')
         if not os.path.exists(experiment.checkpoint_path):
             raise FileNotFoundError(f'checkpoint not found: {experiment.checkpoint_path}')
+        from genmol.rl.reward import normalize_molecular_reward_weights
+
         normalize_molecular_reward_weights(
             {
                 'qed': experiment.qed,
@@ -178,6 +206,7 @@ def load_config(path):
 
 
 def resolve_device(device_name):
+    torch = _get_torch()
     if device_name == 'cuda':
         if not torch.cuda.is_available():
             raise RuntimeError('device=cuda requested but CUDA is not available')
@@ -206,6 +235,7 @@ def _display_name(experiment):
 
 
 def _plot_metric_tradeoff(results, experiments, sweep_values, sweep_axis, x_key, x_label, y_key, y_label, title, output_path):
+    plt = _get_pyplot()
     experiment_order = {experiment.name: idx for idx, experiment in enumerate(experiments)}
     sweep_order = {float(value): idx for idx, value in enumerate(sweep_values)}
 
@@ -321,6 +351,11 @@ def _build_markdown(config, results):
 
 
 def evaluate_model(config, experiment, device):
+    from genmol.rl.policy import GenMolCpGRPOPolicy
+    from genmol.rl.reward import MolecularReward, compute_internal_diversity
+    from genmol.rl.specs import sample_group_specs
+    from genmol.rl.trainer import write_jsonl
+
     logger.info('Evaluating %s', experiment.name)
     policy = GenMolCpGRPOPolicy(
         checkpoint_path=experiment.checkpoint_path,
@@ -430,6 +465,7 @@ def evaluate_model(config, experiment, device):
     finally:
         reward_model.close()
         del policy
+        torch = _get_torch()
         if device.type == 'cuda':
             torch.cuda.empty_cache()
 
@@ -442,6 +478,7 @@ def main():
     args = parser.parse_args()
 
     configure_logging()
+    logger.info('Starting de novo eval with config=%s', args.config)
     config = load_config(args.config)
     device = resolve_device(config.device)
 
