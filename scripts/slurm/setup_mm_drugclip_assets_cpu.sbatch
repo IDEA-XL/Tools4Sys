@@ -83,7 +83,7 @@ fi
 
 if [[ ! -s "${DRUGCLIP_CHECKPOINT_PATH}" ]]; then
   mkdir -p "$(dirname "${DRUGCLIP_CHECKPOINT_PATH}")"
-  python -m gdown "${DRUGCLIP_CHECKPOINT_ID}" -O "${DRUGCLIP_CHECKPOINT_PATH}"
+  python -m gdown --continue "${DRUGCLIP_CHECKPOINT_ID}" -O "${DRUGCLIP_CHECKPOINT_PATH}"
 fi
 
 cd "${REPO_DIR}"
