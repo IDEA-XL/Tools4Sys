@@ -24,6 +24,7 @@ MIHOMO_DIR=/public/home/xinwuye/mihomo
 source ${CONDA_BASE}/etc/profile.d/conda.sh
 export PATH=/opt/gridview/slurm/bin:$PATH
 export CONDA_NOTICES_DISABLE=1
+export DRUGCLIP_CHECKPOINT_PATH
 
 mkdir -p "${DRUGCLIP_RUN_DIR}/logs"
 
