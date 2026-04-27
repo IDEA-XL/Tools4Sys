@@ -448,6 +448,13 @@ class PocketPrefixCpGRPOTrainer:
             'drugclip_score_success_count': float(metadata['drugclip_score_success_count']),
             'drugclip_score_failure_count': float(metadata['drugclip_score_failure_count']),
             'drugclip_score_success_fraction': float(metadata['drugclip_score_success_fraction']),
+            'drugclip_pocket_cache_hit_count': float(metadata['drugclip_pocket_cache_hit_count']),
+            'drugclip_pocket_cache_miss_count': float(metadata['drugclip_pocket_cache_miss_count']),
+            'drugclip_molecule_prepare_sec': float(metadata['drugclip_molecule_prepare_sec']),
+            'drugclip_molecule_encode_sec': float(metadata['drugclip_molecule_encode_sec']),
+            'drugclip_pocket_prepare_sec': float(metadata['drugclip_pocket_prepare_sec']),
+            'drugclip_pocket_encode_sec': float(metadata['drugclip_pocket_encode_sec']),
+            'drugclip_score_dot_sec': float(metadata['drugclip_score_dot_sec']),
             'drugclip_fail_smiles_parse_count': float(metadata['drugclip_fail_smiles_parse_count']),
             'drugclip_fail_embed_exception_count': float(metadata['drugclip_fail_embed_exception_count']),
             'drugclip_fail_zero_conformer_count': float(metadata['drugclip_fail_zero_conformer_count']),
@@ -503,6 +510,13 @@ class PocketPrefixCpGRPOTrainer:
         bucket['drugclip_score_success_count'].append(float(metadata['drugclip_score_success_count']))
         bucket['drugclip_score_failure_count'].append(float(metadata['drugclip_score_failure_count']))
         bucket['drugclip_score_success_fraction'].append(float(metadata['drugclip_score_success_fraction']))
+        bucket['drugclip_pocket_cache_hit_count'].append(float(metadata['drugclip_pocket_cache_hit_count']))
+        bucket['drugclip_pocket_cache_miss_count'].append(float(metadata['drugclip_pocket_cache_miss_count']))
+        bucket['drugclip_molecule_prepare_sec'].append(float(metadata['drugclip_molecule_prepare_sec']))
+        bucket['drugclip_molecule_encode_sec'].append(float(metadata['drugclip_molecule_encode_sec']))
+        bucket['drugclip_pocket_prepare_sec'].append(float(metadata['drugclip_pocket_prepare_sec']))
+        bucket['drugclip_pocket_encode_sec'].append(float(metadata['drugclip_pocket_encode_sec']))
+        bucket['drugclip_score_dot_sec'].append(float(metadata['drugclip_score_dot_sec']))
         bucket['drugclip_fail_smiles_parse_count'].append(float(metadata['drugclip_fail_smiles_parse_count']))
         bucket['drugclip_fail_embed_exception_count'].append(float(metadata['drugclip_fail_embed_exception_count']))
         bucket['drugclip_fail_zero_conformer_count'].append(float(metadata['drugclip_fail_zero_conformer_count']))
@@ -917,6 +931,13 @@ class PocketPrefixCpGRPOTrainer:
             'drugclip_score_success_count': float(self.reward_model.last_stats['drugclip_score_success_count']),
             'drugclip_score_failure_count': float(self.reward_model.last_stats['drugclip_score_failure_count']),
             'drugclip_score_success_fraction': float(self.reward_model.last_stats['drugclip_score_success_fraction']),
+            'drugclip_pocket_cache_hit_count': float(self.reward_model.last_stats['drugclip_pocket_cache_hit_count']),
+            'drugclip_pocket_cache_miss_count': float(self.reward_model.last_stats['drugclip_pocket_cache_miss_count']),
+            'drugclip_molecule_prepare_sec': float(self.reward_model.last_stats['drugclip_molecule_prepare_sec']),
+            'drugclip_molecule_encode_sec': float(self.reward_model.last_stats['drugclip_molecule_encode_sec']),
+            'drugclip_pocket_prepare_sec': float(self.reward_model.last_stats['drugclip_pocket_prepare_sec']),
+            'drugclip_pocket_encode_sec': float(self.reward_model.last_stats['drugclip_pocket_encode_sec']),
+            'drugclip_score_dot_sec': float(self.reward_model.last_stats['drugclip_score_dot_sec']),
             'drugclip_fail_smiles_parse_count': float(self.reward_model.last_stats['drugclip_fail_smiles_parse_count']),
             'drugclip_fail_embed_exception_count': float(
                 self.reward_model.last_stats['drugclip_fail_embed_exception_count']
@@ -1048,6 +1069,13 @@ class PocketPrefixCpGRPOTrainer:
             'drugclip_score_success_count': _reward_metric('drugclip_score_success_count'),
             'drugclip_score_failure_count': _reward_metric('drugclip_score_failure_count'),
             'drugclip_score_success_fraction': _reward_metric('drugclip_score_success_fraction'),
+            'drugclip_pocket_cache_hit_count': _reward_metric('drugclip_pocket_cache_hit_count'),
+            'drugclip_pocket_cache_miss_count': _reward_metric('drugclip_pocket_cache_miss_count'),
+            'drugclip_molecule_prepare_sec': _reward_metric('drugclip_molecule_prepare_sec'),
+            'drugclip_molecule_encode_sec': _reward_metric('drugclip_molecule_encode_sec'),
+            'drugclip_pocket_prepare_sec': _reward_metric('drugclip_pocket_prepare_sec'),
+            'drugclip_pocket_encode_sec': _reward_metric('drugclip_pocket_encode_sec'),
+            'drugclip_score_dot_sec': _reward_metric('drugclip_score_dot_sec'),
             'drugclip_fail_smiles_parse_count': _reward_metric('drugclip_fail_smiles_parse_count'),
             'drugclip_fail_embed_exception_count': _reward_metric('drugclip_fail_embed_exception_count'),
             'drugclip_fail_zero_conformer_count': _reward_metric('drugclip_fail_zero_conformer_count'),
@@ -1143,11 +1171,18 @@ class PocketPrefixCpGRPOTrainer:
                         f" drugclip_unique_pocket_count={metrics['drugclip_unique_pocket_count']:.0f}"
                         f" drugclip_molecule_cache_hit_count={metrics['drugclip_molecule_cache_hit_count']:.0f}"
                         f" drugclip_molecule_cache_miss_count={metrics['drugclip_molecule_cache_miss_count']:.0f}"
+                        f" drugclip_pocket_cache_hit_count={metrics['drugclip_pocket_cache_hit_count']:.0f}"
+                        f" drugclip_pocket_cache_miss_count={metrics['drugclip_pocket_cache_miss_count']:.0f}"
                         f" drugclip_unique_smiles_success_count={metrics['drugclip_unique_smiles_success_count']:.0f}"
                         f" drugclip_unique_smiles_failure_count={metrics['drugclip_unique_smiles_failure_count']:.0f}"
                         f" drugclip_score_success_count={metrics['drugclip_score_success_count']:.0f}"
                         f" drugclip_score_failure_count={metrics['drugclip_score_failure_count']:.0f}"
                         f" drugclip_score_success_fraction={metrics['drugclip_score_success_fraction']:.6f}"
+                        f" drugclip_molecule_prepare_sec={metrics['drugclip_molecule_prepare_sec']:.6f}"
+                        f" drugclip_molecule_encode_sec={metrics['drugclip_molecule_encode_sec']:.6f}"
+                        f" drugclip_pocket_prepare_sec={metrics['drugclip_pocket_prepare_sec']:.6f}"
+                        f" drugclip_pocket_encode_sec={metrics['drugclip_pocket_encode_sec']:.6f}"
+                        f" drugclip_score_dot_sec={metrics['drugclip_score_dot_sec']:.6f}"
                         f" drugclip_fail_smiles_parse_count={metrics['drugclip_fail_smiles_parse_count']:.0f}"
                         f" drugclip_fail_embed_exception_count={metrics['drugclip_fail_embed_exception_count']:.0f}"
                         f" drugclip_fail_zero_conformer_count={metrics['drugclip_fail_zero_conformer_count']:.0f}"

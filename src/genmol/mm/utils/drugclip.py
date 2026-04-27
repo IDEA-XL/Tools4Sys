@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import pickle
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
@@ -228,21 +229,17 @@ def _prepare_molecule_features(
         return _PreparedMoleculeFeatureResult(feature=None, failure_reason='smiles_parse')
 
     try:
-        molecule = Chem.AddHs(molecule)
-        AllChem.EmbedMultipleConfs(
-            molecule,
-            numConfs=int(num_conformers),
-            numThreads=int(conformer_num_workers),
-            randomSeed=int(seed),
-            pruneRmsThresh=1.0,
-            maxAttempts=10000,
-            useRandomCoords=False,
-        )
-        try:
-            AllChem.MMFFOptimizeMoleculeConfs(molecule, numThreads=int(conformer_num_workers))
-        except Exception:
-            pass
-        molecule = Chem.RemoveHs(molecule)
+        if int(num_conformers) != 1:
+            raise ValueError(
+                'DrugCLIP ligand ETKDG preprocessing currently supports exactly one conformer; '
+                f'got num_conformers={num_conformers}'
+            )
+        molecule = Chem.AddHs(molecule, addCoords=True)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = int(seed)
+        status = AllChem.EmbedMolecule(molecule, params)
+        if int(status) != 0:
+            return _PreparedMoleculeFeatureResult(feature=None, failure_reason='zero_conformer')
     except Exception:
         return _PreparedMoleculeFeatureResult(feature=None, failure_reason='embed_exception')
 
@@ -373,6 +370,13 @@ class DrugCLIPScorer:
             'drugclip_score_success_count': 0,
             'drugclip_score_failure_count': 0,
             'drugclip_score_success_fraction': 0.0,
+            'drugclip_pocket_cache_hit_count': 0,
+            'drugclip_pocket_cache_miss_count': 0,
+            'drugclip_molecule_prepare_sec': 0.0,
+            'drugclip_molecule_encode_sec': 0.0,
+            'drugclip_pocket_prepare_sec': 0.0,
+            'drugclip_pocket_encode_sec': 0.0,
+            'drugclip_score_dot_sec': 0.0,
             'drugclip_fail_smiles_parse_count': 0,
             'drugclip_fail_embed_exception_count': 0,
             'drugclip_fail_zero_conformer_count': 0,
@@ -402,6 +406,8 @@ class DrugCLIPScorer:
             'drugclip_molecule_cache_miss_count': 0,
             'drugclip_unique_smiles_success_count': 0,
             'drugclip_unique_smiles_failure_count': 0,
+            'drugclip_molecule_prepare_sec': 0.0,
+            'drugclip_molecule_encode_sec': 0.0,
             'drugclip_fail_smiles_parse_count': 0,
             'drugclip_fail_embed_exception_count': 0,
             'drugclip_fail_zero_conformer_count': 0,
@@ -417,6 +423,7 @@ class DrugCLIPScorer:
                 outputs[smiles] = cached
                 continue
             stats['drugclip_molecule_cache_miss_count'] += 1
+            prepare_start = time.perf_counter()
             feature_result = _prepare_molecule_features(
                 smiles,
                 num_conformers=self.config.num_conformers,
@@ -424,6 +431,7 @@ class DrugCLIPScorer:
                 seed=self.config.seed + _stable_uint32(smiles),
                 dictionary=self.mol_dictionary,
             )
+            stats['drugclip_molecule_prepare_sec'] += time.perf_counter() - prepare_start
             if feature_result.feature is None:
                 failure_reason = feature_result.failure_reason
                 if failure_reason is None:
@@ -443,12 +451,14 @@ class DrugCLIPScorer:
                 self.mol_dictionary.pad(),
                 self.device,
             )
+            encode_start = time.perf_counter()
             with torch.no_grad():
                 embeddings = self.model.encode_molecules(
                     mol_src_tokens=mol_src_tokens,
                     mol_src_distance=mol_src_distance,
                     mol_src_edge_type=mol_src_edge_type,
                 )
+            stats['drugclip_molecule_encode_sec'] += time.perf_counter() - encode_start
             for smiles, embedding in zip(batch_smiles, embeddings):
                 self._put_in_cache(
                     self._mol_embedding_cache,
@@ -465,17 +475,26 @@ class DrugCLIPScorer:
             return int(pocket_entry['lmdb_key'])
         return int(pocket_entry['source_index'])
 
-    def _encode_missing_pockets(self, pocket_entries: list[dict]) -> dict[int, torch.Tensor]:
+    def _encode_missing_pockets(self, pocket_entries: list[dict]) -> tuple[dict[int, torch.Tensor], dict[str, int | float]]:
         outputs = {}
+        stats = {
+            'drugclip_pocket_cache_hit_count': 0,
+            'drugclip_pocket_cache_miss_count': 0,
+            'drugclip_pocket_prepare_sec': 0.0,
+            'drugclip_pocket_encode_sec': 0.0,
+        }
         pending_keys = []
         pending_features = []
         for pocket_entry in pocket_entries:
             cache_key = self._pocket_cache_key(pocket_entry)
             cached = self._get_from_cache(self._pocket_embedding_cache, cache_key)
             if cached is not None:
+                stats['drugclip_pocket_cache_hit_count'] += 1
                 outputs[cache_key] = cached
                 continue
+            stats['drugclip_pocket_cache_miss_count'] += 1
             raw_entry = self.raw_entry_store.get_entry(pocket_entry)
+            prepare_start = time.perf_counter()
             feature = _prepare_pocket_features(
                 raw_entry,
                 max_pocket_atoms=self.config.max_pocket_atoms,
@@ -483,6 +502,7 @@ class DrugCLIPScorer:
                 source_index=int(pocket_entry['source_index']),
                 dictionary=self.pocket_dictionary,
             )
+            stats['drugclip_pocket_prepare_sec'] += time.perf_counter() - prepare_start
             pending_keys.append(cache_key)
             pending_features.append(feature)
 
@@ -494,12 +514,14 @@ class DrugCLIPScorer:
                 self.pocket_dictionary.pad(),
                 self.device,
             )
+            encode_start = time.perf_counter()
             with torch.no_grad():
                 embeddings = self.model.encode_pockets(
                     pocket_src_tokens=pocket_src_tokens,
                     pocket_src_distance=pocket_src_distance,
                     pocket_src_edge_type=pocket_src_edge_type,
                 )
+            stats['drugclip_pocket_encode_sec'] += time.perf_counter() - encode_start
             for cache_key, embedding in zip(batch_keys, embeddings):
                 self._put_in_cache(
                     self._pocket_embedding_cache,
@@ -508,7 +530,7 @@ class DrugCLIPScorer:
                     self.config.pocket_cache_size,
                 )
                 outputs[cache_key] = embedding
-        return outputs
+        return outputs, stats
 
     def score(self, smiles_list: list[str], pocket_entries: list[dict]) -> list[float | None]:
         if len(smiles_list) != len(pocket_entries):
@@ -536,9 +558,11 @@ class DrugCLIPScorer:
             seen_pocket_keys.add(pocket_key)
             unique_pocket_entries.append(pocket_entry)
         self.last_score_stats['drugclip_unique_pocket_count'] = int(len(unique_pocket_entries))
-        pocket_embeddings = self._encode_missing_pockets(unique_pocket_entries)
+        pocket_embeddings, pocket_stats = self._encode_missing_pockets(unique_pocket_entries)
+        self.last_score_stats.update(pocket_stats)
 
         outputs: list[float | None] = []
+        score_loop_start = time.perf_counter()
         for smiles, pocket_entry in zip(smiles_list, pocket_entries):
             mol_embedding = molecule_embeddings.get(smiles)
             if mol_embedding is None:
@@ -549,6 +573,7 @@ class DrugCLIPScorer:
             score = torch.sum(mol_embedding.float() * pocket_embedding.float()).item()
             self.last_score_stats['drugclip_score_success_count'] += 1
             outputs.append(float(score))
+        self.last_score_stats['drugclip_score_dot_sec'] = time.perf_counter() - score_loop_start
         if self.last_score_stats['drugclip_input_count'] > 0:
             self.last_score_stats['drugclip_score_success_fraction'] = (
                 self.last_score_stats['drugclip_score_success_count'] / self.last_score_stats['drugclip_input_count']
