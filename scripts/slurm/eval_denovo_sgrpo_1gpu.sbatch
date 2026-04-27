@@ -40,4 +40,18 @@ if [[ "${http_proxy:-}${https_proxy:-}${all_proxy:-}" == *"127.0.0.1:7897"* ]]; 
   fi
 fi
 
-python scripts/eval_denovo_sgrpo.py --config "${CONFIG_PATH}"
+echo "[preflight] host=$(hostname) job_id=${SLURM_JOB_ID} config=${CONFIG_PATH}"
+echo "[preflight] python=$(which python)"
+nvidia-smi -L || true
+python - <<'PY'
+import os
+import torch
+
+print(f"[preflight] torch={torch.__version__}", flush=True)
+print(f"[preflight] cuda_available={torch.cuda.is_available()}", flush=True)
+if torch.cuda.is_available():
+    print(f"[preflight] cuda_device_count={torch.cuda.device_count()}", flush=True)
+    print(f"[preflight] cuda_visible_devices={os.environ.get('CUDA_VISIBLE_DEVICES')}", flush=True)
+PY
+
+python -u scripts/eval_denovo_sgrpo.py --config "${CONFIG_PATH}"
