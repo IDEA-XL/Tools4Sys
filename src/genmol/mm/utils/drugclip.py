@@ -14,6 +14,7 @@ import torch
 from genmol.mm.crossdocked import _open_lmdb
 
 logger = logging.getLogger(__name__)
+_MAX_RDKIT_RANDOM_SEED = 2147483647
 
 
 @dataclass(frozen=True)
@@ -149,9 +150,10 @@ class _CrossDockedRawEntryStore:
         return entry
 
 
-def _stable_uint32(text: str) -> int:
+def _stable_int31(text: str) -> int:
     digest = hashlib.sha256(text.encode('utf-8')).digest()
-    return int.from_bytes(digest[:4], byteorder='little', signed=False)
+    raw = int.from_bytes(digest[:4], byteorder='little', signed=False)
+    return raw % _MAX_RDKIT_RANDOM_SEED
 
 
 def _decode_atom_name(atom_name) -> str:
@@ -458,7 +460,7 @@ class DrugCLIPScorer:
                 smiles,
                 num_conformers=self.config.num_conformers,
                 conformer_num_workers=self.config.conformer_num_workers,
-                seed=self.config.seed + _stable_uint32(smiles),
+                seed=(int(self.config.seed) + _stable_int31(smiles)) % _MAX_RDKIT_RANDOM_SEED,
                 dictionary=self.mol_dictionary,
             )
             stats['drugclip_molecule_prepare_sec'] += time.perf_counter() - prepare_start
