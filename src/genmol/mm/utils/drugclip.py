@@ -68,6 +68,15 @@ class _DrugCLIPDictionary:
     def encode(self, token: str) -> int:
         return self._indices.get(token, self.unk())
 
+    def add_symbol(self, token: str) -> int:
+        existing = self._indices.get(token)
+        if existing is not None:
+            return existing
+        index = len(self._tokens)
+        self._tokens.append(token)
+        self._indices[token] = index
+        return index
+
 
 class _CrossDockedRawEntryStore:
     def __init__(self, lmdb_path: str):
@@ -311,6 +320,8 @@ class DrugCLIPScorer:
 
         self.mol_dictionary = _DrugCLIPDictionary.load(vendor_root / 'dict_mol.txt')
         self.pocket_dictionary = _DrugCLIPDictionary.load(vendor_root / 'dict_pkt.txt')
+        self.mol_dictionary.add_symbol('[MASK]')
+        self.pocket_dictionary.add_symbol('[MASK]')
 
         args = build_default_drugclip_args()
         self.model = DrugCLIPEncoderModel(
