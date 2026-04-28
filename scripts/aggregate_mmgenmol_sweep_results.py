@@ -11,10 +11,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+MARKER_CYCLE = ('o', '^', 's', 'D', 'P', 'X', 'v', '<', '>')
+
 sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
-from genmol.rl.reward import sa_to_score
+from genmol.mm.crossdocked import load_crossdocked_manifest
+from genmol.mm.reward import compute_soft_reward, normalize_molecular_reward_weights, sa_to_score
+from genmol.mm.utils import DrugCLIPConfig, DrugCLIPScorer
 
 
 def _read_jsonl(path):
@@ -48,6 +52,26 @@ def _write_jsonl(path, rows):
     with open(path, 'w') as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + '\n')
+
+
+def _require_file(path, label):
+    if not path:
+        raise ValueError(f'{label} is required')
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'{label} not found: {path}')
+
+
+def _build_pocket_entry_index(manifest_path, manifest_split):
+    entries, _ = load_crossdocked_manifest(manifest_path, manifest_split)
+    by_source_index = {}
+    for entry in entries:
+        source_index = int(entry['source_index'])
+        if source_index in by_source_index:
+            raise ValueError(f'Duplicate source_index={source_index} in manifest {manifest_path}')
+        by_source_index[source_index] = entry
+    if not by_source_index:
+        raise ValueError(f'No manifest entries loaded from {manifest_path} for split={manifest_split!r}')
+    return by_source_index
 
 
 def _format_metric(value):
@@ -169,12 +193,14 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
 
     rows_by_source_index = defaultdict(list)
     canonical_smiles_by_row = []
+    source_indices_by_row = []
     for row_idx, row in enumerate(generated_rows):
         if 'source_index' not in row:
             raise ValueError(f'Generated row {row_idx} missing source_index in {generated_rows_path}')
         source_index = int(row['source_index'])
         canonical_smiles = _canonicalize_smiles(row.get('smiles'), chem)
         canonical_smiles_by_row.append(canonical_smiles)
+        source_indices_by_row.append(source_index)
         rows_by_source_index[source_index].append(canonical_smiles)
 
     if len(rows_by_source_index) != args.expected_num_pockets:
@@ -222,11 +248,64 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
     qeds = [qed_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
     sa_values = [sa_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
     sa_scores = [sa_score_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
-    soft_rewards = [
-        0.6 * qed_by_smiles[smiles] + 0.4 * sa_score_by_smiles[smiles]
-        for smiles in canonical_smiles_by_row
-        if smiles is not None
-    ]
+    normalized_reward_weights = normalize_molecular_reward_weights(args.reward_weights)
+
+    drugclip_scores = []
+    if args.drugclip_scorer is not None:
+        active_smiles = []
+        active_pocket_entries = []
+        for canonical_smiles, source_index in zip(canonical_smiles_by_row, source_indices_by_row):
+            if canonical_smiles is None:
+                continue
+            try:
+                pocket_entry = args.pocket_entries_by_source_index[source_index]
+            except KeyError as exc:
+                raise KeyError(
+                    f'Manifest is missing source_index={source_index} required for DrugCLIP offline scoring'
+                ) from exc
+            active_smiles.append(canonical_smiles)
+            active_pocket_entries.append(pocket_entry)
+        drugclip_scores = args.drugclip_scorer.score(active_smiles, active_pocket_entries)
+        if len(drugclip_scores) != len(active_smiles):
+            raise ValueError(
+                'DrugCLIP offline scorer returned mismatched score count: '
+                f'expected {len(active_smiles)}, got {len(drugclip_scores)}'
+            )
+        failed = sum(score is None for score in drugclip_scores)
+        if failed:
+            raise ValueError(
+                f'DrugCLIP offline scorer failed on {failed} / {len(active_smiles)} valid molecules for '
+                f'task_id={task["task_id"]}; last_score_stats={args.drugclip_scorer.last_score_stats}'
+            )
+        drugclip_scores = [float(score) for score in drugclip_scores]
+
+    drugclip_scores_iter = iter(drugclip_scores)
+    soft_rewards = []
+    used_drugclip_scores = []
+    for smiles in canonical_smiles_by_row:
+        if smiles is None:
+            continue
+        drugclip_score_value = None
+        if normalized_reward_weights['drugclip_score'] > 0.0:
+            try:
+                drugclip_score_value = next(drugclip_scores_iter)
+            except StopIteration as exc:
+                raise ValueError('DrugCLIP score iterator exhausted before all valid molecules were processed') from exc
+            used_drugclip_scores.append(drugclip_score_value)
+        soft_rewards.append(
+            compute_soft_reward(
+                qed_by_smiles[smiles],
+                sa_score_by_smiles[smiles],
+                drugclip_score_value=drugclip_score_value,
+                reward_weights=normalized_reward_weights,
+            )
+        )
+    try:
+        next(drugclip_scores_iter)
+    except StopIteration:
+        pass
+    else:
+        raise ValueError('DrugCLIP score iterator still contains unused scores after processing valid molecules')
 
     valid_count = len(qeds)
     valid_fraction = float(valid_count / len(generated_rows))
@@ -252,6 +331,7 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         'qed_mean': _mean(qeds),
         'sa_mean': _mean(sa_values),
         'sa_score_mean': _mean(sa_scores),
+        'drugclip_score_mean': _mean(used_drugclip_scores) if used_drugclip_scores else float('nan'),
         'soft_reward_mean': _mean(soft_rewards),
         'diversity': _mean(pocket_diversities),
         'diversity_definition': (
@@ -265,6 +345,7 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         'vina_dock_mean': float(docking_summary['vina_dock_mean']),
         'vina_dock_median': float(docking_summary['vina_dock_median']),
         'docking_elapsed_sec': float(docking_payload['elapsed_sec']),
+        'reward_weights': normalized_reward_weights,
     }
     for key in ['qed_mean', 'sa_score_mean', 'soft_reward_mean', 'diversity', 'vina_dock_mean']:
         if not math.isfinite(float(row[key])):
@@ -278,6 +359,7 @@ def _display_name(name):
         'grpo_1000': 'GRPO 1000',
         'sgrpo_1000': 'SGRPO 1000',
         'grpo_divreg005_1000': 'GRPO DivReg 0.05 1000',
+        'grpo_drugclip_1000': 'GRPO + DrugCLIP 1000',
     }.get(name, name)
 
 
@@ -287,11 +369,24 @@ def _model_order(name):
         'grpo_1000': 1,
         'sgrpo_1000': 2,
         'grpo_divreg005_1000': 3,
+        'grpo_drugclip_1000': 4,
     }
     return order.get(name, len(order))
 
 
-def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
+def _series_style(series_index):
+    color_cycle = plt.rcParams['axes.prop_cycle'].by_key().get('color')
+    if not color_cycle:
+        raise ValueError('Matplotlib color cycle is empty')
+    color_index = series_index % len(color_cycle)
+    marker_index = (series_index // len(color_cycle)) % len(MARKER_CYCLE)
+    return {
+        'color': color_cycle[color_index],
+        'marker': MARKER_CYCLE[marker_index],
+    }
+
+
+def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path, *, plot_title_prefix):
     sweep_rows = [row for row in rows if row['sweep_type'] == sweep_type]
     if not sweep_rows:
         raise ValueError(f'No rows for sweep_type={sweep_type!r}')
@@ -300,12 +395,20 @@ def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
         if row['model_name'] not in model_names:
             model_names.append(row['model_name'])
     fig, ax = plt.subplots(figsize=(8, 6))
-    for model_name in model_names:
+    for series_index, model_name in enumerate(model_names):
         model_rows = [row for row in sweep_rows if row['model_name'] == model_name]
         model_rows.sort(key=lambda row: float(row['sweep_value']))
         x_values = [float(row[metric_key]) for row in model_rows]
         y_values = [float(row['diversity']) for row in model_rows]
-        ax.plot(x_values, y_values, marker='o', linewidth=2, label=_display_name(model_name))
+        style = _series_style(series_index)
+        ax.plot(
+            x_values,
+            y_values,
+            color=style['color'],
+            marker=style['marker'],
+            linewidth=2,
+            label=_display_name(model_name),
+        )
         for row, x_value, y_value in zip(model_rows, x_values, y_values):
             ax.annotate(
                 f"{float(row['sweep_value']):.1f}",
@@ -314,7 +417,7 @@ def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
                 xytext=(4, 4),
                 fontsize=8,
             )
-    ax.set_title(f'mmGenMol {sweep_type}: {metric_label} vs Diversity')
+    ax.set_title(f'{plot_title_prefix} {sweep_type}: {metric_label} vs Diversity')
     ax.set_xlabel(metric_label)
     ax.set_ylabel('Mean Per-Pocket Internal Diversity')
     ax.grid(True, alpha=0.3)
@@ -327,7 +430,22 @@ def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path):
     plt.close(fig)
 
 
-def _build_markdown(rows, plot_paths, json_path, rows_path):
+def _build_markdown(rows, plot_paths, json_path, rows_path, *, reward_weights):
+    normalized_reward_weights = normalize_molecular_reward_weights(reward_weights)
+    soft_reward_formula_terms = []
+    if normalized_reward_weights['qed'] > 0.0:
+        soft_reward_formula_terms.append(f'{normalized_reward_weights["qed"]:.3f} * qed_mean')
+    if normalized_reward_weights['sa_score'] > 0.0:
+        soft_reward_formula_terms.append(f'{normalized_reward_weights["sa_score"]:.3f} * sa_score_mean')
+    if normalized_reward_weights['drugclip_score'] > 0.0:
+        soft_reward_formula_terms.append(
+            f'{normalized_reward_weights["drugclip_score"]:.3f} * drugclip_score_mean'
+        )
+    soft_reward_formula = ' + '.join(soft_reward_formula_terms) if soft_reward_formula_terms else '0.0'
+    include_drugclip_column = any(
+        row.get('drugclip_score_mean') is not None and math.isfinite(float(row['drugclip_score_mean']))
+        for row in rows
+    )
     lines = [
         '# mmGenMol Sweep Results',
         '',
@@ -338,31 +456,44 @@ def _build_markdown(rows, plot_paths, json_path, rows_path):
         '- `docking_mode`: `vina_dock`',
         '- `diversity`: per sweep point, compute internal diversity separately within each pocket group, then average over pockets.',
         '- `qed_mean` and `sa_score_mean`: means over valid generated molecules in the sweep point.',
-        '- `soft_reward_mean`: `0.6 * qed_mean + 0.4 * sa_score_mean`, matching the rollout-level training reward before invalid and alert gating.',
+        f'- `soft_reward_mean`: `{soft_reward_formula}`, matching the rollout-level training reward before invalid and alert gating.',
         '- `vina_dock_mean`: mean Vina dock affinity over successful dockings; lower is better.',
         '',
-        '| Model | Sweep | Value | Diversity | QED | SA Score | Soft Quality Score | Vina Dock Mean | Dock Success | Valid Fraction |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ]
-    for row in rows:
-        lines.append(
-            '| '
-            + ' | '.join(
-                [
-                    _display_name(row['model_name']),
-                    row['sweep_type'],
-                    _format_metric(row['sweep_value']),
-                    _format_metric(row['diversity']),
-                    _format_metric(row['qed_mean']),
-                    _format_metric(row['sa_score_mean']),
-                    _format_metric(row['soft_reward_mean']),
-                    _format_metric(row['vina_dock_mean']),
-                    _format_metric(row['vina_dock_success_fraction']),
-                    _format_metric(row['valid_fraction']),
-                ]
-            )
-            + ' |'
+    if include_drugclip_column:
+        lines.extend(
+            [
+                '| Model | Sweep | Value | Diversity | QED | SA Score | DrugCLIP Score | Soft Quality Score | Vina Dock Mean | Dock Success | Valid Fraction |',
+                '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+            ]
         )
+    else:
+        lines.extend(
+            [
+                '| Model | Sweep | Value | Diversity | QED | SA Score | Soft Quality Score | Vina Dock Mean | Dock Success | Valid Fraction |',
+                '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+            ]
+        )
+    for row in rows:
+        cells = [
+            _display_name(row['model_name']),
+            row['sweep_type'],
+            _format_metric(row['sweep_value']),
+            _format_metric(row['diversity']),
+            _format_metric(row['qed_mean']),
+            _format_metric(row['sa_score_mean']),
+        ]
+        if include_drugclip_column:
+            cells.append(_format_metric(row['drugclip_score_mean']))
+        cells.extend(
+            [
+                _format_metric(row['soft_reward_mean']),
+                _format_metric(row['vina_dock_mean']),
+                _format_metric(row['vina_dock_success_fraction']),
+                _format_metric(row['valid_fraction']),
+            ]
+        )
+        lines.append('| ' + ' | '.join(cells) + ' |')
     lines.append('')
     for title, path in plot_paths:
         lines.extend([f'## {title}', '', f'![{title}]({os.path.basename(path)})', ''])
@@ -380,6 +511,21 @@ def parse_args():
     parser.add_argument('--expected_num_pockets', type=int, default=100)
     parser.add_argument('--expected_samples_per_pocket', type=int, default=16)
     parser.add_argument('--docking_mode', default='vina_dock')
+    parser.add_argument('--plot_name_prefix', default='mmgenmol')
+    parser.add_argument('--plot_title_prefix', default='mmGenMol')
+    parser.add_argument('--manifest_path')
+    parser.add_argument('--manifest_split', default='test')
+    parser.add_argument('--crossdocked_lmdb_path')
+    parser.add_argument('--drugclip_checkpoint_path')
+    parser.add_argument('--drugclip_device', default='cuda')
+    parser.add_argument('--drugclip_batch_size', type=int, default=64)
+    parser.add_argument('--drugclip_max_pocket_atoms', type=int, default=256)
+    parser.add_argument('--drugclip_num_conformers', type=int, default=1)
+    parser.add_argument('--drugclip_conformer_num_workers', type=int, default=1)
+    parser.add_argument('--drugclip_use_fp16', action='store_true')
+    parser.add_argument('--qed_weight', type=float, default=0.6)
+    parser.add_argument('--sa_score_weight', type=float, default=0.4)
+    parser.add_argument('--drugclip_score_weight', type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -392,6 +538,11 @@ def _resolve_plot_suffix(output_prefix):
 
 def main():
     args = parse_args()
+    args.reward_weights = {
+        'qed': args.qed_weight,
+        'sa_score': args.sa_score_weight,
+        'drugclip_score': args.drugclip_score_weight,
+    }
     tasks = _parse_task_manifest(args.tasks_path)
     if len(tasks) != args.expected_num_tasks:
         raise ValueError(f'Expected {args.expected_num_tasks} tasks, found {len(tasks)}')
@@ -402,19 +553,43 @@ def main():
 
     sa_oracle = Oracle('sa')
     fingerprint_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
-
-    rows = [
-        _compute_task_metrics(
-            task=task,
-            args=args,
-            chem=Chem,
-            qed=QED,
-            sa_oracle=sa_oracle,
-            fingerprint_generator=fingerprint_generator,
-            data_structs=DataStructs,
+    args.pocket_entries_by_source_index = None
+    args.drugclip_scorer = None
+    if args.drugclip_score_weight > 0.0:
+        _require_file(args.manifest_path, 'manifest_path')
+        _require_file(args.crossdocked_lmdb_path, 'crossdocked_lmdb_path')
+        _require_file(args.drugclip_checkpoint_path, 'drugclip_checkpoint_path')
+        args.pocket_entries_by_source_index = _build_pocket_entry_index(args.manifest_path, args.manifest_split)
+        args.drugclip_scorer = DrugCLIPScorer(
+            DrugCLIPConfig(
+                checkpoint_path=args.drugclip_checkpoint_path,
+                crossdocked_lmdb_path=args.crossdocked_lmdb_path,
+                device=args.drugclip_device,
+                batch_size=args.drugclip_batch_size,
+                max_pocket_atoms=args.drugclip_max_pocket_atoms,
+                num_conformers=args.drugclip_num_conformers,
+                conformer_num_workers=args.drugclip_conformer_num_workers,
+                use_fp16=args.drugclip_use_fp16,
+                seed=42,
+            )
         )
-        for task in tasks
-    ]
+
+    try:
+        rows = [
+            _compute_task_metrics(
+                task=task,
+                args=args,
+                chem=Chem,
+                qed=QED,
+                sa_oracle=sa_oracle,
+                fingerprint_generator=fingerprint_generator,
+                data_structs=DataStructs,
+            )
+            for task in tasks
+        ]
+    finally:
+        if args.drugclip_scorer is not None:
+            args.drugclip_scorer.close()
     rows.sort(key=lambda row: (_model_order(row['model_name']), row['model_name'], row['sweep_type'], row['sweep_value']))
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -427,7 +602,7 @@ def main():
 
     plot_paths = []
     present_sweep_types = {row['sweep_type'] for row in rows}
-    sweep_types = [sweep_type for sweep_type in ['randomness', 'temperature'] if sweep_type in present_sweep_types]
+    sweep_types = [sweep_type for sweep_type in ['randomness', 'temperature', 'paired'] if sweep_type in present_sweep_types]
     if not sweep_types:
         raise ValueError('No supported sweep types found; expected at least one of randomness or temperature')
     plot_suffix = _resolve_plot_suffix(args.output_prefix)
@@ -440,12 +615,25 @@ def main():
         ]:
             plot_path = os.path.join(
                 args.output_dir,
-                f'mmgenmol_{sweep_type}_diversity_vs_{metric_key}_{plot_suffix}.png',
+                f'{args.plot_name_prefix}_{sweep_type}_diversity_vs_{metric_key}_{plot_suffix}.png',
             )
-            _plot_metric(rows, sweep_type, metric_key, metric_label, plot_path)
+            _plot_metric(
+                rows,
+                sweep_type,
+                metric_key,
+                metric_label,
+                plot_path,
+                plot_title_prefix=args.plot_title_prefix,
+            )
             plot_paths.append((f'{sweep_type} {metric_label} vs diversity', plot_path))
 
-    markdown = _build_markdown(rows, plot_paths, output_json_path, output_rows_path)
+    markdown = _build_markdown(
+        rows,
+        plot_paths,
+        output_json_path,
+        output_rows_path,
+        reward_weights=args.reward_weights,
+    )
     with open(output_markdown_path, 'w') as handle:
         handle.write(markdown)
 
