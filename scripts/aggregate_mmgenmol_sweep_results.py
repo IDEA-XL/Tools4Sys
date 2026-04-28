@@ -199,6 +199,23 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
             f'Docking record count mismatch for {docking_records_path}: '
             f'{len(docking_records)} vs {args.expected_rows_per_task}'
         )
+    docking_records_by_row_idx = {}
+    for docking_row in docking_records:
+        row_idx = int(docking_row.get('row_idx', -1))
+        if row_idx < 0:
+            raise ValueError(f'Docking row is missing a valid row_idx in {docking_records_path}')
+        if row_idx in docking_records_by_row_idx:
+            raise ValueError(f'Duplicate docking row_idx={row_idx} in {docking_records_path}')
+        docking_records_by_row_idx[row_idx] = docking_row
+    expected_row_indices = set(range(args.expected_rows_per_task))
+    observed_row_indices = set(docking_records_by_row_idx)
+    if observed_row_indices != expected_row_indices:
+        missing = sorted(expected_row_indices - observed_row_indices)
+        extra = sorted(observed_row_indices - expected_row_indices)
+        raise ValueError(
+            f'Docking row_idx coverage mismatch for {docking_records_path}: '
+            f'missing={missing[:10]} extra={extra[:10]}'
+        )
     docking_payload, docking_summary = _load_docking_summary(docking_summary_path, args.docking_mode)
 
     canonical_smiles_by_row = []
@@ -291,15 +308,8 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
     docking_affinities = []
     score_only_affinities = []
     minimize_affinities = []
-    for row_idx, (smiles, source_index, docking_row) in enumerate(
-        zip(canonical_smiles_by_row, source_indices_by_row, docking_records)
-    ):
-        expected_row_idx = int(docking_row.get('row_idx', row_idx))
-        if expected_row_idx != row_idx:
-            raise ValueError(
-                f'Docking row index mismatch for task_id={task["task_id"]}: '
-                f'expected row_idx={row_idx}, got {expected_row_idx}'
-            )
+    for row_idx, (smiles, source_index) in enumerate(zip(canonical_smiles_by_row, source_indices_by_row)):
+        docking_row = docking_records_by_row_idx[row_idx]
         if int(docking_row.get('source_index', source_index)) != source_index:
             raise ValueError(
                 f'Docking source_index mismatch for task_id={task["task_id"]}: '
