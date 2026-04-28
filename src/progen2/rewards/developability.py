@@ -23,12 +23,20 @@ def _resolve_proteinsol_root(model_name_or_path):
 
 
 def _parse_scaled_sol_scores(prediction_path):
-    rows = []
+    rows = {}
     with open(prediction_path, newline='') as handle:
         reader = csv.reader(handle)
         for row in reader:
             if len(row) >= 4 and row[0] == 'SEQUENCE PREDICTIONS':
-                rows.append(float(row[3]))
+                sequence_id = row[1].strip()
+                if not sequence_id:
+                    raise ValueError(f'Protein-Sol produced an empty sequence id in {prediction_path}')
+                if sequence_id in rows:
+                    raise ValueError(
+                        'Protein-Sol produced duplicate sequence ids in '
+                        f'{prediction_path}: {sequence_id!r}'
+                    )
+                rows[sequence_id] = float(row[3])
     if not rows:
         raise ValueError(f'Protein-Sol produced no SEQUENCE PREDICTIONS rows in {prediction_path}')
     return rows
@@ -81,13 +89,13 @@ class ProteinSolScorer:
     def release(self):
         return
 
-    def _write_fasta(self, sequences):
+    def _write_fasta(self, sequence_items):
         fasta_path = self._workspace_root / 'batch.fasta'
         with open(fasta_path, 'w') as handle:
-            for idx, sequence in enumerate(sequences):
+            for sequence_id, sequence in sequence_items:
                 if not sequence:
                     raise ValueError('Protein-Sol sequences must be non-empty')
-                handle.write(f'>seq_{idx}\n{sequence}\n')
+                handle.write(f'>{sequence_id}\n{sequence}\n')
         return fasta_path
 
     def _clear_previous_outputs(self):
@@ -106,33 +114,62 @@ class ProteinSolScorer:
                 else:
                     path.unlink()
 
+    def _run_bundle(self, sequence_items):
+        self._clear_previous_outputs()
+        fasta_path = self._write_fasta(sequence_items)
+        result = subprocess.run(
+            ['bash', 'multiple_prediction_wrapper_export.sh', fasta_path.name],
+            cwd=self._workspace_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                'Protein-Sol scoring failed with non-zero exit status '
+                f'{result.returncode}: stdout={result.stdout!r} stderr={result.stderr!r}'
+            )
+        return _parse_scaled_sol_scores(self._workspace_root / 'seq_prediction.txt')
+
+    def _score_missing_individually(self, missing_ids, id_to_sequence):
+        recovered_scores = {}
+        for sequence_id in missing_ids:
+            score_map = self._run_bundle([(sequence_id, id_to_sequence[sequence_id])])
+            if set(score_map) != {sequence_id}:
+                raise RuntimeError(
+                    'Protein-Sol individual retry returned unexpected sequence ids: '
+                    f'expected only {sequence_id!r}, got {sorted(score_map)}'
+                )
+            recovered_scores[sequence_id] = score_map[sequence_id]
+        return recovered_scores
+
     def score_raw(self, sequences):
         if not sequences:
             raise ValueError('sequences must be non-empty')
         self._ensure_workspace()
         outputs = []
         for chunk in iter_chunks(sequences, self.batch_size):
-            self._clear_previous_outputs()
-            fasta_path = self._write_fasta(chunk)
-            result = subprocess.run(
-                ['bash', 'multiple_prediction_wrapper_export.sh', fasta_path.name],
-                cwd=self._workspace_root,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
+            sequence_items = [(f'seq_{idx}', sequence) for idx, sequence in enumerate(chunk)]
+            expected_ids = [sequence_id for sequence_id, _ in sequence_items]
+            id_to_sequence = dict(sequence_items)
+            chunk_scores = self._run_bundle(sequence_items)
+            unexpected_ids = sorted(set(chunk_scores) - set(expected_ids))
+            if unexpected_ids:
                 raise RuntimeError(
-                    'Protein-Sol scoring failed with non-zero exit status '
-                    f'{result.returncode}: stdout={result.stdout!r} stderr={result.stderr!r}'
+                    'Protein-Sol returned sequence ids that were not present in the input chunk: '
+                    f'{unexpected_ids}'
                 )
-            chunk_scores = _parse_scaled_sol_scores(self._workspace_root / 'seq_prediction.txt')
-            if len(chunk_scores) != len(chunk):
-                raise RuntimeError(
-                    'Protein-Sol returned a different number of scores than inputs for the current chunk: '
-                    f'{len(chunk_scores)} != {len(chunk)}'
-                )
-            outputs.extend(chunk_scores)
+            missing_ids = [sequence_id for sequence_id in expected_ids if sequence_id not in chunk_scores]
+            if missing_ids:
+                recovered_scores = self._score_missing_individually(missing_ids, id_to_sequence)
+                chunk_scores.update(recovered_scores)
+                remaining_missing = [sequence_id for sequence_id in expected_ids if sequence_id not in chunk_scores]
+                if remaining_missing:
+                    raise RuntimeError(
+                        'Protein-Sol failed to return scores for some sequences after individual retry: '
+                        f'{remaining_missing}'
+                    )
+            outputs.extend(chunk_scores[sequence_id] for sequence_id in expected_ids)
         return outputs
 
 

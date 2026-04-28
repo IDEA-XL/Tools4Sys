@@ -20,7 +20,7 @@ epsilon: 0.2
 logging_steps: 1
 save_steps: 20
 save_total_limit: 2
-report_to: []
+report_to: [wandb]
 rl_algorithm: grpo
 num_generations: 96
 supergroup_num_groups: 1

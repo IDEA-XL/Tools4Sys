@@ -19,7 +19,7 @@ CUDA_TOOLCHAIN_DIR=${CUDA_TOOLCHAIN_DIR:-/public/home/xinwuye/ai4s-tool-joint-tr
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_train/logs
 
-export WANDB_PROJECT="${WANDB_PROJECT:-genmol}"
+export WANDB_PROJECT="${WANDB_PROJECT:-progen2}"
 export WANDB_NAME="${WANDB_NAME:-progen2-grpo-8gpu}"
 export PYTHON_OVERLAY_DIR
 export PROTBERT_DIR
