@@ -131,6 +131,16 @@ def _mean(values):
     return float(sum(values) / len(values))
 
 
+def _median(values):
+    values = sorted(float(value) for value in values if value is not None and math.isfinite(float(value)))
+    if not values:
+        return float('nan')
+    mid = len(values) // 2
+    if len(values) % 2 == 1:
+        return values[mid]
+    return float((values[mid - 1] + values[mid]) / 2.0)
+
+
 def _compute_internal_diversity_for_group(canonical_smiles, fingerprint_cache, data_structs):
     valid = [smiles for smiles in canonical_smiles if smiles is not None]
     if len(valid) < 2:
@@ -191,7 +201,6 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         )
     docking_payload, docking_summary = _load_docking_summary(docking_summary_path, args.docking_mode)
 
-    rows_by_source_index = defaultdict(list)
     canonical_smiles_by_row = []
     source_indices_by_row = []
     for row_idx, row in enumerate(generated_rows):
@@ -201,33 +210,36 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         canonical_smiles = _canonicalize_smiles(row.get('smiles'), chem)
         canonical_smiles_by_row.append(canonical_smiles)
         source_indices_by_row.append(source_index)
-        rows_by_source_index[source_index].append(canonical_smiles)
 
-    if len(rows_by_source_index) != args.expected_num_pockets:
+    all_source_indices = set(source_indices_by_row)
+    if len(all_source_indices) != args.expected_num_pockets:
         raise ValueError(
             f'Expected {args.expected_num_pockets} pockets for {generated_rows_path}, '
-            f'found {len(rows_by_source_index)}'
+            f'found {len(all_source_indices)}'
         )
+    source_index_counts = defaultdict(int)
+    for source_index in source_indices_by_row:
+        source_index_counts[source_index] += 1
     bad_group_sizes = {
-        source_index: len(rows)
-        for source_index, rows in rows_by_source_index.items()
-        if len(rows) != args.expected_samples_per_pocket
+        source_index: count
+        for source_index, count in source_index_counts.items()
+        if count != args.expected_samples_per_pocket
     }
     if bad_group_sizes:
         raise ValueError(f'Unexpected per-pocket sample counts in {generated_rows_path}: {bad_group_sizes}')
 
-    unique_valid_smiles = sorted({smiles for smiles in canonical_smiles_by_row if smiles is not None})
+    unique_base_valid_smiles = sorted({smiles for smiles in canonical_smiles_by_row if smiles is not None})
     qed_by_smiles = {}
     sa_by_smiles = {}
     sa_score_by_smiles = {}
     fp_by_smiles = {}
-    if unique_valid_smiles:
-        sa_values = sa_oracle(unique_valid_smiles)
-        if len(sa_values) != len(unique_valid_smiles):
+    if unique_base_valid_smiles:
+        sa_values = sa_oracle(unique_base_valid_smiles)
+        if len(sa_values) != len(unique_base_valid_smiles):
             raise RuntimeError(
-                f'SA oracle returned {len(sa_values)} values for {len(unique_valid_smiles)} SMILES'
+                f'SA oracle returned {len(sa_values)} values for {len(unique_base_valid_smiles)} SMILES'
             )
-        for smiles, sa_value in zip(unique_valid_smiles, sa_values):
+        for smiles, sa_value in zip(unique_base_valid_smiles, sa_values):
             mol = chem.MolFromSmiles(smiles, sanitize=True)
             if mol is None:
                 raise RuntimeError(f'Canonical valid SMILES failed to parse on second pass: {smiles}')
@@ -235,6 +247,100 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
             sa_by_smiles[smiles] = float(sa_value)
             sa_score_by_smiles[smiles] = float(sa_to_score(sa_value))
             fp_by_smiles[smiles] = fingerprint_generator.GetFingerprint(mol)
+    normalized_reward_weights = normalize_molecular_reward_weights(args.reward_weights)
+    base_valid_mask = [smiles is not None for smiles in canonical_smiles_by_row]
+    final_valid_mask = list(base_valid_mask)
+    drugclip_score_by_row = [None] * len(generated_rows)
+    if args.drugclip_scorer is not None:
+        active_smiles = []
+        active_pocket_entries = []
+        active_row_indices = []
+        for row_index, (canonical_smiles, source_index) in enumerate(
+            zip(canonical_smiles_by_row, source_indices_by_row)
+        ):
+            if canonical_smiles is None:
+                continue
+            try:
+                pocket_entry = args.pocket_entries_by_source_index[source_index]
+            except KeyError as exc:
+                raise KeyError(
+                    f'Manifest is missing source_index={source_index} required for DrugCLIP offline scoring'
+                ) from exc
+            active_row_indices.append(row_index)
+            active_smiles.append(canonical_smiles)
+            active_pocket_entries.append(pocket_entry)
+        drugclip_scores = args.drugclip_scorer.score(active_smiles, active_pocket_entries)
+        if len(drugclip_scores) != len(active_smiles):
+            raise ValueError(
+                'DrugCLIP offline scorer returned mismatched score count: '
+                f'expected {len(active_smiles)}, got {len(drugclip_scores)}'
+            )
+        for row_index, drugclip_score in zip(active_row_indices, drugclip_scores):
+            if drugclip_score is None:
+                final_valid_mask[row_index] = False
+                continue
+            drugclip_score_by_row[row_index] = float(drugclip_score)
+
+    rows_by_source_index = defaultdict(list)
+    qeds = []
+    sa_values = []
+    sa_scores = []
+    soft_rewards = []
+    used_drugclip_scores = []
+    docking_success_flags = []
+    docking_affinities = []
+    score_only_affinities = []
+    minimize_affinities = []
+    for row_idx, (smiles, source_index, docking_row) in enumerate(
+        zip(canonical_smiles_by_row, source_indices_by_row, docking_records)
+    ):
+        expected_row_idx = int(docking_row.get('row_idx', row_idx))
+        if expected_row_idx != row_idx:
+            raise ValueError(
+                f'Docking row index mismatch for task_id={task["task_id"]}: '
+                f'expected row_idx={row_idx}, got {expected_row_idx}'
+            )
+        if int(docking_row.get('source_index', source_index)) != source_index:
+            raise ValueError(
+                f'Docking source_index mismatch for task_id={task["task_id"]}: '
+                f'expected source_index={source_index}, got {docking_row.get("source_index")}'
+            )
+        if not final_valid_mask[row_idx]:
+            continue
+        if smiles is None:
+            raise ValueError(f'final_valid_mask row {row_idx} is true but canonical SMILES is None')
+        rows_by_source_index[source_index].append(smiles)
+        qeds.append(qed_by_smiles[smiles])
+        sa_values.append(sa_by_smiles[smiles])
+        sa_scores.append(sa_score_by_smiles[smiles])
+        drugclip_score_value = drugclip_score_by_row[row_idx]
+        if normalized_reward_weights['drugclip_score'] > 0.0:
+            if drugclip_score_value is None:
+                raise ValueError(
+                    f'DrugCLIP score missing for final-valid row {row_idx} in task_id={task["task_id"]}'
+                )
+            used_drugclip_scores.append(drugclip_score_value)
+        soft_rewards.append(
+            compute_soft_reward(
+                qed_by_smiles[smiles],
+                sa_score_by_smiles[smiles],
+                drugclip_score_value=drugclip_score_value,
+                reward_weights=normalized_reward_weights,
+            )
+        )
+        docking_record = docking_row['record']
+        is_success = bool(docking_record['is_success'])
+        docking_success_flags.append(is_success)
+        if is_success:
+            docking_affinities.append(float(docking_record['dock_affinity']))
+            score_only_affinities.append(float(docking_record['score_only_affinity']))
+            minimize_affinities.append(float(docking_record['minimize_affinity']))
+
+    if len(rows_by_source_index) != args.expected_num_pockets:
+        raise ValueError(
+            f'Final valid set covers {len(rows_by_source_index)} pockets for {generated_rows_path}; '
+            f'expected {args.expected_num_pockets}'
+        )
 
     pocket_diversities = []
     for source_index in sorted(rows_by_source_index):
@@ -245,71 +351,15 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         )
         pocket_diversities.append(diversity)
 
-    qeds = [qed_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
-    sa_values = [sa_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
-    sa_scores = [sa_score_by_smiles[smiles] for smiles in canonical_smiles_by_row if smiles is not None]
-    normalized_reward_weights = normalize_molecular_reward_weights(args.reward_weights)
-
-    drugclip_scores = []
-    if args.drugclip_scorer is not None:
-        active_smiles = []
-        active_pocket_entries = []
-        for canonical_smiles, source_index in zip(canonical_smiles_by_row, source_indices_by_row):
-            if canonical_smiles is None:
-                continue
-            try:
-                pocket_entry = args.pocket_entries_by_source_index[source_index]
-            except KeyError as exc:
-                raise KeyError(
-                    f'Manifest is missing source_index={source_index} required for DrugCLIP offline scoring'
-                ) from exc
-            active_smiles.append(canonical_smiles)
-            active_pocket_entries.append(pocket_entry)
-        drugclip_scores = args.drugclip_scorer.score(active_smiles, active_pocket_entries)
-        if len(drugclip_scores) != len(active_smiles):
-            raise ValueError(
-                'DrugCLIP offline scorer returned mismatched score count: '
-                f'expected {len(active_smiles)}, got {len(drugclip_scores)}'
-            )
-        failed = sum(score is None for score in drugclip_scores)
-        if failed:
-            raise ValueError(
-                f'DrugCLIP offline scorer failed on {failed} / {len(active_smiles)} valid molecules for '
-                f'task_id={task["task_id"]}; last_score_stats={args.drugclip_scorer.last_score_stats}'
-            )
-        drugclip_scores = [float(score) for score in drugclip_scores]
-
-    drugclip_scores_iter = iter(drugclip_scores)
-    soft_rewards = []
-    used_drugclip_scores = []
-    for smiles in canonical_smiles_by_row:
-        if smiles is None:
-            continue
-        drugclip_score_value = None
-        if normalized_reward_weights['drugclip_score'] > 0.0:
-            try:
-                drugclip_score_value = next(drugclip_scores_iter)
-            except StopIteration as exc:
-                raise ValueError('DrugCLIP score iterator exhausted before all valid molecules were processed') from exc
-            used_drugclip_scores.append(drugclip_score_value)
-        soft_rewards.append(
-            compute_soft_reward(
-                qed_by_smiles[smiles],
-                sa_score_by_smiles[smiles],
-                drugclip_score_value=drugclip_score_value,
-                reward_weights=normalized_reward_weights,
-            )
-        )
-    try:
-        next(drugclip_scores_iter)
-    except StopIteration:
-        pass
-    else:
-        raise ValueError('DrugCLIP score iterator still contains unused scores after processing valid molecules')
-
-    valid_count = len(qeds)
+    valid_count = int(sum(final_valid_mask))
     valid_fraction = float(valid_count / len(generated_rows))
-    duplicate_fraction = 1.0 - float(len(unique_valid_smiles) / valid_count) if valid_count else float('nan')
+    if valid_count == 0:
+        raise ValueError(f'No final-valid molecules remain for task_id={task["task_id"]}')
+    unique_valid_smiles = sorted({smiles for smiles, is_valid in zip(canonical_smiles_by_row, final_valid_mask) if is_valid})
+    duplicate_fraction = 1.0 - float(len(unique_valid_smiles) / valid_count)
+    vina_dock_success_fraction = float(sum(docking_success_flags) / valid_count)
+    if not docking_affinities:
+        raise ValueError(f'No successful dockings remain in final-valid set for task_id={task["task_id"]}')
     row = {
         'task_id': int(task['task_id']),
         'model_name': task['model_name'],
@@ -338,13 +388,17 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
             'mean over pockets of 1 - mean pairwise Morgan-fingerprint Tanimoto similarity '
             'within the generated molecules for that pocket'
         ),
-        'vina_dock_success_fraction': float(docking_summary['docking_success_fraction']),
-        'vina_dock_num_docked': int(docking_summary['num_docked']),
-        'vina_score_mean': float(docking_summary.get('vina_score_mean', float('nan'))),
-        'vina_min_mean': float(docking_summary.get('vina_min_mean', float('nan'))),
-        'vina_dock_mean': float(docking_summary['vina_dock_mean']),
-        'vina_dock_median': float(docking_summary['vina_dock_median']),
+        'vina_dock_success_fraction': vina_dock_success_fraction,
+        'vina_dock_num_docked': int(len(docking_affinities)),
+        'vina_score_mean': _mean(score_only_affinities),
+        'vina_min_mean': _mean(minimize_affinities),
+        'vina_dock_mean': _mean(docking_affinities),
+        'vina_dock_median': _median(docking_affinities),
         'docking_elapsed_sec': float(docking_payload['elapsed_sec']),
+        'drugclip_rescore_failed_count': int(sum(
+            1 for base_valid, final_valid in zip(base_valid_mask, final_valid_mask)
+            if base_valid and not final_valid
+        )),
         'reward_weights': normalized_reward_weights,
     }
     for key in ['qed_mean', 'sa_score_mean', 'soft_reward_mean', 'diversity', 'vina_dock_mean']:
