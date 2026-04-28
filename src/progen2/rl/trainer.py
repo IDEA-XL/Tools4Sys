@@ -20,6 +20,7 @@ from progen2.rewards import (
     compute_group_diversity_loo_credits,
     compute_group_diversity_reward_or_zero,
 )
+from progen2.rewards.common import is_valid_protein_sequence
 from progen2.rewards.composite import (
     REWARD_NAME_ORDER,
     normalize_protein_reward_weights,
@@ -514,7 +515,10 @@ class ProGen2SGRPOTrainer:
         self.reward_model.calibration = calibration
 
     def _score_rollout_rewards(self, sequences, *, step_number):
-        valid_indices = [idx for idx, sequence in enumerate(sequences) if sequence]
+        valid_indices = [
+            idx for idx, sequence in enumerate(sequences)
+            if is_valid_protein_sequence(sequence)
+        ]
         rewards = [0.0] * len(sequences)
         individual_reward_values = {
             reward_name: [0.0] * len(sequences) for reward_name in REWARD_NAME_ORDER

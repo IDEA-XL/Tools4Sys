@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+from progen2.rewards.common import is_valid_protein_sequence
+
 
 def _validate_sequence(sequence):
     sequence = str(sequence).strip().upper()
@@ -44,7 +46,11 @@ def compute_group_diversity_reward(sequences):
 
 
 def compute_group_diversity_reward_or_zero(sequences):
-    valid_sequences = [str(sequence).strip().upper() for sequence in sequences if str(sequence).strip()]
+    valid_sequences = [
+        str(sequence).strip().upper()
+        for sequence in sequences
+        if is_valid_protein_sequence(sequence)
+    ]
     if len(valid_sequences) < 2:
         return 0.0
     return compute_group_diversity_reward(valid_sequences)
