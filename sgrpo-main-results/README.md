@@ -26,8 +26,10 @@ The intent is to keep three things in one place:
 
 - `genmol de novo`: sweep `randomness = 0.1, 0.2, ..., 1.0`
 - `genmol de novo`: sweep `temperature = 0.5, 1.0, 2.0, 3.0`
+- `genmol de novo`: paired sweep `(randomness, temperature) = (0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
 - `mmgenmol`: sweep `randomness = 0.1, 0.3, 0.6, 1.0`
 - `mmgenmol`: sweep `temperature = 0.5, 1.0, 5.0`
+- `mmgenmol`: paired sweep `(randomness, temperature) = (0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
 - `mmgenmol`: report docking with `vina_dock` only for the main sweep; `qvina` is excluded from the current main-result plan.
 - `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
 
@@ -164,12 +166,12 @@ Notes:
 
 ### GRPO + `qed = 0.8, sa_score = 0.2`
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_q08_sa02_20260427_012110/checkpoint-001000
 ```
 
 Training config:
@@ -200,15 +202,17 @@ Notes:
 
 - Baseline is the locked 1000-step GRPO configuration.
 - Only changed rollout-level reward weights to `qed = 0.8` and `sa_score = 0.2`.
+- Training job: `46997`
+- Training completed successfully.
 
 ### GRPO + `qed = 0.8, sa_score = 0.2` 2000-Step Variant
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_q08_sa02_ms2000_20260427_023803/checkpoint-002000
 ```
 
 Training config:
@@ -239,6 +243,8 @@ Notes:
 
 - Baseline is the new 1000-step `qed = 0.8, sa_score = 0.2` GRPO configuration.
 - Only changed `max_steps = 2000`.
+- Training job: `46999`
+- Training completed successfully.
 
 ### GRPO Diversity-Regularizer 2000-Step
 
@@ -675,12 +681,12 @@ Notes:
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5`
 
-Status: `Running`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_20260426_210520/checkpoint-001000
 ```
 
 Training config:
@@ -715,15 +721,16 @@ Notes:
 - `group_rewrad_credit_temperature = 1.0`.
 - Training job: `46469`
 - Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_20260426_210520`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5` 2000-Step Variant
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_ms2000_20260427_005454/checkpoint-002000
 ```
 
 Training config:
@@ -756,15 +763,18 @@ Notes:
 - Only changed `max_steps = 2000`.
 - `group_rewrad_credit = loo`.
 - `group_rewrad_credit_temperature = 1.0`.
+- Training job: `46996`
+- Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_ms2000_20260427_005454`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5` + `qed = 0.8, sa_score = 0.2`
 
-Status: `Running`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_20260426_210521/checkpoint-001000
 ```
 
 Training config:
@@ -799,15 +809,16 @@ Notes:
 - `group_rewrad_credit_temperature = 1.0`.
 - Training job: `46470`
 - Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_20260426_210521`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit + `group_advantage_weight = 0.5` + `qed = 0.8, sa_score = 0.2` 2000-Step Variant
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_ms2000_20260427_023803/checkpoint-002000
 ```
 
 Training config:
@@ -840,6 +851,9 @@ Notes:
 - Only changed `max_steps = 2000`.
 - `group_rewrad_credit = loo`.
 - `group_rewrad_credit_temperature = 1.0`.
+- Training job: `46998`
+- Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw05_rewardsum_loo_q08_sa02_ms2000_20260427_023803`
+- Training completed successfully.
 
 ### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness
 
@@ -1152,16 +1166,19 @@ genmol-denovo/denovo_main_results_randomness_sweep_20260425.json
 
 Notes:
 
-- Latest incremental eval job: `46907`.
-- Latest merge+split-plot job: `46913`.
+- Latest incremental eval job for the newest 2000-step variants: `48778`.
+- Latest merged-summary and plot refresh for the current 1000+2000-step update was regenerated locally on `2026-04-27`.
 - Sweep grid: `randomness = 0.1, 0.2, ..., 1.0`
 - Sample budget: `1000` molecules per model per randomness
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, GRPO `qed=0.8/sa_score=0.2` 1000, SGRPO `gw=0.5` RewardSum LOO 1000, SGRPO `gw=0.5` RewardSum LOO + `qed=0.8/sa_score=0.2` 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO `gw=0.5` RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000, GRPO `qed=0.8/sa_score=0.2` 2000, SGRPO `gw=0.5` RewardSum LOO + `qed=0.8/sa_score=0.2` 2000
 - `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
-- This update reused the legacy `20260425` summary for the old models and incrementally added the 3 new 2000-step models.
+- This update reused the legacy `20260425` summary for the old models, retained the previously added 3 new 2000-step models, incrementally added the 3 new 1000-step models, and then incrementally added the latest 3 new 2000-step models.
 - Legacy remote raw rows remain at `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_randomness_sweep_20260425.rows.jsonl`.
-- The 3 new 2000-step models in this merged update were added from incremental summary JSON, not from a newly materialized combined rows file.
+- The previous 3 new 2000-step models, the 3 new 1000-step models, and the latest 3 new 2000-step models in this merged update were all added from incremental summary JSON, not from a newly materialized combined rows file.
+- QED and SA-score plots below include both the 3 new 1000-step models and the latest 3 new 2000-step models in their respective step-group panels.
+- The canonical `0.6/0.4` soft-reward panels also include `SGRPO gw=0.5 RewardSum LOO 1000` and `SGRPO gw=0.5 RewardSum LOO 2000`, because their rollout-level quality weighting is unchanged.
+- The separate soft-reward panels below are only for the `qed=0.8/sa_score=0.2` reweighted variants, with `Original` included as the reference point.
 
 #### `diversity` vs `qed` for 1000-step models
 
@@ -1213,6 +1230,16 @@ genmol-denovo/soft_reward_vs_diversity_randomness_1000_20260425.png
 
 ![GenMol De Novo Soft Reward vs Diversity Randomness Sweep 1000-Step Models](genmol-denovo/soft_reward_vs_diversity_randomness_1000_20260425.png)
 
+#### `diversity` vs `soft_reward` for `qed=0.8/sa_score=0.2` 1000-step variants + Original
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_new_variants_vs_diversity_randomness_new_1000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Randomness Sweep q0.8/SA0.2 1000-Step Variants plus Original](genmol-denovo/soft_reward_new_variants_vs_diversity_randomness_new_1000_20260427.png)
+
 #### `diversity` vs `soft_reward` for 2000-step models
 
 Plot:
@@ -1222,6 +1249,16 @@ genmol-denovo/soft_reward_vs_diversity_randomness_2000_20260425.png
 ```
 
 ![GenMol De Novo Soft Reward vs Diversity Randomness Sweep 2000-Step Models](genmol-denovo/soft_reward_vs_diversity_randomness_2000_20260425.png)
+
+#### `diversity` vs `soft_reward` for `qed=0.8/sa_score=0.2` 2000-step variants + Original
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_new_variants_vs_diversity_randomness_new_2000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Randomness Sweep q0.8/SA0.2 2000-Step Variants plus Original](genmol-denovo/soft_reward_new_variants_vs_diversity_randomness_new_2000_20260427.png)
 
 #### Temperature Sweep
 
@@ -1240,18 +1277,21 @@ genmol-denovo/denovo_main_results_temperature_sweep_20260425.json
 
 Notes:
 
-- Latest incremental eval job: `46906`.
-- Latest merge+split-plot job: `46913`.
+- Latest incremental eval job for the newest 2000-step variants: `48779`.
+- Latest merged-summary and plot refresh for the current 1000+2000-step update was regenerated locally on `2026-04-27`.
 - Previous eval job `44458` used the retired grid `temperature = 0.1, 0.2, ..., 1.0`.
 - Sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0`
 - Fixed `randomness = 0.3`
 - Sample budget: `1000` molecules per model per temperature
-- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, GRPO `qed=0.8/sa_score=0.2` 1000, SGRPO `gw=0.5` RewardSum LOO 1000, SGRPO `gw=0.5` RewardSum LOO + `qed=0.8/sa_score=0.2` 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO `gw=0.5` RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000, GRPO `qed=0.8/sa_score=0.2` 2000, SGRPO `gw=0.5` RewardSum LOO + `qed=0.8/sa_score=0.2` 2000
 - `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
 - Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
-- This update reused the legacy `20260425` summary for the old models and incrementally added the 3 new 2000-step models.
+- This update reused the legacy `20260425` summary for the old models, retained the previously added 3 new 2000-step models, incrementally added the 3 new 1000-step models, and then incrementally added the latest 3 new 2000-step models.
 - Legacy remote raw rows remain at `/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/genmol-denovo/denovo_main_results_temperature_sweep_20260425.rows.jsonl`.
-- The 3 new 2000-step models in this merged update were added from incremental summary JSON, not from a newly materialized combined rows file.
+- The previous 3 new 2000-step models, the 3 new 1000-step models, and the latest 3 new 2000-step models in this merged update were all added from incremental summary JSON, not from a newly materialized combined rows file.
+- QED and SA-score plots below include both the 3 new 1000-step models and the latest 3 new 2000-step models in their respective step-group panels.
+- The canonical `0.6/0.4` soft-reward panels also include `SGRPO gw=0.5 RewardSum LOO 1000` and `SGRPO gw=0.5 RewardSum LOO 2000`, because their rollout-level quality weighting is unchanged.
+- The separate soft-reward panels below are only for the `qed=0.8/sa_score=0.2` reweighted variants, with `Original` included as the reference point.
 
 #### `diversity` vs `qed` for temperature sweep, 1000-step models
 
@@ -1303,6 +1343,16 @@ genmol-denovo/soft_reward_vs_diversity_temperature_1000_20260425.png
 
 ![GenMol De Novo Soft Reward vs Diversity Temperature Sweep 1000-Step Models](genmol-denovo/soft_reward_vs_diversity_temperature_1000_20260425.png)
 
+#### `diversity` vs `soft_reward` for temperature sweep, `qed=0.8/sa_score=0.2` 1000-step variants + Original
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_new_variants_vs_diversity_temperature_new_1000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Temperature Sweep q0.8/SA0.2 1000-Step Variants plus Original](genmol-denovo/soft_reward_new_variants_vs_diversity_temperature_new_1000_20260427.png)
+
 #### `diversity` vs `soft_reward` for temperature sweep, 2000-step models
 
 Plot:
@@ -1312,6 +1362,124 @@ genmol-denovo/soft_reward_vs_diversity_temperature_2000_20260425.png
 ```
 
 ![GenMol De Novo Soft Reward vs Diversity Temperature Sweep 2000-Step Models](genmol-denovo/soft_reward_vs_diversity_temperature_2000_20260425.png)
+
+#### `diversity` vs `soft_reward` for temperature sweep, `qed=0.8/sa_score=0.2` 2000-step variants + Original
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_new_variants_vs_diversity_temperature_new_2000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Temperature Sweep q0.8/SA0.2 2000-Step Variants plus Original](genmol-denovo/soft_reward_new_variants_vs_diversity_temperature_new_2000_20260427.png)
+
+#### Paired Randomness-Temperature Sweep
+
+Sweep config:
+
+```text
+configs/eval_denovo_main_results_paired_sweep_20260427.yaml
+```
+
+Generated artifacts:
+
+```text
+genmol-denovo/denovo_main_results_paired_sweep_20260427.md
+genmol-denovo/denovo_main_results_paired_sweep_20260427.json
+genmol-denovo/denovo_main_results_paired_sweep_20260427.rows.jsonl
+```
+
+Notes:
+
+- Latest paired eval + split-plot job: `49030`.
+- Job `49030` completed successfully on `2026-04-27`.
+- Sweep pairs: `(0.1, 0.5)`, `(0.3, 0.8)`, `(0.5, 1.1)`, `(0.7, 1.4)`, `(0.9, 1.7)`, `(1.0, 2.0)`.
+- Sample budget: `1000` molecules per model per pair.
+- Included models: Original, GRPO 1000, SGRPO 1000, GRPO 2000, SGRPO 2000, GRPO DivReg0.05 2000, SGRPO Thresholded 1000, SGRPO RewardSum 1000, SGRPO Thresholded+RewardSum 1000, SGRPO HierarchicalSum 1000, SGRPO RewardSum LOO 1000, SGRPO RewardSum Temp/Rand 1000, SGRPO RewardSum LOO+Temp/Rand 1000, GRPO `qed=0.8/sa_score=0.2` 1000, SGRPO `gw=0.5` RewardSum LOO 1000, SGRPO `gw=0.5` RewardSum LOO + `qed=0.8/sa_score=0.2` 1000, SGRPO Thresholded 2000, SGRPO RewardSum 2000, SGRPO Thresholded+RewardSum 2000, SGRPO HierarchicalSum 2000, SGRPO RewardSum LOO 2000, SGRPO `gw=0.5` RewardSum LOO 2000, SGRPO RewardSum Temp/Rand 2000, SGRPO RewardSum LOO+Temp/Rand 2000, GRPO `qed=0.8/sa_score=0.2` 2000, SGRPO `gw=0.5` RewardSum LOO + `qed=0.8/sa_score=0.2` 2000.
+- `soft_reward_mean` is the rollout-level quality reward before invalid and alert gating: `0.6 * qed_mean + 0.4 * sa_score_mean`.
+- Plots are split into 1000-step and 2000-step model groups to avoid color reuse. Original GenMol v2 is included in both groups.
+- In the paired summary markdown, `Sweep Value` is the 1-based pair index; the actual pair is recorded by the `Generation Temperature` and `Randomness` columns and by the plot annotations.
+- The separate soft-reward panels below are only for the `qed=0.8/sa_score=0.2` reweighted variants, with `Original` included as the reference point.
+
+#### `diversity` vs `qed` for paired sweep, 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/qed_vs_diversity_paired_1000_20260427.png
+```
+
+![GenMol De Novo QED vs Diversity Paired Sweep 1000-Step Models](genmol-denovo/qed_vs_diversity_paired_1000_20260427.png)
+
+#### `diversity` vs `qed` for paired sweep, 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/qed_vs_diversity_paired_2000_20260427.png
+```
+
+![GenMol De Novo QED vs Diversity Paired Sweep 2000-Step Models](genmol-denovo/qed_vs_diversity_paired_2000_20260427.png)
+
+#### `diversity` vs `sa_score` for paired sweep, 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_paired_1000_20260427.png
+```
+
+![GenMol De Novo SA Score vs Diversity Paired Sweep 1000-Step Models](genmol-denovo/sa_score_vs_diversity_paired_1000_20260427.png)
+
+#### `diversity` vs `sa_score` for paired sweep, 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/sa_score_vs_diversity_paired_2000_20260427.png
+```
+
+![GenMol De Novo SA Score vs Diversity Paired Sweep 2000-Step Models](genmol-denovo/sa_score_vs_diversity_paired_2000_20260427.png)
+
+#### `diversity` vs `soft_reward` for paired sweep, 1000-step models
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_vs_diversity_paired_1000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Paired Sweep 1000-Step Models](genmol-denovo/soft_reward_vs_diversity_paired_1000_20260427.png)
+
+#### `diversity` vs `soft_reward` for paired sweep, `qed=0.8/sa_score=0.2` 1000-step variants + Original
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_new_variants_vs_diversity_paired_new_1000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Paired Sweep q0.8/SA0.2 1000-Step Variants plus Original](genmol-denovo/soft_reward_new_variants_vs_diversity_paired_new_1000_20260427.png)
+
+#### `diversity` vs `soft_reward` for paired sweep, 2000-step models
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_vs_diversity_paired_2000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Paired Sweep 2000-Step Models](genmol-denovo/soft_reward_vs_diversity_paired_2000_20260427.png)
+
+#### `diversity` vs `soft_reward` for paired sweep, `qed=0.8/sa_score=0.2` 2000-step variants + Original
+
+Plot:
+
+```text
+genmol-denovo/soft_reward_new_variants_vs_diversity_paired_new_2000_20260427.png
+```
+
+![GenMol De Novo Soft Reward vs Diversity Paired Sweep q0.8/SA0.2 2000-Step Variants plus Original](genmol-denovo/soft_reward_new_variants_vs_diversity_paired_new_2000_20260427.png)
 
 ## mmGenMol
 
@@ -1500,6 +1668,176 @@ Notes:
 - Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present.
 - Slurm exit code was not rechecked in this update because `sacct` was unavailable on the reachable admin node and the login nodes timed out during the check.
 
+### GRPO + DrugCLIP
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
+```
+
+Notes:
+
+- This line is the current mmGenMol GRPO `ng192 / bs384` training recipe with rollout-level reward weights changed to:
+
+```text
+qed = 0.3
+sa_score = 0.2
+drugclip_score = 0.5
+```
+
+- DrugCLIP runtime assets and reward path were validated in 1-GPU smoke before the 8-GPU launch.
+- Current 8-GPU training job: `49378`
+
+### GRPO + DrugCLIP 2000-Step Variant
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
+```
+
+Notes:
+
+- This line matches `GRPO + DrugCLIP` above except `max_steps = 2000`.
+- Current 8-GPU training job: `49379`
+
+### SGRPO + DrugCLIP
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
+```
+
+Notes:
+
+- This line is the current mmGenMol SGRPO `ng24 / sg8 / bs384 / gw09` training recipe with rollout-level reward weights changed to:
+
+```text
+qed = 0.3
+sa_score = 0.2
+drugclip_score = 0.5
+```
+
+- Remaining hyperparameters are intentionally unchanged relative to the locked mmGenMol SGRPO main line.
+
+### SGRPO + DrugCLIP 2000-Step Variant
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
+```
+
+Notes:
+
+- This line matches `SGRPO + DrugCLIP` above except `max_steps = 2000`.
+
 ### Pareto Curves To Maintain
 
 Generation task manifest for the current randomness sweep:
@@ -1652,6 +1990,13 @@ For each model and sweep point, group generated molecules by source_index. Compu
 ##### `vina_dock_mean` vs `diversity`
 
 ![mmGenMol Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_vina_dock_mean_20260425.png)
+
+#### Paired Randomness-Temperature Sweep
+
+- Sweep grid: `(randomness, temperature) = (0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
+- Docking mode for the main paired sweep: `vina_dock` only
+- Aggregated result files: `TODO`
+- Plot files: `TODO`
 
 ## ProGen2
 
