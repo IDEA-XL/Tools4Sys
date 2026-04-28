@@ -15,6 +15,7 @@ REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16.yaml}
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 PROTBERT_DIR=${PROTBERT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd}
+CUDA_TOOLCHAIN_DIR=${CUDA_TOOLCHAIN_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/cuda_toolchain_cu124}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_train/logs
 
@@ -39,7 +40,16 @@ if [[ ! -d "${TORCH_LIB_DIR}" ]]; then
   echo "Missing torch library directory: ${TORCH_LIB_DIR}" >&2
   exit 1
 fi
-export LD_LIBRARY_PATH="${TORCH_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+CUDA_LIB_DIR=${CUDA_TOOLCHAIN_DIR}/lib
+if [[ ! -d "${CUDA_LIB_DIR}" ]]; then
+  echo "Missing CUDA toolchain library directory: ${CUDA_LIB_DIR}" >&2
+  exit 1
+fi
+if [[ ! -f "${CUDA_LIB_DIR}/libcudart.so.12" ]]; then
+  echo "Missing CUDA runtime library: ${CUDA_LIB_DIR}/libcudart.so.12" >&2
+  exit 1
+fi
+export LD_LIBRARY_PATH="${TORCH_LIB_DIR}:${CUDA_LIB_DIR}:${LD_LIBRARY_PATH:-}"
 
 if [[ -n "${WANDB_API_KEY:-}" ]]; then
   wandb login --relogin "${WANDB_API_KEY}" >/dev/null 2>&1 || true
