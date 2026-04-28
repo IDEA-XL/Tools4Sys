@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
@@ -226,6 +227,9 @@ def resolve_output_dir(config, config_path):
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
         base_dir = os.path.join(repo_root, 'runs', 'progen2_sgrpo')
     config_name = os.path.splitext(os.path.basename(config_path))[0]
+    slurm_job_id = os.environ.get('SLURM_JOB_ID')
+    if slurm_job_id:
+        return os.path.join(base_dir, f'{config_name}_slurm{slurm_job_id}')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     return os.path.join(base_dir, f'{config_name}_{timestamp}')
 
@@ -319,6 +323,10 @@ def _merge_rollout_batches(batches, pad_token_id):
 
 
 class ProGen2SGRPOTrainer:
+    _CALIBRATION_FILE_NAME = 'reward_calibration.json'
+    _CALIBRATION_POLL_SEC = 2.0
+    _CALIBRATION_TIMEOUT_SEC = 3 * 60 * 60
+
     def __init__(self, config, output_dir):
         self.config = config
         self.output_dir = output_dir
@@ -386,6 +394,7 @@ class ProGen2SGRPOTrainer:
         )
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
+        self.calibration_path = os.path.join(output_dir, self._CALIBRATION_FILE_NAME)
         self.global_step = 0
         self._cuda_run_max_reserved = 0
         self._cuda_run_max_allocated = 0
@@ -483,11 +492,26 @@ class ProGen2SGRPOTrainer:
             calibration_sequences = self._calibration_sequences()
             logger.info('Scoring reward calibration statistics on %d sequences', len(calibration_sequences))
             calibration = self.reward_model.calibrate(calibration_sequences)
+            calibration_tmp_path = f'{self.calibration_path}.tmp'
+            with open(calibration_tmp_path, 'w') as handle:
+                json.dump(calibration, handle, indent=2, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(calibration_tmp_path, self.calibration_path)
             logger.info('Reward calibration complete')
-        payload = [calibration]
-        if self.accelerator.num_processes > 1 and dist.is_available() and dist.is_initialized():
-            dist.broadcast_object_list(payload, src=0)
-        self.reward_model.calibration = payload[0]
+        start = time.monotonic()
+        while calibration is None:
+            if os.path.exists(self.calibration_path):
+                with open(self.calibration_path) as handle:
+                    calibration = json.load(handle)
+                break
+            if time.monotonic() - start > self._CALIBRATION_TIMEOUT_SEC:
+                raise TimeoutError(
+                    'Timed out waiting for reward calibration file '
+                    f'{self.calibration_path!r} after {self._CALIBRATION_TIMEOUT_SEC} seconds'
+                )
+            time.sleep(self._CALIBRATION_POLL_SEC)
+        self.reward_model.calibration = calibration
 
     def _score_rollout_rewards(self, sequences, *, step_number):
         valid_indices = [idx for idx, sequence in enumerate(sequences) if sequence]
