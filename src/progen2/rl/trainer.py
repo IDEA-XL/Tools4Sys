@@ -411,10 +411,18 @@ class ProGen2SGRPOTrainer:
         }
 
         if config.report_to:
+            tracker_project = os.environ.get('WANDB_PROJECT', 'progen2')
             init_kwargs = {}
             if 'wandb' in config.report_to:
-                init_kwargs['wandb'] = {'name': os.path.basename(output_dir)}
-            self.accelerator.init_trackers('progen2-sgrpo', config=asdict(config), init_kwargs=init_kwargs or None)
+                init_kwargs['wandb'] = {
+                    'name': os.path.basename(output_dir),
+                    'project': tracker_project,
+                }
+            self.accelerator.init_trackers(
+                tracker_project,
+                config=asdict(config),
+                init_kwargs=init_kwargs or None,
+            )
 
     def _generate_rollouts(self, prompts, *, num_return_sequences, seed):
         rng = random.Random(seed)
