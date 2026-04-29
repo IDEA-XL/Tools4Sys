@@ -416,7 +416,6 @@ class ProGen2SGRPOTrainer:
             if 'wandb' in config.report_to:
                 init_kwargs['wandb'] = {
                     'name': os.path.basename(output_dir),
-                    'project': tracker_project,
                 }
             self.accelerator.init_trackers(
                 tracker_project,
