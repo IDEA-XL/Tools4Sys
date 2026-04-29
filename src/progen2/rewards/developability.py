@@ -13,6 +13,8 @@ from queue import SimpleQueue
 from progen2.rewards.common import iter_chunks, validate_batch_size
 from progen2.rewards.liability import liability_reward
 
+PROTEINSOL_MIN_SEQUENCE_LENGTH = 21
+
 
 def _resolve_proteinsol_root(model_name_or_path):
     root = Path(model_name_or_path).expanduser().resolve()
@@ -57,6 +59,10 @@ def _normalize_optional_num_workers(num_workers):
     if num_workers is None:
         return None
     return validate_batch_size(num_workers, field_name='developability.num_workers')
+
+
+def _is_proteinsol_compatible_sequence(sequence):
+    return len(str(sequence)) >= PROTEINSOL_MIN_SEQUENCE_LENGTH
 
 
 def _resolve_env_positive_int(name):
@@ -136,6 +142,7 @@ class ProteinSolScorer:
         self.last_num_workers = 0
         self.last_effective_batch_size = 0
         self.last_chunk_count = 0
+        self.last_short_sequence_count = 0
 
     def _resolved_num_workers(self):
         if self.num_workers is not None:
@@ -167,42 +174,63 @@ class ProteinSolScorer:
     def score_raw(self, sequences):
         if not sequences:
             raise ValueError('sequences must be non-empty')
-        worker_count = self._resolve_runtime_worker_count(len(sequences))
-        effective_batch_size = self._resolve_effective_batch_size(len(sequences), worker_count)
-        chunks = list(iter_chunks(sequences, effective_batch_size))
+        compatible_indices = [
+            idx for idx, sequence in enumerate(sequences)
+            if _is_proteinsol_compatible_sequence(sequence)
+        ]
+        self.last_short_sequence_count = len(sequences) - len(compatible_indices)
+        if not compatible_indices:
+            self.last_num_workers = 0
+            self.last_effective_batch_size = 0
+            self.last_chunk_count = 0
+            return [0.0] * len(sequences)
+
+        compatible_sequences = [sequences[idx] for idx in compatible_indices]
+        worker_count = self._resolve_runtime_worker_count(len(compatible_sequences))
+        effective_batch_size = self._resolve_effective_batch_size(len(compatible_sequences), worker_count)
+        chunks = list(iter_chunks(compatible_sequences, effective_batch_size))
         self._ensure_workers(worker_count)
         self.last_num_workers = worker_count
         self.last_effective_batch_size = effective_batch_size
         self.last_chunk_count = len(chunks)
         if len(chunks) == 1:
-            return self._score_chunk_with_worker(0, chunks[0])
-
-        outputs = [None] * len(chunks)
-        max_workers = min(worker_count, len(chunks))
-        idle_workers = SimpleQueue()
-        for worker_index in range(max_workers):
-            idle_workers.put(worker_index)
-
-        def _run_chunk(chunk):
-            worker_index = idle_workers.get()
-            try:
-                return self._score_chunk_with_worker(worker_index, chunk)
-            finally:
+            compatible_scores = self._score_chunk_with_worker(0, chunks[0])
+        else:
+            outputs = [None] * len(chunks)
+            max_workers = min(worker_count, len(chunks))
+            idle_workers = SimpleQueue()
+            for worker_index in range(max_workers):
                 idle_workers.put(worker_index)
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_chunk = {}
-            for chunk_index, chunk in enumerate(chunks):
-                future = executor.submit(_run_chunk, chunk)
-                future_to_chunk[future] = chunk_index
-            for future in as_completed(future_to_chunk):
-                chunk_index = future_to_chunk[future]
-                outputs[chunk_index] = future.result()
+            def _run_chunk(chunk):
+                worker_index = idle_workers.get()
+                try:
+                    return self._score_chunk_with_worker(worker_index, chunk)
+                finally:
+                    idle_workers.put(worker_index)
 
-        flattened = []
-        for chunk_scores in outputs:
-            flattened.extend(chunk_scores)
-        return flattened
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_chunk = {}
+                for chunk_index, chunk in enumerate(chunks):
+                    future = executor.submit(_run_chunk, chunk)
+                    future_to_chunk[future] = chunk_index
+                for future in as_completed(future_to_chunk):
+                    chunk_index = future_to_chunk[future]
+                    outputs[chunk_index] = future.result()
+
+            compatible_scores = []
+            for chunk_scores in outputs:
+                compatible_scores.extend(chunk_scores)
+
+        if len(compatible_scores) != len(compatible_indices):
+            raise RuntimeError(
+                'Protein-Sol score count mismatch after short-sequence filtering: '
+                f'expected {len(compatible_indices)}, got {len(compatible_scores)}'
+            )
+        scores = [0.0] * len(sequences)
+        for target_idx, score in zip(compatible_indices, compatible_scores):
+            scores[target_idx] = float(score)
+        return scores
 
 
 class _ProteinSolWorker:

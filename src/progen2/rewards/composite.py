@@ -420,6 +420,7 @@ class CompositeProteinReward:
             'reward_dev_workers': float(getattr(self.developability, 'last_num_workers', 0.0)) if self.developability is not None else 0.0,
             'reward_dev_effective_batch_size': float(getattr(self.developability, 'last_effective_batch_size', 0.0)) if self.developability is not None else 0.0,
             'reward_dev_chunk_count': float(getattr(self.developability, 'last_chunk_count', 0.0)) if self.developability is not None else 0.0,
+            'reward_dev_short_count': float(getattr(self.developability, 'last_short_sequence_count', 0.0)) if self.developability is not None else 0.0,
             'reward_score_sec_total': nat_score_sec + fold_score_sec + stab_score_sec + dev_score_sec,
             'reward_cpu_to_gpu_sec_total': nat_cpu_to_gpu_sec + fold_cpu_to_gpu_sec + stab_cpu_to_gpu_sec + dev_cpu_to_gpu_sec,
             'reward_gpu_to_cpu_sec_total': nat_gpu_to_cpu_sec + fold_gpu_to_cpu_sec + stab_gpu_to_cpu_sec + dev_gpu_to_cpu_sec,

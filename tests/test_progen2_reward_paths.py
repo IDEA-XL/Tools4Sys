@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from progen2.rewards.developability import _parse_scaled_sol_scores, _resolve_proteinsol_root
+import pytest
+
+from progen2.rewards.developability import ProteinSolScorer, _parse_scaled_sol_scores, _resolve_proteinsol_root
 from progen2.rewards.stability import _resolve_temberture_root
 
 
@@ -28,3 +30,30 @@ def test_parse_scaled_sol_scores_reads_scaled_column(tmp_path):
         'seq_0': 0.336,
         'seq_1': 0.548,
     }
+
+
+def test_proteinsol_scorer_skips_sequences_shorter_than_21(monkeypatch):
+    monkeypatch.setattr(
+        'progen2.rewards.developability._resolve_proteinsol_root',
+        lambda model_name_or_path: Path('/tmp/proteinsol'),
+    )
+
+    created_workers = []
+
+    class _FakeWorker:
+        def __init__(self, bundle_root):
+            created_workers.append(Path(bundle_root))
+
+        def score_chunk(self, chunk):
+            return [0.5] * len(chunk)
+
+    monkeypatch.setattr('progen2.rewards.developability._ProteinSolWorker', _FakeWorker)
+
+    scorer = ProteinSolScorer(model_name_or_path='/tmp/proteinsol', batch_size=16, num_workers=4)
+    scores = scorer.score_raw(['A' * 20, 'C' * 21, 'D' * 25])
+
+    assert scores == pytest.approx([0.0, 0.5, 0.5])
+    assert scorer.last_short_sequence_count == 1
+    assert scorer.last_num_workers == 2
+    assert scorer.last_chunk_count == 2
+    assert len(created_workers) == 2
