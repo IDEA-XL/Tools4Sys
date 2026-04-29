@@ -552,16 +552,20 @@ class ProGen2SGRPOTrainer:
                 )
             batch_sizes = self._broadcast_object(batch_sizes)
             local_batch_size = int(batch_sizes[self.accelerator.process_index])
-            if local_batch_size == 0:
+            total_batch_size = sum(batch_sizes)
+            if total_batch_size == 0:
                 break
-            prompts = _cycle_prompt_batch(self.prompts, local_batch_size, calibration_cursor)
-            calibration_cursor = (calibration_cursor + sum(batch_sizes)) % len(self.prompts)
-            rollout = self._generate_rollouts(
-                prompts,
-                num_return_sequences=1,
-                seed=self.config.seed + attempts * world_size + self.accelerator.process_index,
-            )
-            valid = [sequence for sequence in rollout.protein_sequences if sequence]
+            if local_batch_size > 0:
+                prompts = _cycle_prompt_batch(self.prompts, local_batch_size, calibration_cursor)
+                rollout = self._generate_rollouts(
+                    prompts,
+                    num_return_sequences=1,
+                    seed=self.config.seed + attempts * world_size + self.accelerator.process_index,
+                )
+                valid = [sequence for sequence in rollout.protein_sequences if sequence]
+            else:
+                valid = []
+            calibration_cursor = (calibration_cursor + total_batch_size) % len(self.prompts)
             gathered = self._all_gather_object(valid)
             if self.accelerator.is_main_process:
                 for sequences in gathered:
