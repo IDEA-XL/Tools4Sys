@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 
 import torch
 
-from genmol.mm.utils import DrugCLIPConfig, DrugCLIPScorer
+from genmol.mm.utils import DrugCLIPConfig, DrugCLIPScorer, UniDockConfig, UniDockScorer
 
 
 _PROCESS_KERNEL = None
@@ -17,16 +17,22 @@ MOLECULAR_REWARD_NAME_ORDER = (
     'qed',
     'sa_score',
     'drugclip_score',
+    'unidock_score',
 )
 DEFAULT_MOLECULAR_REWARD_WEIGHTS = {
     'qed': 0.6,
     'sa_score': 0.4,
     'drugclip_score': 0.0,
+    'unidock_score': 0.0,
 }
 
 
 def sa_to_score(sa_value):
     return max(0.0, min((6.0 - float(sa_value)) / 5.0, 1.0))
+
+
+def unidock_affinity_to_score(unidock_affinity):
+    return max(0.0, min((-float(unidock_affinity)) / 10.0, 1.0))
 
 
 def normalize_molecular_reward_weights(config):
@@ -50,7 +56,13 @@ def normalize_molecular_reward_weights(config):
     return normalized
 
 
-def compute_soft_reward(qed_value, sa_score_value, drugclip_score_value=None, reward_weights=None):
+def compute_soft_reward(
+    qed_value,
+    sa_score_value,
+    drugclip_score_value=None,
+    unidock_score_value=None,
+    reward_weights=None,
+):
     normalized_weights = normalize_molecular_reward_weights(reward_weights)
     outputs = 0.0
     if normalized_weights['qed'] > 0.0:
@@ -65,6 +77,10 @@ def compute_soft_reward(qed_value, sa_score_value, drugclip_score_value=None, re
         if drugclip_score_value is None:
             raise ValueError('drugclip_score_value is required when drugclip_score reward weight is positive')
         outputs += normalized_weights['drugclip_score'] * float(drugclip_score_value)
+    if normalized_weights['unidock_score'] > 0.0:
+        if unidock_score_value is None:
+            raise ValueError('unidock_score_value is required when unidock_score reward weight is positive')
+        outputs += normalized_weights['unidock_score'] * float(unidock_score_value)
     return float(outputs)
 
 
@@ -152,6 +168,7 @@ class RewardRecord:
     sa: float | None
     sa_score: float | None
     drugclip_score: float | None
+    unidock_score: float | None
     soft_reward: float | None
     smiles: str | None
 
@@ -309,6 +326,7 @@ class _RewardKernel:
                     sa=None,
                     sa_score=None,
                     drugclip_score=None,
+                    unidock_score=None,
                     soft_reward=None,
                     smiles=None,
                 )
@@ -339,6 +357,7 @@ class _RewardKernel:
                         sa=sa_score,
                         sa_score=sa_score_value,
                         drugclip_score=None,
+                        unidock_score=None,
                         soft_reward=None,
                         smiles=smiles,
                     )
@@ -352,6 +371,7 @@ class _RewardKernel:
                         sa=None,
                         sa_score=None,
                         drugclip_score=None,
+                        unidock_score=None,
                         soft_reward=None,
                         smiles=smiles,
                     )
@@ -370,6 +390,7 @@ class _RewardKernel:
                     sa=sa_score,
                     sa_score=sa_score_value,
                     drugclip_score=None,
+                    unidock_score=None,
                     soft_reward=soft_reward,
                     smiles=smiles,
                 )
@@ -392,7 +413,13 @@ def _score_reward_chunk(smiles_chunk):
 
 
 class MolecularReward:
-    def __init__(self, reward_weights=None, always_compute_metrics=False, drugclip_config: DrugCLIPConfig | None = None):
+    def __init__(
+        self,
+        reward_weights=None,
+        always_compute_metrics=False,
+        drugclip_config: DrugCLIPConfig | None = None,
+        unidock_config: UniDockConfig | None = None,
+    ):
         self.num_workers = _resolve_reward_workers()
         self.reward_weights = normalize_molecular_reward_weights(reward_weights)
         self.always_compute_metrics = bool(always_compute_metrics)
@@ -401,8 +428,14 @@ class MolecularReward:
             if drugclip_config is None:
                 raise ValueError('drugclip_config is required when drugclip_score reward weight is positive')
             self._drugclip = DrugCLIPScorer(drugclip_config)
+        self._unidock = None
+        if self.reward_weights['unidock_score'] > 0.0:
+            if unidock_config is None:
+                raise ValueError('unidock_config is required when unidock_score reward weight is positive')
+            self._unidock = UniDockScorer(unidock_config)
         self._base_reward_weights = dict(self.reward_weights)
         self._base_reward_weights['drugclip_score'] = 0.0
+        self._base_reward_weights['unidock_score'] = 0.0
         self._kernel = _RewardKernel(
             reward_weights=self._base_reward_weights,
             always_compute_metrics=self.always_compute_metrics,
@@ -415,10 +448,15 @@ class MolecularReward:
                 initializer=_initialize_process_reward_kernel,
                 initargs=(self._base_reward_weights, self.always_compute_metrics),
             )
-        self.last_stats = {
+        self.last_stats = self._empty_last_stats()
+
+    @staticmethod
+    def _empty_last_stats():
+        return {
             'reward_score_sec_total': 0.0,
             'reward_base_score_sec': 0.0,
             'reward_drugclip_score_sec': 0.0,
+            'reward_unidock_score_sec': 0.0,
             'base_valid_count': 0,
             'base_valid_fraction': 0.0,
             'drugclip_input_count': 0,
@@ -442,37 +480,27 @@ class MolecularReward:
             'drugclip_fail_embed_exception_count': 0,
             'drugclip_fail_zero_conformer_count': 0,
             'drugclip_fail_empty_atom_list_count': 0,
+            'unidock_input_count': 0,
+            'unidock_unique_smiles_count': 0,
+            'unidock_unique_pocket_count': 0,
+            'unidock_score_success_count': 0,
+            'unidock_score_failure_count': 0,
+            'unidock_score_success_fraction': 0.0,
+            'unidock_cache_hit_count': 0,
+            'unidock_cache_miss_count': 0,
+            'unidock_prepare_sec': 0.0,
+            'unidock_dock_sec': 0.0,
+            'unidock_parse_sec': 0.0,
+            'unidock_chunk_count': 0,
+            'unidock_rank_cpu_count': 0,
+            'unidock_max_gpu_memory_mb': 0,
+            'unidock_fail_prepare_count': 0,
+            'unidock_fail_output_missing_count': 0,
+            'unidock_fail_parse_count': 0,
         }
 
     def _reset_last_stats(self):
-        self.last_stats = {
-            'reward_score_sec_total': 0.0,
-            'reward_base_score_sec': 0.0,
-            'reward_drugclip_score_sec': 0.0,
-            'base_valid_count': 0,
-            'base_valid_fraction': 0.0,
-            'drugclip_input_count': 0,
-            'drugclip_unique_smiles_count': 0,
-            'drugclip_unique_pocket_count': 0,
-            'drugclip_molecule_cache_hit_count': 0,
-            'drugclip_molecule_cache_miss_count': 0,
-            'drugclip_unique_smiles_success_count': 0,
-            'drugclip_unique_smiles_failure_count': 0,
-            'drugclip_score_success_count': 0,
-            'drugclip_score_failure_count': 0,
-            'drugclip_score_success_fraction': 0.0,
-            'drugclip_pocket_cache_hit_count': 0,
-            'drugclip_pocket_cache_miss_count': 0,
-            'drugclip_molecule_prepare_sec': 0.0,
-            'drugclip_molecule_encode_sec': 0.0,
-            'drugclip_pocket_prepare_sec': 0.0,
-            'drugclip_pocket_encode_sec': 0.0,
-            'drugclip_score_dot_sec': 0.0,
-            'drugclip_fail_smiles_parse_count': 0,
-            'drugclip_fail_embed_exception_count': 0,
-            'drugclip_fail_zero_conformer_count': 0,
-            'drugclip_fail_empty_atom_list_count': 0,
-        }
+        self.last_stats = self._empty_last_stats()
 
     @staticmethod
     def _synchronize_cuda(device):
@@ -490,6 +518,9 @@ class MolecularReward:
         if self._drugclip is not None:
             self._drugclip.close()
             self._drugclip = None
+        if self._unidock is not None:
+            self._unidock.close()
+            self._unidock = None
 
     def score(self, smiles_list, pocket_entries=None):
         self._reset_last_stats()
@@ -516,15 +547,15 @@ class MolecularReward:
                 )
         self.last_stats['reward_base_score_sec'] = time.perf_counter() - base_start
 
-        if self._drugclip is None:
+        if self._drugclip is None and self._unidock is None:
             self.last_stats['reward_score_sec_total'] = time.perf_counter() - total_start
             return records
 
         if pocket_entries is None:
-            raise ValueError('pocket_entries are required when drugclip_score reward weight is positive')
+            raise ValueError('pocket_entries are required when molecular docking-style reward weights are positive')
         if len(pocket_entries) != len(smiles_list):
             raise ValueError(
-                'pocket_entries must match smiles_list length when DrugCLIP scoring is enabled: '
+                'pocket_entries must match smiles_list length when docking-style reward scoring is enabled: '
                 f'{len(pocket_entries)} vs {len(smiles_list)}'
             )
 
@@ -544,41 +575,77 @@ class MolecularReward:
             self.last_stats['reward_score_sec_total'] = time.perf_counter() - total_start
             return records
 
-        self._synchronize_cuda(self._drugclip.device)
-        drugclip_start = time.perf_counter()
-        drugclip_scores = self._drugclip.score(active_smiles, active_pocket_entries)
-        self._synchronize_cuda(self._drugclip.device)
-        self.last_stats['reward_drugclip_score_sec'] = time.perf_counter() - drugclip_start
-        self.last_stats.update(self._drugclip.last_score_stats)
-        if len(drugclip_scores) != len(active_indices):
-            raise RuntimeError(
-                'DrugCLIP scorer returned mismatched score count: '
-                f'expected {len(active_indices)}, got {len(drugclip_scores)}'
-            )
-
         updated_records = list(records)
-        for active_index, drugclip_score in zip(active_indices, drugclip_scores):
-            record = updated_records[active_index]
-            if drugclip_score is None:
+        if self._drugclip is not None:
+            self._synchronize_cuda(self._drugclip.device)
+            drugclip_start = time.perf_counter()
+            drugclip_scores = self._drugclip.score(active_smiles, active_pocket_entries)
+            self._synchronize_cuda(self._drugclip.device)
+            self.last_stats['reward_drugclip_score_sec'] = time.perf_counter() - drugclip_start
+            self.last_stats.update(self._drugclip.last_score_stats)
+            if len(drugclip_scores) != len(active_indices):
+                raise RuntimeError(
+                    'DrugCLIP scorer returned mismatched score count: '
+                    f'expected {len(active_indices)}, got {len(drugclip_scores)}'
+                )
+            for active_index, drugclip_score in zip(active_indices, drugclip_scores):
+                record = updated_records[active_index]
+                if drugclip_score is None:
+                    updated_records[active_index] = replace(
+                        record,
+                        reward=-1.0,
+                        is_valid=False,
+                        drugclip_score=None,
+                        soft_reward=None,
+                    )
+                    continue
                 updated_records[active_index] = replace(
                     record,
-                    reward=-1.0,
-                    is_valid=False,
-                    drugclip_score=None,
-                    soft_reward=None,
+                    drugclip_score=float(drugclip_score),
                 )
-                continue
 
+        if self._unidock is not None:
+            unidock_start = time.perf_counter()
+            unidock_scores = self._unidock.score(active_smiles, active_pocket_entries)
+            self.last_stats['reward_unidock_score_sec'] = time.perf_counter() - unidock_start
+            self.last_stats.update(self._unidock.last_score_stats)
+            if len(unidock_scores) != len(active_indices):
+                raise RuntimeError(
+                    'Uni-Dock scorer returned mismatched score count: '
+                    f'expected {len(active_indices)}, got {len(unidock_scores)}'
+                )
+            for active_index, unidock_score in zip(active_indices, unidock_scores):
+                record = updated_records[active_index]
+                if not record.is_valid:
+                    continue
+                if unidock_score is None:
+                    updated_records[active_index] = replace(
+                        record,
+                        reward=-1.0,
+                        is_valid=False,
+                        unidock_score=None,
+                        soft_reward=None,
+                    )
+                    continue
+                updated_records[active_index] = replace(
+                    record,
+                    unidock_score=unidock_affinity_to_score(unidock_score),
+                )
+
+        for active_index in active_indices:
+            record = updated_records[active_index]
+            if not record.is_valid:
+                continue
             soft_reward = compute_soft_reward(
                 record.qed,
                 record.sa_score,
-                drugclip_score,
+                record.drugclip_score,
+                record.unidock_score,
                 reward_weights=self.reward_weights,
             )
             updated_records[active_index] = replace(
                 record,
                 reward=apply_reward_gate(soft_reward, is_valid=True, alert_hit=record.alert_hit),
-                drugclip_score=float(drugclip_score),
                 soft_reward=soft_reward,
             )
         self.last_stats['reward_score_sec_total'] = time.perf_counter() - total_start

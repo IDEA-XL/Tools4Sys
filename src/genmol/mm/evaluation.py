@@ -82,6 +82,7 @@ def summarize_reward_records(records):
         'sa_mean': nanmean([record.sa for record in records]),
         'sa_score_mean': nanmean([record.sa_score for record in records]),
         'drugclip_score_mean': nanmean([record.drugclip_score for record in records]),
+        'unidock_score_mean': nanmean([record.unidock_score for record in records]),
         'soft_reward_mean': nanmean([record.soft_reward for record in records]),
     }
 
@@ -134,6 +135,7 @@ def build_rows(entries, specs, rollout, reward_records, docking_records_by_mode=
             'sa': record.sa,
             'sa_score': record.sa_score,
             'drugclip_score': record.drugclip_score,
+            'unidock_score': record.unidock_score,
             'soft_reward': record.soft_reward,
         }
         if docking_records_by_mode is not None:
