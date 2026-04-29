@@ -33,7 +33,7 @@ reward_compute_every_n_steps:
 max_new_tokens: 256
 top_p: 0.95
 temperature: 0.8
-reward_calibration_size: 4096
+reward_calibration_size: 1024
 reward_calibration_prompt_batch_size: 8
 rewards:
   naturalness:
