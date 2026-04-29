@@ -22,15 +22,22 @@ def _resolve_proteinsol_root(model_name_or_path):
     )
 
 
+def _normalize_sequence_id(raw_sequence_id):
+    sequence_id = raw_sequence_id.strip()
+    if sequence_id.startswith('>'):
+        sequence_id = sequence_id[1:].strip()
+    if not sequence_id:
+        raise ValueError(f'Protein-Sol produced an empty sequence id: {raw_sequence_id!r}')
+    return sequence_id
+
+
 def _parse_scaled_sol_scores(prediction_path):
     rows = {}
     with open(prediction_path, newline='') as handle:
         reader = csv.reader(handle)
         for row in reader:
             if len(row) >= 4 and row[0] == 'SEQUENCE PREDICTIONS':
-                sequence_id = row[1].strip()
-                if not sequence_id:
-                    raise ValueError(f'Protein-Sol produced an empty sequence id in {prediction_path}')
+                sequence_id = _normalize_sequence_id(row[1])
                 if sequence_id in rows:
                     raise ValueError(
                         'Protein-Sol produced duplicate sequence ids in '

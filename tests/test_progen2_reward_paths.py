@@ -24,4 +24,7 @@ def test_parse_scaled_sol_scores_reads_scaled_column(tmp_path):
         'SEQUENCE PREDICTIONS,>seq_0,41.535,0.336,0.446,5.520\n'
         'SEQUENCE PREDICTIONS,>seq_1,64.448,0.548,0.446,10.640\n'
     )
-    assert _parse_scaled_sol_scores(prediction_path) == [0.336, 0.548]
+    assert _parse_scaled_sol_scores(prediction_path) == {
+        'seq_0': 0.336,
+        'seq_1': 0.548,
+    }
