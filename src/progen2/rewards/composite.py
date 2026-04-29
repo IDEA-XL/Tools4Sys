@@ -14,6 +14,10 @@ REWARD_NAME_ORDER = (
     'stability',
     'developability',
 )
+CALIBRATION_REWARD_NAMES = (
+    'naturalness',
+    'stability',
+)
 DEFAULT_PROTEIN_REWARD_WEIGHTS = {
     'naturalness': 0.25,
     'foldability': 0.30,
@@ -51,6 +55,18 @@ def _resolve_reward_batch_size(config, default_batch_size, field_name):
             f'{field_name} must be set explicitly when no default_reward_batch_size is provided'
         )
     return default_batch_size
+
+
+def build_protein_reward_calibration(raw_scores_by_name):
+    calibration = {}
+    for reward_name in CALIBRATION_REWARD_NAMES:
+        raw_values = raw_scores_by_name.get(reward_name)
+        if raw_values is None:
+            continue
+        q10, q90 = _quantiles(raw_values)
+        calibration[f'{reward_name}_q10'] = q10
+        calibration[f'{reward_name}_q90'] = q90
+    return calibration
 
 
 def normalize_protein_reward_weights(config):
@@ -201,11 +217,16 @@ class CompositeProteinReward:
             )
         self.calibration = None
 
-    def _timed_score_raw(self, scorer, sequences):
+    def _timed_score_raw(self, scorer_name, scorer, sequences):
         if hasattr(scorer, 'device'):
             synchronize_device(scorer.device)
         start = time.perf_counter()
-        values = scorer.score_raw(sequences)
+        try:
+            values = scorer.score_raw(sequences)
+        except Exception as exc:
+            raise RuntimeError(
+                f'{scorer_name} reward scoring failed on {len(sequences)} sequences'
+            ) from exc
         if hasattr(scorer, 'device'):
             synchronize_device(scorer.device)
         elapsed = time.perf_counter() - start
@@ -223,18 +244,22 @@ class CompositeProteinReward:
         transfer_out = float(getattr(scorer, 'last_release_to_cpu_sec', 0.0))
         return elapsed, transfer_out
 
-    def calibrate(self, sequences):
-        calibration = {}
+    def collect_calibration_raw(self, sequences):
+        raw_scores = {}
         if self._compute_flags['naturalness']:
-            nat_raw, _, _ = self._timed_score_raw(self.naturalness, sequences)
-            nat_q10, nat_q90 = _quantiles(nat_raw)
-            calibration['naturalness_q10'] = nat_q10
-            calibration['naturalness_q90'] = nat_q90
+            nat_raw, _, _ = self._timed_score_raw('naturalness', self.naturalness, sequences)
+            raw_scores['naturalness'] = nat_raw
         if self._compute_flags['stability']:
-            stab_raw, _, _ = self._timed_score_raw(self.stability, sequences)
-            stab_q10, stab_q90 = _quantiles(stab_raw)
-            calibration['stability_q10'] = stab_q10
-            calibration['stability_q90'] = stab_q90
+            stab_raw, _, _ = self._timed_score_raw('stability', self.stability, sequences)
+            raw_scores['stability'] = stab_raw
+        return raw_scores
+
+    def set_calibration(self, calibration):
+        self.calibration = dict(calibration)
+        return dict(self.calibration)
+
+    def calibrate(self, sequences):
+        calibration = build_protein_reward_calibration(self.collect_calibration_raw(sequences))
         self.calibration = calibration
         return dict(self.calibration)
 
@@ -255,7 +280,11 @@ class CompositeProteinReward:
         num_sequences = len(sequences)
 
         if self._compute_flags['naturalness'] and self._should_compute_reward('naturalness', step_number):
-            nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(self.naturalness, sequences)
+            nat_raw, nat_score_sec, nat_cpu_to_gpu_sec = self._timed_score_raw(
+                'naturalness',
+                self.naturalness,
+                sequences,
+            )
             nat = _scale_quantile(
                 nat_raw,
                 self.calibration['naturalness_q10'],
@@ -270,7 +299,11 @@ class CompositeProteinReward:
             nat_skipped = 1.0
 
         if self._compute_flags['foldability'] and self._should_compute_reward('foldability', step_number):
-            fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(self.foldability, sequences)
+            fold, fold_score_sec, fold_cpu_to_gpu_sec = self._timed_score_raw(
+                'foldability',
+                self.foldability,
+                sequences,
+            )
             fold_skipped = 0.0
         else:
             fold = [0.0] * num_sequences
@@ -279,7 +312,11 @@ class CompositeProteinReward:
             fold_skipped = 1.0
 
         if self._compute_flags['stability'] and self._should_compute_reward('stability', step_number):
-            stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(self.stability, sequences)
+            stab_raw, stab_score_sec, stab_cpu_to_gpu_sec = self._timed_score_raw(
+                'stability',
+                self.stability,
+                sequences,
+            )
             stab = _scale_quantile(
                 stab_raw,
                 self.calibration['stability_q10'],
@@ -294,7 +331,11 @@ class CompositeProteinReward:
             stab_skipped = 1.0
 
         if self._compute_flags['developability'] and self._should_compute_reward('developability', step_number):
-            dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(self.developability, sequences)
+            dev_raw, dev_score_sec, dev_cpu_to_gpu_sec = self._timed_score_raw(
+                'developability',
+                self.developability,
+                sequences,
+            )
             developability_components = score_developability_components(dev_raw, sequences)
             dev = developability_components['developability']
             dev_skipped = 0.0

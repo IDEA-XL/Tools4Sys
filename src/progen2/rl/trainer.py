@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -22,7 +23,9 @@ from progen2.rewards import (
 )
 from progen2.rewards.common import is_valid_protein_sequence
 from progen2.rewards.composite import (
+    CALIBRATION_REWARD_NAMES,
     REWARD_NAME_ORDER,
+    build_protein_reward_calibration,
     normalize_protein_reward_weights,
     normalize_reward_compute_every_n_steps,
 )
@@ -213,6 +216,8 @@ def load_config(path):
             )
     if not config.rewards:
         raise ValueError('rewards config is required')
+    if config.reward_calibration_size <= 0:
+        raise ValueError('reward_calibration_size must be positive')
     if config.reward_calibration_prompt_batch_size <= 0:
         raise ValueError('reward_calibration_prompt_batch_size must be positive')
     return config
@@ -250,6 +255,35 @@ def _cycle_prompt_batch(prompts, batch_size, start_index):
     for offset in range(batch_size):
         batch.append(prompts[(start_index + offset) % len(prompts)])
     return batch
+
+
+def _distributed_calibration_batch_sizes(total_remaining, per_device_batch_size, world_size):
+    if total_remaining < 0:
+        raise ValueError(f'total_remaining must be non-negative, got {total_remaining}')
+    if per_device_batch_size <= 0:
+        raise ValueError(f'per_device_batch_size must be positive, got {per_device_batch_size}')
+    if world_size <= 0:
+        raise ValueError(f'world_size must be positive, got {world_size}')
+    batch_sizes = []
+    remaining = int(total_remaining)
+    for _ in range(world_size):
+        local_batch_size = min(per_device_batch_size, remaining)
+        batch_sizes.append(local_batch_size)
+        remaining -= local_batch_size
+    return batch_sizes
+
+
+def _shard_list_for_rank(items, world_size, rank):
+    if world_size <= 0:
+        raise ValueError(f'world_size must be positive, got {world_size}')
+    if not 0 <= rank < world_size:
+        raise ValueError(f'rank must be in [0, {world_size}), got {rank}')
+    total = len(items)
+    base = total // world_size
+    remainder = total % world_size
+    start = rank * base + min(rank, remainder)
+    stop = start + base + (1 if rank < remainder else 0)
+    return items[start:stop]
 
 
 def _write_jsonl(path, payload):
@@ -461,45 +495,124 @@ class ProGen2SGRPOTrainer:
             pad_token_id=self.policy.model.tokenizer.pad_token_id,
         )
 
+    def _all_gather_object(self, payload):
+        if self.accelerator.num_processes == 1:
+            return [payload]
+        if not dist.is_available() or not dist.is_initialized():
+            raise RuntimeError('torch.distributed must be initialized for multi-process calibration')
+        gathered = [None] * self.accelerator.num_processes
+        dist.all_gather_object(gathered, payload)
+        return gathered
+
+    def _broadcast_object(self, payload):
+        if self.accelerator.num_processes == 1:
+            return payload
+        if not dist.is_available() or not dist.is_initialized():
+            raise RuntimeError('torch.distributed must be initialized for multi-process calibration')
+        container = [payload]
+        dist.broadcast_object_list(container, src=0)
+        return container[0]
+
     def _next_prompt_batch(self):
         batch = _cycle_prompt_batch(self.prompts, self.config.per_device_prompt_batch_size, self._prompt_cursor)
         self._prompt_cursor = (self._prompt_cursor + self.config.per_device_prompt_batch_size) % len(self.prompts)
         return batch
 
     def _calibration_sequences(self):
-        remaining = int(self.config.reward_calibration_size)
-        collected = []
-        calibration_cursor = 0
-        prompt_batch_size = int(self.config.reward_calibration_prompt_batch_size)
-        logger.info(
-            'Starting reward calibration: target_sequences=%d prompt_batch_size=%d',
-            remaining,
-            prompt_batch_size,
+        target = int(self.config.reward_calibration_size)
+        per_device_prompt_batch_size = int(self.config.reward_calibration_prompt_batch_size)
+        world_size = self.accelerator.num_processes
+        calibration_cursor = self.accelerator.process_index * per_device_prompt_batch_size
+        collected = [] if self.accelerator.is_main_process else None
+        attempts = 0
+        max_batches = max(
+            8,
+            math.ceil(target / max(1, per_device_prompt_batch_size * world_size)) * 20,
         )
-        while remaining > 0:
-            prompts = _cycle_prompt_batch(self.prompts, min(prompt_batch_size, remaining), calibration_cursor)
-            calibration_cursor = (calibration_cursor + len(prompts)) % len(self.prompts)
+        logger.info(
+            'Starting reward calibration: target_sequences=%d per_device_prompt_batch_size=%d world_size=%d',
+            target,
+            per_device_prompt_batch_size,
+            world_size,
+        )
+        while True:
+            batch_sizes = None
+            if self.accelerator.is_main_process:
+                remaining = target - len(collected)
+                if remaining > 0 and attempts >= max_batches:
+                    raise RuntimeError(
+                        'Failed to collect enough valid calibration sequences before hitting the '
+                        f'maximum attempt budget: collected={len(collected)} '
+                        f'target={target} max_batches={max_batches}'
+                    )
+                batch_sizes = _distributed_calibration_batch_sizes(
+                    remaining,
+                    per_device_prompt_batch_size,
+                    world_size,
+                )
+            batch_sizes = self._broadcast_object(batch_sizes)
+            local_batch_size = int(batch_sizes[self.accelerator.process_index])
+            if local_batch_size == 0:
+                break
+            prompts = _cycle_prompt_batch(self.prompts, local_batch_size, calibration_cursor)
+            calibration_cursor = (calibration_cursor + sum(batch_sizes)) % len(self.prompts)
             rollout = self._generate_rollouts(
                 prompts,
                 num_return_sequences=1,
-                seed=self.config.seed + len(collected),
+                seed=self.config.seed + attempts * world_size + self.accelerator.process_index,
             )
             valid = [sequence for sequence in rollout.protein_sequences if sequence]
-            collected.extend(valid)
-            remaining = int(self.config.reward_calibration_size) - len(collected)
-            logger.info(
-                'Reward calibration progress: collected=%d remaining=%d',
-                len(collected),
-                max(remaining, 0),
-            )
-        return collected[: self.config.reward_calibration_size]
+            gathered = self._all_gather_object(valid)
+            if self.accelerator.is_main_process:
+                for sequences in gathered:
+                    collected.extend(sequences)
+                collected = collected[:target]
+                remaining = target - len(collected)
+                logger.info(
+                    'Reward calibration progress: collected=%d remaining=%d',
+                    len(collected),
+                    max(remaining, 0),
+                )
+            attempts += 1
+        return self._broadcast_object(collected if self.accelerator.is_main_process else None)
 
-    def calibrate(self):
+    def _distributed_reward_calibration(self, sequences):
+        local_sequences = _shard_list_for_rank(
+            sequences,
+            self.accelerator.num_processes,
+            self.accelerator.process_index,
+        )
+        logger.info(
+            'Scoring reward calibration shard on rank=%d: local_sequences=%d global_sequences=%d',
+            self.accelerator.process_index,
+            len(local_sequences),
+            len(sequences),
+        )
+        local_raw_scores = (
+            self.reward_model.collect_calibration_raw(local_sequences)
+            if local_sequences
+            else {}
+        )
+        gathered_raw_scores = self._all_gather_object(local_raw_scores)
         calibration = None
         if self.accelerator.is_main_process:
-            calibration_sequences = self._calibration_sequences()
-            logger.info('Scoring reward calibration statistics on %d sequences', len(calibration_sequences))
-            calibration = self.reward_model.calibrate(calibration_sequences)
+            merged_raw_scores = {reward_name: [] for reward_name in CALIBRATION_REWARD_NAMES}
+            for payload in gathered_raw_scores:
+                for reward_name in CALIBRATION_REWARD_NAMES:
+                    merged_raw_scores[reward_name].extend(payload.get(reward_name, []))
+            calibration = build_protein_reward_calibration(merged_raw_scores)
+            logger.info(
+                'Built reward calibration statistics for keys=%s',
+                sorted(calibration.keys()),
+            )
+        calibration = self._broadcast_object(calibration)
+        self.reward_model.set_calibration(calibration)
+        return calibration
+
+    def calibrate(self):
+        calibration_sequences = self._calibration_sequences()
+        calibration = self._distributed_reward_calibration(calibration_sequences)
+        if self.accelerator.is_main_process:
             calibration_tmp_path = f'{self.calibration_path}.tmp'
             with open(calibration_tmp_path, 'w') as handle:
                 json.dump(calibration, handle, indent=2, sort_keys=True)
@@ -507,19 +620,7 @@ class ProGen2SGRPOTrainer:
                 os.fsync(handle.fileno())
             os.replace(calibration_tmp_path, self.calibration_path)
             logger.info('Reward calibration complete')
-        start = time.monotonic()
-        while calibration is None:
-            if os.path.exists(self.calibration_path):
-                with open(self.calibration_path) as handle:
-                    calibration = json.load(handle)
-                break
-            if time.monotonic() - start > self._CALIBRATION_TIMEOUT_SEC:
-                raise TimeoutError(
-                    'Timed out waiting for reward calibration file '
-                    f'{self.calibration_path!r} after {self._CALIBRATION_TIMEOUT_SEC} seconds'
-                )
-            time.sleep(self._CALIBRATION_POLL_SEC)
-        self.reward_model.calibration = calibration
+        self.accelerator.wait_for_everyone()
 
     def _score_rollout_rewards(self, sequences, *, step_number):
         valid_indices = [
