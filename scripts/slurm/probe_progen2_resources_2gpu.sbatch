@@ -24,6 +24,10 @@ CALIBRATION_MIN=${CALIBRATION_MIN:-1}
 REWARD_INITIAL=${REWARD_INITIAL:-16}
 REWARD_MAX=${REWARD_MAX:-1024}
 FIXED_CALIBRATION_PROMPT_BATCH_SIZE=${FIXED_CALIBRATION_PROMPT_BATCH_SIZE:-}
+REWARD_START_BATCH_SIZES=${REWARD_START_BATCH_SIZES:-}
+REWARD_ACTIVE=${REWARD_ACTIVE:-}
+REWARD_CURRENT_TARGET=${REWARD_CURRENT_TARGET:-}
+REWARD_PHASE=${REWARD_PHASE:-}
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
@@ -106,6 +110,18 @@ cmd=(
 
 if [[ -n "${FIXED_CALIBRATION_PROMPT_BATCH_SIZE}" ]]; then
   cmd+=(--fixed-calibration-prompt-batch-size "${FIXED_CALIBRATION_PROMPT_BATCH_SIZE}")
+fi
+if [[ -n "${REWARD_START_BATCH_SIZES}" ]]; then
+  cmd+=(--reward-start-batch-sizes "${REWARD_START_BATCH_SIZES}")
+fi
+if [[ -n "${REWARD_ACTIVE}" ]]; then
+  cmd+=(--reward-active "${REWARD_ACTIVE}")
+fi
+if [[ -n "${REWARD_CURRENT_TARGET}" ]]; then
+  cmd+=(--reward-current-target "${REWARD_CURRENT_TARGET}")
+fi
+if [[ -n "${REWARD_PHASE}" ]]; then
+  cmd+=(--reward-phase "${REWARD_PHASE}")
 fi
 
 "${cmd[@]}"
