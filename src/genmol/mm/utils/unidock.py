@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,24 +135,52 @@ def _resolve_visible_cuda_device(device: torch.device) -> str:
     return str(local_rank)
 
 
-def _resolve_pocket_center(pocket_entry: dict) -> np.ndarray:
-    if 'pocket_coords' not in pocket_entry:
-        raise ValueError('Uni-Dock scoring requires pocket_coords in pocket entries')
-    coords = np.asarray(pocket_entry['pocket_coords'], dtype=np.float32)
-    if coords.size == 0:
-        raise ValueError('pocket_coords must be non-empty for Uni-Dock scoring')
-    if coords.shape[-1] != 3:
-        raise ValueError(f'pocket_coords must end with xyz dimension, got shape {list(coords.shape)}')
-    flattened = coords.reshape(-1, 3)
-    if flattened.shape[0] <= 0:
-        raise ValueError('pocket_coords must contain at least one xyz coordinate')
-    return flattened.mean(axis=0).astype(np.float32)
+def _resolve_native_ligand_center(raw_entry: dict) -> np.ndarray:
+    try:
+        from rdkit.Chem import GetPeriodicTable
+    except ImportError as exc:
+        raise RuntimeError('RDKit is required to compute Uni-Dock native-ligand centers') from exc
+
+    required_keys = {'ligand_pos', 'ligand_element'}
+    if not required_keys.issubset(raw_entry.keys()):
+        missing = sorted(required_keys.difference(raw_entry.keys()))
+        raise ValueError(f'Uni-Dock scoring requires native ligand fields for center alignment, missing {missing}')
+    ligand_positions = np.asarray(raw_entry['ligand_pos'], dtype=np.float32)
+    ligand_elements = np.asarray(raw_entry['ligand_element'], dtype=np.int64)
+    if ligand_positions.ndim != 2 or ligand_positions.shape[1] != 3:
+        raise ValueError(f'ligand_pos must have shape [num_atoms, 3], got {list(ligand_positions.shape)}')
+    if ligand_elements.ndim != 1 or ligand_elements.shape[0] != ligand_positions.shape[0]:
+        raise ValueError(
+            'ligand_element must be length-aligned with ligand_pos for Uni-Dock center alignment'
+        )
+    if ligand_positions.shape[0] <= 0:
+        raise ValueError('ligand_pos must contain at least one native ligand atom')
+    periodic_table = GetPeriodicTable()
+    masses = np.asarray(
+        [float(periodic_table.GetAtomicWeight(int(atomic_number))) for atomic_number in ligand_elements.tolist()],
+        dtype=np.float32,
+    )
+    if np.any(masses <= 0.0):
+        raise ValueError(f'Encountered a non-positive native ligand atomic mass: {masses.tolist()}')
+    total_mass = float(masses.sum())
+    if total_mass <= 0.0:
+        raise ValueError('Native ligand total mass must be positive for Uni-Dock center alignment')
+    center = (ligand_positions * masses[:, None]).sum(axis=0) / total_mass
+    return center.astype(np.float32)
 
 
 def _prepare_ligand_sdf(smiles: str, center: np.ndarray, output_path: Path) -> None:
     ligand = _embed_ligand_from_smiles(smiles)
     ligand = _translate_ligand_to_center(ligand, center)
     _write_ligand_sdf(ligand, output_path)
+
+
+def _prepare_ligand_sdf_task(smiles: str, center: np.ndarray, output_path: str) -> tuple[bool, str | None]:
+    try:
+        _prepare_ligand_sdf(smiles, center, Path(output_path))
+    except Exception as exc:  # noqa: BLE001
+        return False, f'{type(exc).__name__}: {exc}'
+    return True, None
 
 
 def _parse_unidock_energy(output_path: Path) -> float:
@@ -266,6 +295,12 @@ class UniDockScorer:
         self._receptor_cache_dir = Path(tempfile.mkdtemp(prefix='unidock_receptor_cache_'))
         self._receptor_path_cache: dict[str, Path] = {}
         self._score_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
+        self._prepare_executor = None
+        if self.rank_cpu_count > 1:
+            self._prepare_executor = ThreadPoolExecutor(
+                max_workers=self.rank_cpu_count,
+                thread_name_prefix='unidock_prepare',
+            )
         self.last_score_stats = self._empty_stats()
 
     @staticmethod
@@ -284,6 +319,7 @@ class UniDockScorer:
             'unidock_parse_sec': 0.0,
             'unidock_chunk_count': 0,
             'unidock_rank_cpu_count': 0,
+            'unidock_prepare_worker_count': 0,
             'unidock_max_gpu_memory_mb': 0,
             'unidock_fail_prepare_count': 0,
             'unidock_fail_output_missing_count': 0,
@@ -291,6 +327,8 @@ class UniDockScorer:
         }
 
     def close(self):
+        if self._prepare_executor is not None:
+            self._prepare_executor.shutdown(wait=True, cancel_futures=False)
         self._raw_entry_store.close()
         shutil.rmtree(self._receptor_cache_dir, ignore_errors=True)
 
@@ -351,16 +389,40 @@ class UniDockScorer:
             prepare_start = time.perf_counter()
             ligand_input_paths: list[Path] = []
             prepared_indices: list[int] = []
-            for ligand_idx, smiles in enumerate(smiles_chunk):
-                ligand_path = ligand_dir / f'lig_{ligand_idx:04d}_{_stable_key(smiles)}.sdf'
-                try:
-                    _prepare_ligand_sdf(smiles, pocket_center, ligand_path)
-                except Exception:
-                    self.last_score_stats['unidock_fail_prepare_count'] += 1
+            self.last_score_stats['unidock_prepare_worker_count'] = int(
+                max(self.last_score_stats['unidock_prepare_worker_count'], min(self.rank_cpu_count, len(smiles_chunk)))
+            )
+            if self._prepare_executor is None or len(smiles_chunk) == 1:
+                for ligand_idx, smiles in enumerate(smiles_chunk):
+                    ligand_path = ligand_dir / f'lig_{ligand_idx:04d}_{_stable_key(smiles)}.sdf'
+                    try:
+                        _prepare_ligand_sdf(smiles, pocket_center, ligand_path)
+                    except Exception:
+                        self.last_score_stats['unidock_fail_prepare_count'] += 1
+                        ligand_input_paths.append(ligand_path)
+                        continue
                     ligand_input_paths.append(ligand_path)
-                    continue
-                ligand_input_paths.append(ligand_path)
-                prepared_indices.append(ligand_idx)
+                    prepared_indices.append(ligand_idx)
+            else:
+                future_to_index = {}
+                for ligand_idx, smiles in enumerate(smiles_chunk):
+                    ligand_path = ligand_dir / f'lig_{ligand_idx:04d}_{_stable_key(smiles)}.sdf'
+                    ligand_input_paths.append(ligand_path)
+                    future = self._prepare_executor.submit(
+                        _prepare_ligand_sdf_task,
+                        smiles,
+                        pocket_center.copy(),
+                        str(ligand_path),
+                    )
+                    future_to_index[future] = ligand_idx
+                for future in as_completed(future_to_index):
+                    ligand_idx = future_to_index[future]
+                    success, _failure_detail = future.result()
+                    if not success:
+                        self.last_score_stats['unidock_fail_prepare_count'] += 1
+                        continue
+                    prepared_indices.append(ligand_idx)
+                prepared_indices.sort()
             self.last_score_stats['unidock_prepare_sec'] += time.perf_counter() - prepare_start
 
             outputs: list[float | None] = [None for _ in smiles_chunk]
@@ -449,6 +511,7 @@ class UniDockScorer:
         self.last_score_stats = self._empty_stats()
         self.last_score_stats['unidock_input_count'] = int(len(smiles_list))
         self.last_score_stats['unidock_rank_cpu_count'] = int(self.rank_cpu_count)
+        self.last_score_stats['unidock_prepare_worker_count'] = 1 if self._prepare_executor is None else int(self.rank_cpu_count)
         self.last_score_stats['unidock_max_gpu_memory_mb'] = int(self.max_gpu_memory_mb)
         if not smiles_list:
             return []
@@ -462,9 +525,10 @@ class UniDockScorer:
             pocket_key = self._pocket_cache_key(pocket_entry)
             grouped_indices.setdefault(pocket_key, []).append(index)
             if pocket_key not in pocket_payloads:
+                raw_entry = self._raw_entry_store.get_entry(pocket_entry)
                 pocket_payloads[pocket_key] = (
                     self._resolve_receptor_pdb_path(pocket_entry),
-                    _resolve_pocket_center(pocket_entry),
+                    _resolve_native_ligand_center(raw_entry),
                 )
             unique_smiles_keys[(pocket_key, smiles)] = None
 

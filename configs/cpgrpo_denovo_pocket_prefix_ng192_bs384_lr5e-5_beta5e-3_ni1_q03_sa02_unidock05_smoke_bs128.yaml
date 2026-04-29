@@ -56,7 +56,7 @@ qed: 0.3
 sa_score: 0.2
 unidock_score: 0.5
 unidock_binary_path: unidock
-unidock_batch_size: 384
+unidock_batch_size: 128
 unidock_search_mode: fast
 unidock_num_modes: 1
 unidock_num_cpu: 0

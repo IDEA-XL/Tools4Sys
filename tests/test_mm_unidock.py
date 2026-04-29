@@ -45,6 +45,14 @@ class _FakeCrossDockedRawEntryStore:
                 ),
                 'protein_atom_name': ['N', 'CA', 'C'],
                 'protein_atom_to_aa_type': np.asarray([0, 0, 0], dtype=np.int64),
+                'ligand_pos': np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [2.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                'ligand_element': np.asarray([6, 6], dtype=np.int64),
             },
             2: {
                 'protein_pos': np.asarray(
@@ -57,6 +65,14 @@ class _FakeCrossDockedRawEntryStore:
                 ),
                 'protein_atom_name': ['N', 'CA', 'C'],
                 'protein_atom_to_aa_type': np.asarray([1, 1, 1], dtype=np.int64),
+                'ligand_pos': np.asarray(
+                    [
+                        [1.0, 2.0, 3.0],
+                        [3.0, 2.0, 3.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                'ligand_element': np.asarray([6, 6], dtype=np.int64),
             },
         }
 
@@ -110,5 +126,6 @@ def test_unidock_scorer_deduplicates_smiles_within_pocket(tmp_path, monkeypatch)
     assert scorer.last_score_stats['unidock_unique_pocket_count'] == 2
     assert scorer.last_score_stats['unidock_unique_smiles_count'] == 3
     assert scorer.last_score_stats['unidock_chunk_count'] == 2
+    assert scorer.last_score_stats['unidock_prepare_worker_count'] == 4
     assert scorer.last_score_stats['unidock_score_success_count'] == 4
     assert scorer.last_score_stats['unidock_score_failure_count'] == 0
