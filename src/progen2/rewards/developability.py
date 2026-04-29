@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import csv
+import math
+import os
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from queue import SimpleQueue
 
 from progen2.rewards.common import iter_chunks, validate_batch_size
 from progen2.rewards.liability import liability_reward
@@ -49,6 +53,52 @@ def _parse_scaled_sol_scores(prediction_path):
     return rows
 
 
+def _normalize_optional_num_workers(num_workers):
+    if num_workers is None:
+        return None
+    return validate_batch_size(num_workers, field_name='developability.num_workers')
+
+
+def _resolve_env_positive_int(name):
+    raw_value = os.environ.get(name)
+    if raw_value is None or str(raw_value).strip() == '':
+        return None
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'{name} must be a positive integer when set, got {raw_value!r}') from exc
+    if value <= 0:
+        raise ValueError(f'{name} must be a positive integer when set, got {raw_value!r}')
+    return value
+
+
+def _resolve_available_cpu_budget():
+    slurm_cpus_per_task = _resolve_env_positive_int('SLURM_CPUS_PER_TASK')
+    if slurm_cpus_per_task is not None:
+        return slurm_cpus_per_task
+    if hasattr(os, 'sched_getaffinity'):
+        affinity = os.sched_getaffinity(0)
+        if affinity:
+            return len(affinity)
+    cpu_count = os.cpu_count()
+    if cpu_count is None or cpu_count <= 0:
+        raise RuntimeError('Unable to resolve available CPU budget for Protein-Sol worker auto-scaling')
+    return int(cpu_count)
+
+
+def _resolve_local_world_size():
+    local_world_size = _resolve_env_positive_int('LOCAL_WORLD_SIZE')
+    if local_world_size is not None:
+        return local_world_size
+    return 1
+
+
+def _default_num_workers():
+    cpu_budget = _resolve_available_cpu_budget()
+    local_world_size = _resolve_local_world_size()
+    return max(1, cpu_budget // local_world_size)
+
+
 def score_developability_components(proteinsol_scores, sequences):
     if len(proteinsol_scores) != len(sequences):
         raise ValueError('proteinsol_scores length must match sequences length')
@@ -69,7 +119,7 @@ def score_developability_components(proteinsol_scores, sequences):
 
 
 class ProteinSolScorer:
-    def __init__(self, model_name_or_path, tokenizer_name_or_path=None, device='cpu', batch_size=16):
+    def __init__(self, model_name_or_path, tokenizer_name_or_path=None, device='cpu', batch_size=16, num_workers=None):
         if tokenizer_name_or_path is not None:
             raise ValueError('Protein-Sol uses the official CLI bundle; tokenizer_name_or_path must be omitted')
         if device not in {'cpu', 'cuda'}:
@@ -77,24 +127,97 @@ class ProteinSolScorer:
         if not model_name_or_path:
             raise ValueError('Protein-Sol model_name_or_path is required')
         self.batch_size = validate_batch_size(batch_size, field_name='developability.batch_size')
+        self.num_workers = _normalize_optional_num_workers(num_workers)
         self.device = device
         self.bundle_root = _resolve_proteinsol_root(model_name_or_path)
-        self._workspace = None
-        self._workspace_root = None
+        self._workers = []
         self.last_move_to_device_sec = 0.0
         self.last_release_to_cpu_sec = 0.0
+        self.last_num_workers = 0
+        self.last_effective_batch_size = 0
+        self.last_chunk_count = 0
 
-    def _ensure_workspace(self):
-        if self._workspace_root is not None:
-            return
+    def _resolved_num_workers(self):
+        if self.num_workers is not None:
+            return self.num_workers
+        return _default_num_workers()
+
+    def _resolve_runtime_worker_count(self, num_sequences):
+        return max(1, min(self._resolved_num_workers(), int(num_sequences)))
+
+    def _resolve_effective_batch_size(self, num_sequences, worker_count):
+        if num_sequences <= 0:
+            raise ValueError(f'num_sequences must be positive, got {num_sequences}')
+        if worker_count <= 0:
+            raise ValueError(f'worker_count must be positive, got {worker_count}')
+        # Cap the chunk size so one rank can fan out across its available workers in a single wave.
+        per_worker_target = max(1, math.ceil(num_sequences / worker_count))
+        return min(self.batch_size, per_worker_target)
+
+    def _ensure_workers(self, worker_count):
+        while len(self._workers) < worker_count:
+            self._workers.append(_ProteinSolWorker(self.bundle_root))
+
+    def release(self):
+        return
+
+    def _score_chunk_with_worker(self, worker_index, chunk):
+        return self._workers[worker_index].score_chunk(chunk)
+
+    def score_raw(self, sequences):
+        if not sequences:
+            raise ValueError('sequences must be non-empty')
+        worker_count = self._resolve_runtime_worker_count(len(sequences))
+        effective_batch_size = self._resolve_effective_batch_size(len(sequences), worker_count)
+        chunks = list(iter_chunks(sequences, effective_batch_size))
+        self._ensure_workers(worker_count)
+        self.last_num_workers = worker_count
+        self.last_effective_batch_size = effective_batch_size
+        self.last_chunk_count = len(chunks)
+        if len(chunks) == 1:
+            return self._score_chunk_with_worker(0, chunks[0])
+
+        outputs = [None] * len(chunks)
+        max_workers = min(worker_count, len(chunks))
+        idle_workers = SimpleQueue()
+        for worker_index in range(max_workers):
+            idle_workers.put(worker_index)
+
+        def _run_chunk(chunk):
+            worker_index = idle_workers.get()
+            try:
+                return self._score_chunk_with_worker(worker_index, chunk)
+            finally:
+                idle_workers.put(worker_index)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_chunk = {}
+            for chunk_index, chunk in enumerate(chunks):
+                future = executor.submit(_run_chunk, chunk)
+                future_to_chunk[future] = chunk_index
+            for future in as_completed(future_to_chunk):
+                chunk_index = future_to_chunk[future]
+                outputs[chunk_index] = future.result()
+
+        flattened = []
+        for chunk_scores in outputs:
+            flattened.extend(chunk_scores)
+        return flattened
+
+
+class _ProteinSolWorker:
+    def __init__(self, bundle_root):
+        self.bundle_root = Path(bundle_root).resolve()
         workspace = tempfile.TemporaryDirectory(prefix='proteinsol_')
         destination = Path(workspace.name) / 'protein-sol-sequence-prediction-software'
         shutil.copytree(self.bundle_root, destination)
         self._workspace = workspace
         self._workspace_root = destination
-
-    def release(self):
-        return
+        self._subprocess_env = dict(os.environ)
+        self._subprocess_env['OMP_NUM_THREADS'] = '1'
+        self._subprocess_env['MKL_NUM_THREADS'] = '1'
+        self._subprocess_env['OPENBLAS_NUM_THREADS'] = '1'
+        self._subprocess_env['NUMEXPR_NUM_THREADS'] = '1'
 
     def _write_fasta(self, sequence_items):
         fasta_path = self._workspace_root / 'batch.fasta'
@@ -130,6 +253,7 @@ class ProteinSolScorer:
             check=False,
             capture_output=True,
             text=True,
+            env=self._subprocess_env,
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -150,34 +274,28 @@ class ProteinSolScorer:
             recovered_scores[sequence_id] = score_map[sequence_id]
         return recovered_scores
 
-    def score_raw(self, sequences):
-        if not sequences:
-            raise ValueError('sequences must be non-empty')
-        self._ensure_workspace()
-        outputs = []
-        for chunk in iter_chunks(sequences, self.batch_size):
-            sequence_items = [(f'seq_{idx}', sequence) for idx, sequence in enumerate(chunk)]
-            expected_ids = [sequence_id for sequence_id, _ in sequence_items]
-            id_to_sequence = dict(sequence_items)
-            chunk_scores = self._run_bundle(sequence_items)
-            unexpected_ids = sorted(set(chunk_scores) - set(expected_ids))
-            if unexpected_ids:
+    def score_chunk(self, chunk):
+        sequence_items = [(f'seq_{idx}', sequence) for idx, sequence in enumerate(chunk)]
+        expected_ids = [sequence_id for sequence_id, _ in sequence_items]
+        id_to_sequence = dict(sequence_items)
+        chunk_scores = self._run_bundle(sequence_items)
+        unexpected_ids = sorted(set(chunk_scores) - set(expected_ids))
+        if unexpected_ids:
+            raise RuntimeError(
+                'Protein-Sol returned sequence ids that were not present in the input chunk: '
+                f'{unexpected_ids}'
+            )
+        missing_ids = [sequence_id for sequence_id in expected_ids if sequence_id not in chunk_scores]
+        if missing_ids:
+            recovered_scores = self._score_missing_individually(missing_ids, id_to_sequence)
+            chunk_scores.update(recovered_scores)
+            remaining_missing = [sequence_id for sequence_id in expected_ids if sequence_id not in chunk_scores]
+            if remaining_missing:
                 raise RuntimeError(
-                    'Protein-Sol returned sequence ids that were not present in the input chunk: '
-                    f'{unexpected_ids}'
+                    'Protein-Sol failed to return scores for some sequences after individual retry: '
+                    f'{remaining_missing}'
                 )
-            missing_ids = [sequence_id for sequence_id in expected_ids if sequence_id not in chunk_scores]
-            if missing_ids:
-                recovered_scores = self._score_missing_individually(missing_ids, id_to_sequence)
-                chunk_scores.update(recovered_scores)
-                remaining_missing = [sequence_id for sequence_id in expected_ids if sequence_id not in chunk_scores]
-                if remaining_missing:
-                    raise RuntimeError(
-                        'Protein-Sol failed to return scores for some sequences after individual retry: '
-                        f'{remaining_missing}'
-                    )
-            outputs.extend(chunk_scores[sequence_id] for sequence_id in expected_ids)
-        return outputs
+        return [chunk_scores[sequence_id] for sequence_id in expected_ids]
 
 
 def developability_reward(proteinsol_scores, sequences):
