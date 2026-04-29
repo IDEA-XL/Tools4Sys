@@ -101,6 +101,77 @@ def _format_reward_batch_label(reward_batch_sizes):
     return '_'.join(f'{name[:4]}{reward_batch_sizes[name]}' for name in GPU_REWARD_NAMES)
 
 
+def _ordered_active_rewards(active):
+    return [reward_name for reward_name in GPU_REWARD_NAMES if reward_name in active]
+
+
+def _parse_reward_batch_sizes(text):
+    pairs = [segment.strip() for segment in text.split(',') if segment.strip()]
+    if not pairs:
+        raise ValueError('reward start batch sizes string must not be empty')
+    parsed = {}
+    for pair in pairs:
+        if '=' not in pair:
+            raise ValueError(
+                f"invalid reward batch-size override {pair!r}; expected format 'reward=value'"
+            )
+        reward_name, value_text = pair.split('=', 1)
+        reward_name = reward_name.strip()
+        if reward_name not in GPU_REWARD_NAMES:
+            raise ValueError(
+                f'unknown GPU reward name {reward_name!r}; expected one of {GPU_REWARD_NAMES}'
+            )
+        value = int(value_text.strip())
+        if value <= 0:
+            raise ValueError(f'batch size for {reward_name!r} must be positive, got {value}')
+        parsed[reward_name] = value
+    missing = [reward_name for reward_name in GPU_REWARD_NAMES if reward_name not in parsed]
+    if missing:
+        raise ValueError(
+            f'reward start batch sizes must specify every GPU reward exactly once; missing {missing}'
+        )
+    return parsed
+
+
+def _parse_active_rewards(text):
+    names = [segment.strip() for segment in text.split(',') if segment.strip()]
+    if not names:
+        raise ValueError('reward active list must not be empty')
+    parsed = []
+    seen = set()
+    for reward_name in names:
+        if reward_name not in GPU_REWARD_NAMES:
+            raise ValueError(
+                f'unknown active GPU reward {reward_name!r}; expected one of {GPU_REWARD_NAMES}'
+            )
+        if reward_name in seen:
+            raise ValueError(f'duplicate active GPU reward {reward_name!r}')
+        parsed.append(reward_name)
+        seen.add(reward_name)
+    return set(parsed)
+
+
+def _set_individual_probe_current(current, safe, active, probe_reward, target_value):
+    for reward_name in active:
+        current[reward_name] = safe[reward_name]
+    current[probe_reward] = int(target_value)
+
+
+def _advance_individual_probe(current, safe, active, reward_max):
+    capped = []
+    ordered = _ordered_active_rewards(active)
+    while ordered:
+        probe_reward = ordered[0]
+        next_target = safe[probe_reward] * 2
+        if next_target <= reward_max:
+            _set_individual_probe_current(current, safe, active, probe_reward, next_target)
+            return probe_reward, next_target, capped
+        active.remove(probe_reward)
+        capped.append(probe_reward)
+        ordered = _ordered_active_rewards(active)
+    return None, None, capped
+
+
 def _build_launch_command(args, config_path, port_offset):
     return [
         'accelerate',
@@ -116,7 +187,17 @@ def _build_launch_command(args, config_path, port_offset):
     ]
 
 
-def _run_probe_attempt(base_config, args, run_name, *, calibration_prompt_batch_size=None, reward_batch_sizes=None, port_offset=0):
+def _run_probe_attempt(
+    base_config,
+    args,
+    run_name,
+    *,
+    calibration_prompt_batch_size=None,
+    reward_batch_sizes=None,
+    port_offset=0,
+    phase=None,
+    probed_reward=None,
+):
     run_dir = os.path.join(args.output_root, 'runs', run_name)
     if os.path.exists(run_dir):
         shutil.rmtree(run_dir)
@@ -166,6 +247,8 @@ def _run_probe_attempt(base_config, args, run_name, *, calibration_prompt_batch_
         'calibration_prompt_batch_size': None if calibration_prompt_batch_size is None else int(calibration_prompt_batch_size),
         'reward_batch_sizes': None if reward_batch_sizes is None else {name: int(reward_batch_sizes[name]) for name in GPU_REWARD_NAMES},
         'oom_reward': None,
+        'phase': phase,
+        'probed_reward': probed_reward,
     }
 
     if os.path.exists(metrics_path):
@@ -217,12 +300,34 @@ def _probe_calibration_prompt_batch_size(base_config, args):
 
 
 def _probe_gpu_reward_batch_sizes(base_config, args):
-    current = {name: int(args.reward_initial) for name in GPU_REWARD_NAMES}
-    safe = None
-    active = set(GPU_REWARD_NAMES)
-    current_target = int(args.reward_initial)
+    if args.reward_start_batch_sizes is None:
+        current = {name: int(args.reward_initial) for name in GPU_REWARD_NAMES}
+        safe = None
+        active = set(GPU_REWARD_NAMES)
+        current_target = int(args.reward_initial)
+        phase = 'joint'
+        current_probe_reward = None
+    else:
+        current = _parse_reward_batch_sizes(args.reward_start_batch_sizes)
+        safe = dict(current)
+        active = set(GPU_REWARD_NAMES) if args.reward_active is None else _parse_active_rewards(args.reward_active)
+        current_target = int(args.reward_current_target)
+        if current_target <= 0:
+            raise ValueError(f'reward_current_target must be positive, got {current_target}')
+        phase = args.reward_phase
+        if phase == 'joint':
+            for reward_name in active:
+                current[reward_name] = current_target
+            current_probe_reward = None
+        else:
+            ordered = _ordered_active_rewards(active)
+            if not ordered:
+                raise ValueError('individual reward probe resume requires at least one active reward')
+            current_probe_reward = ordered[0]
+            _set_individual_probe_current(current, safe, active, current_probe_reward, current_target)
     results = []
     port_offset = 0
+    capped_rewards = []
 
     while True:
         run_name = f'rewardbs_{_format_reward_batch_label(current)}'
@@ -233,6 +338,8 @@ def _probe_gpu_reward_batch_sizes(base_config, args):
             calibration_prompt_batch_size=args.fixed_calibration_prompt_batch_size,
             reward_batch_sizes=current,
             port_offset=port_offset,
+            phase=phase,
+            probed_reward=current_probe_reward,
         )
         port_offset += 1
         results.append(state)
@@ -241,18 +348,39 @@ def _probe_gpu_reward_batch_sizes(base_config, args):
             safe = dict(current)
             if not active:
                 break
+            if phase == 'joint':
+                next_target = current_target * 2
+                if next_target > args.reward_max:
+                    capped_rewards.extend(_ordered_active_rewards(active))
+                    active.clear()
+                    break
+                current_target = next_target
+                for reward_name in active:
+                    current[reward_name] = current_target
+                continue
+            if current_probe_reward is None:
+                raise RuntimeError('individual GPU reward probe succeeded without an active probed reward')
             next_target = current_target * 2
-            if next_target > args.reward_max:
-                unresolved = sorted(active)
-                if unresolved:
-                    raise RuntimeError(
-                        'GPU reward batch-size probe hit reward_max before every GPU reward reached an OOM '
-                        f'boundary. Unresolved rewards: {unresolved}; current safe config: {safe}'
-                    )
+            if next_target <= args.reward_max:
+                current_target = next_target
+                _set_individual_probe_current(current, safe, active, current_probe_reward, current_target)
+                continue
+            capped_rewards.append(current_probe_reward)
+            active.remove(current_probe_reward)
+            current_probe_reward = None
+            if not active:
                 break
+            next_probe_reward, next_target, newly_capped = _advance_individual_probe(
+                current,
+                safe,
+                active,
+                args.reward_max,
+            )
+            capped_rewards.extend(newly_capped)
+            current_probe_reward = next_probe_reward
             current_target = next_target
-            for reward_name in active:
-                current[reward_name] = current_target
+            if current_probe_reward is None:
+                break
             continue
 
         if state['status'] != 'oom':
@@ -267,26 +395,54 @@ def _probe_gpu_reward_batch_sizes(base_config, args):
                 'GPU reward batch-size probe encountered an OOM but could not attribute it to one of '
                 f'{GPU_REWARD_NAMES}. Culprit={culprit!r}. Inspect {state["stderr_path"]}.'
             )
-        if culprit not in active:
-            raise RuntimeError(
-                f'GPU reward batch-size probe received a repeated or inconsistent culprit {culprit!r}. '
-                f'Active rewards: {sorted(active)}'
-            )
         if safe is None:
             raise RuntimeError(
                 f'Initial GPU reward batch size {args.reward_initial} OOMed at {culprit!r}; '
                 'no lower fallback is defined in this probe path.'
             )
-        current[culprit] = safe[culprit]
-        active.remove(culprit)
+        if phase == 'joint':
+            if culprit in active:
+                current[culprit] = safe[culprit]
+                active.remove(culprit)
+                if not active:
+                    break
+                for reward_name in active:
+                    current[reward_name] = current_target
+                continue
+            ordered = _ordered_active_rewards(active)
+            if not ordered:
+                raise RuntimeError(
+                    f'GPU reward batch-size probe received an OOM attributed to frozen reward {culprit!r} '
+                    'after all active rewards had already been resolved.'
+                )
+            phase = 'individual'
+            current_probe_reward = ordered[0]
+            _set_individual_probe_current(current, safe, active, current_probe_reward, current_target)
+            continue
+        if current_probe_reward is None:
+            raise RuntimeError('individual GPU reward probe OOMed without an active probed reward')
+        current[current_probe_reward] = safe[current_probe_reward]
+        active.remove(current_probe_reward)
         if not active:
+            break
+        next_probe_reward, next_target, newly_capped = _advance_individual_probe(
+            current,
+            safe,
+            active,
+            args.reward_max,
+        )
+        capped_rewards.extend(newly_capped)
+        current_probe_reward = next_probe_reward
+        current_target = next_target
+        if current_probe_reward is None:
             break
 
     if safe is None:
         raise RuntimeError('GPU reward batch-size probe found no successful configuration')
     return {
         'mode': 'gpu_reward_batch_size',
-        'selected_gpu_reward_batch_sizes': {name: int(current[name]) for name in GPU_REWARD_NAMES},
+        'selected_gpu_reward_batch_sizes': {name: int(safe[name]) for name in GPU_REWARD_NAMES},
+        'capped_gpu_rewards_without_oom': capped_rewards,
         'results': results,
     }
 
@@ -307,11 +463,17 @@ def _build_markdown(summary):
             + ', '.join(f'{name}={value}' for name, value in summary['selected_gpu_reward_batch_sizes'].items())
             + '`'
         )
+    if 'capped_gpu_rewards_without_oom' in summary:
+        lines.append(
+            '- `capped_gpu_rewards_without_oom`: `'
+            + ', '.join(summary['capped_gpu_rewards_without_oom'])
+            + '`'
+        )
     lines.extend(
         [
             '',
-            '| Run | Status | Calibration Prompt BS | Naturalness BS | Foldability BS | Stability BS | OOM Reward | Steps | Max Reserved Ratio | stderr |',
-            '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+            '| Run | Phase | Probed Reward | Status | Calibration Prompt BS | Naturalness BS | Foldability BS | Stability BS | OOM Reward | Steps | Max Reserved Ratio | stderr |',
+            '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
         ]
     )
     for result in summary['results']:
@@ -321,6 +483,8 @@ def _build_markdown(summary):
             + ' | '.join(
                 [
                     result['run_name'],
+                    str(result.get('phase')),
+                    str(result.get('probed_reward')),
                     result['status'],
                     'nan' if result['calibration_prompt_batch_size'] is None else str(result['calibration_prompt_batch_size']),
                     'nan' if 'naturalness' not in reward_batch_sizes else str(reward_batch_sizes['naturalness']),
@@ -350,6 +514,10 @@ def main():
     parser.add_argument('--reward-initial', type=int, default=16)
     parser.add_argument('--reward-max', type=int, default=1024)
     parser.add_argument('--fixed-calibration-prompt-batch-size', type=int, default=None)
+    parser.add_argument('--reward-start-batch-sizes', default=None)
+    parser.add_argument('--reward-active', default=None)
+    parser.add_argument('--reward-current-target', type=int, default=None)
+    parser.add_argument('--reward-phase', choices=('joint', 'individual'), default='joint')
     args = parser.parse_args()
 
     logging.basicConfig(
