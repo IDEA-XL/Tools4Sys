@@ -24,7 +24,7 @@ report_to: [wandb]
 rl_algorithm: grpo
 num_generations: 96
 supergroup_num_groups: 1
-group_advantage_weight: 0.5
+group_advantage_weight: 0.8
 reward_compute_every_n_steps:
   naturalness: 1
   foldability: 4

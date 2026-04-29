@@ -1670,12 +1670,12 @@ Notes:
 
 ### GRPO + DrugCLIP
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_20260428_003423/checkpoint-001000
 ```
 
 Training config:
@@ -1713,7 +1713,8 @@ drugclip_score = 0.5
 ```
 
 - DrugCLIP runtime assets and reward path were validated in 1-GPU smoke before the 8-GPU launch.
-- Current 8-GPU training job: `49378`
+- Completed 8-GPU training job: `49378`
+- Completion evidence: the sweep manifests resolve to `checkpoint-001000/model.ckpt`, and `sacct` reports `49378 COMPLETED (0:0)`.
 
 ### GRPO + DrugCLIP 2000-Step Variant
 
@@ -1837,6 +1838,252 @@ CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta
 Notes:
 
 - This line matches `SGRPO + DrugCLIP` above except `max_steps = 2000`.
+
+### GRPO + UniDock 500-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_ms500.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_ms500.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line mirrors the current mmGenMol GRPO `ng192 / bs384` setup with rollout-level reward weights:
+
+```text
+qed = 0.3
+sa_score = 0.2
+unidock_score = 0.5
+```
+
+- UniDock runtime was validated in 2-GPU 10-step smoke jobs `52547` (`bs128`) and `52548` (`bs384`), both `COMPLETED (0:0)`.
+- `unidock_batch_size = 384` is the selected training default because it showed no OOM and reduced mean `reward_unidock_score_sec` from `22.10s` to `20.44s` in the smoke comparison.
+- Ligand 3D prepare is now parallelized per rank across available CPUs, and the UniDock center definition is aligned to the `vina_dock` sweep geometry by using the native-ligand center of mass.
+
+### GRPO + UniDock
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `GRPO + UniDock 500-Step Variant` above except `max_steps = 1000`.
+
+### GRPO + UniDock 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `GRPO + UniDock` above except `max_steps = 2000`.
+
+### SGRPO + UniDock 500-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_ms500.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_ms500.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line mirrors the current mmGenMol SGRPO `ng24 / sg8 / bs384 / gw09` setup with rollout-level reward weights:
+
+```text
+qed = 0.3
+sa_score = 0.2
+unidock_score = 0.5
+```
+
+- `unidock_batch_size = 384` is locked for this family from the same 2-GPU smoke validation used above.
+
+### SGRPO + UniDock
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `SGRPO + UniDock 500-Step Variant` above except `max_steps = 1000`.
+
+### SGRPO + UniDock 2000-Step Variant
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `SGRPO + UniDock` above except `max_steps = 2000`.
 
 ### Pareto Curves To Maintain
 
@@ -1998,6 +2245,110 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Aggregated result files: `TODO`
 - Plot files: `TODO`
 
+#### GRPO + DrugCLIP 1000 Sweep Results
+
+- Generation task manifests:
+
+```text
+sgrpo-main-results/mmgenmol/generation_drugclip_grpo1000_randomness_tasks_20260428.tsv
+sgrpo-main-results/mmgenmol/generation_drugclip_grpo1000_temperature_tasks_20260428.tsv
+sgrpo-main-results/mmgenmol/generation_drugclip_grpo1000_paired_tasks_20260428.tsv
+```
+
+- Aggregation jobs:
+
+```text
+50634  randomness
+50636  temperature
+50635  paired
+```
+
+- Aggregated result files:
+
+```text
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_results_20260428.json
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_results_20260428.json
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_results_20260428.json
+```
+
+- Plot files:
+
+```text
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_qed_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_sa_score_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_soft_reward_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_vina_dock_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_qed_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_sa_score_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_soft_reward_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_vina_dock_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_qed_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_sa_score_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_soft_reward_mean_20260428.png
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_vina_dock_mean_20260428.png
+```
+
+- Rollout-level reward used in these plots:
+
+```text
+0.3 * qed_mean + 0.2 * sa_score_mean + 0.5 * drugclip_score_mean
+```
+
+- Aggregation semantics:
+
+```text
+DrugCLIP offline rescore failures are excluded from the final-valid set for metric aggregation. The observed failure counts were small (1-8 molecules out of 1600, depending on sweep point).
+```
+
+##### Randomness Sweep
+
+- Sweep grid: `randomness = 0.1, 0.3, 0.6, 1.0`
+- Valid fraction stayed in `0.991875-0.997500`.
+- Diversity increased from `0.342951` to `0.469721` as randomness increased.
+- `vina_dock_mean` stayed around `-6.33` to `-6.23`.
+
+![mmGenMol GRPO + DrugCLIP Randomness QED vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_qed_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Randomness SA Score vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_sa_score_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Randomness Soft Reward vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_soft_reward_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Randomness Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_vina_dock_mean_20260428.png)
+
+##### Temperature Sweep
+
+- Sweep grid: `temperature = 0.5, 1.0, 5.0`
+- `temperature = 5.0` is the clear high-diversity / low-quality corner:
+
+```text
+valid_fraction = 0.914375
+diversity = 0.816738
+soft_reward_mean = 0.290015
+vina_dock_mean = -4.685111
+```
+
+![mmGenMol GRPO + DrugCLIP Temperature QED vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_qed_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Temperature SA Score vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_sa_score_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Temperature Soft Reward vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_soft_reward_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_vina_dock_mean_20260428.png)
+
+##### Paired Randomness-Temperature Sweep
+
+- Sweep grid: `(0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
+- Diversity increased monotonically from `0.395369` to `0.509445`.
+- `vina_dock_mean` degraded from `-6.310648` to `-6.096635`, showing the expected quality-diversity tradeoff.
+
+![mmGenMol GRPO + DrugCLIP Paired QED vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_qed_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Paired SA Score vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_sa_score_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Paired Soft Reward vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_soft_reward_mean_20260428.png)
+
+![mmGenMol GRPO + DrugCLIP Paired Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_vina_dock_mean_20260428.png)
+
 ## ProGen2
 
 ### Original
@@ -2086,13 +2437,17 @@ Notes:
 max_new_tokens = 256
 per_device_prompt_batch_size = 2
 num_generations = 96
-reward batch_size = 16 for naturalness / foldability / stability / developability
+reward_calibration_size = 1024
+reward_calibration_prompt_batch_size = 128
+reward batch_size = 256 / 64 / 256 / 24 for naturalness / foldability / stability / developability
 reward_compute_every_n_steps = {naturalness: 1, foldability: 4, stability: 1, developability: 1}
+report_to = [wandb]
 ```
 
 - Unverified assumption: `ng96` is the intended GRPO companion line because it rollout-count matches the SGRPO line (`12 * 8 = 96`) while keeping `len256 / bs2 / rbs16` fixed.
 - No verified ProGen2 `grpo` training run has been locked into this comparison index yet.
-- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = []`.
+- Verified implementation note: current `grpo` code path does not consume `group_advantage_weight`; the field remains in the shared config schema, but changing it alone is algorithmically inert for GRPO under the present trainer implementation.
+- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = [wandb]`.
 
 ### SGRPO
 
@@ -2138,8 +2493,12 @@ max_new_tokens = 256
 per_device_prompt_batch_size = 2
 num_generations = 12
 supergroup_num_groups = 8
-reward batch_size = 16 for naturalness / foldability / stability / developability
+group_advantage_weight = 0.5
+reward_calibration_size = 1024
+reward_calibration_prompt_batch_size = 128
+reward batch_size = 256 / 64 / 256 / 24 for naturalness / foldability / stability / developability
 reward_compute_every_n_steps = {naturalness: 1, foldability: 4, stability: 1, developability: 1}
+report_to = [wandb]
 ```
 
 - Latest successful 1-GPU training-feasibility probe:
@@ -2154,7 +2513,84 @@ reward peak allocated = 33.102311 GiB
 ```
 
 - The main-result SGRPO line is intentionally set below the successful `ng16` 1-GPU probe to keep the first 8-GPU training asset conservative.
-- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = []`.
+- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = [wandb]`.
+
+### GRPO + `group_advantage_weight = 0.8`
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_grpo_ng96_bs2_len256_rbs16_gw08.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_grpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_grpo_ng96_bs2_len256_rbs16_gw08.yaml sbatch scripts/slurm/train_progen2_grpo_8gpu.sbatch
+```
+
+Notes:
+
+- This line matches the current ProGen2 GRPO config except `group_advantage_weight = 0.8`.
+- Verified implementation note: current `grpo` code path does not consume `group_advantage_weight`, so this config difference is intentionally recorded but algorithmically inert unless the trainer logic changes.
+
+### SGRPO + `group_advantage_weight = 0.8`
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Notes:
+
+- This line matches the current ProGen2 SGRPO config except `group_advantage_weight = 0.8`.
 
 ### Pareto Curves To Maintain
 
