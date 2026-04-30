@@ -28,10 +28,10 @@ The intent is to keep three things in one place:
 - `genmol de novo`: sweep `temperature = 0.5, 1.0, 2.0, 3.0`
 - `genmol de novo`: paired sweep `(randomness, temperature) = (0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
 - `mmgenmol`: sweep `randomness = 0.1, 0.3, 0.6, 1.0`
-- `mmgenmol`: sweep `temperature = 0.5, 1.0, 5.0`
+- `mmgenmol`: sweep `temperature = 0.5, 1.0, 2.0, 3.0`
 - `mmgenmol`: paired sweep `(randomness, temperature) = (0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
 - `mmgenmol`: report docking with `vina_dock` only for the main sweep; `qvina` is excluded from the current main-result plan.
-- `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0`
+- `progen2`: sweep `temperature = 0.1, 0.2, ..., 1.0, 1.1, 1.2`
 
 For every family and every property curve, save:
 
@@ -1668,177 +1668,6 @@ Notes:
 - Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present.
 - Slurm exit code was not rechecked in this update because `sacct` was unavailable on the reachable admin node and the login nodes timed out during the check.
 
-### GRPO + DrugCLIP
-
-Status: `Verified`
-
-Checkpoint:
-
-```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_20260428_003423/checkpoint-001000
-```
-
-Training config:
-
-```text
-configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05.yaml
-```
-
-Launch Script:
-
-```text
-scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
-```
-
-Expected GPU Topology:
-
-```text
-8 GPU
-```
-
-Invocation:
-
-```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
-```
-
-Notes:
-
-- This line is the current mmGenMol GRPO `ng192 / bs384` training recipe with rollout-level reward weights changed to:
-
-```text
-qed = 0.3
-sa_score = 0.2
-drugclip_score = 0.5
-```
-
-- DrugCLIP runtime assets and reward path were validated in 1-GPU smoke before the 8-GPU launch.
-- Completed 8-GPU training job: `49378`
-- Completion evidence: the sweep manifests resolve to `checkpoint-001000/model.ckpt`, and `sacct` reports `49378 COMPLETED (0:0)`.
-
-### GRPO + DrugCLIP 2000-Step Variant
-
-Status: `Partial`
-
-Checkpoint:
-
-```text
-TODO
-```
-
-Training config:
-
-```text
-configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_ms2000.yaml
-```
-
-Launch Script:
-
-```text
-scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
-```
-
-Expected GPU Topology:
-
-```text
-8 GPU
-```
-
-Invocation:
-
-```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_drugclip05_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_drugclip_train.sbatch
-```
-
-Notes:
-
-- This line matches `GRPO + DrugCLIP` above except `max_steps = 2000`.
-- Current 8-GPU training job: `49379`
-
-### SGRPO + DrugCLIP
-
-Status: `Partial`
-
-Checkpoint:
-
-```text
-TODO
-```
-
-Training config:
-
-```text
-configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05.yaml
-```
-
-Launch Script:
-
-```text
-scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
-```
-
-Expected GPU Topology:
-
-```text
-8 GPU
-```
-
-Invocation:
-
-```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
-```
-
-Notes:
-
-- This line is the current mmGenMol SGRPO `ng24 / sg8 / bs384 / gw09` training recipe with rollout-level reward weights changed to:
-
-```text
-qed = 0.3
-sa_score = 0.2
-drugclip_score = 0.5
-```
-
-- Remaining hyperparameters are intentionally unchanged relative to the locked mmGenMol SGRPO main line.
-
-### SGRPO + DrugCLIP 2000-Step Variant
-
-Status: `Partial`
-
-Checkpoint:
-
-```text
-TODO
-```
-
-Training config:
-
-```text
-configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05_ms2000.yaml
-```
-
-Launch Script:
-
-```text
-scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
-```
-
-Expected GPU Topology:
-
-```text
-8 GPU
-```
-
-Invocation:
-
-```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_drugclip05_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_drugclip_train.sbatch
-```
-
-Notes:
-
-- This line matches `SGRPO + DrugCLIP` above except `max_steps = 2000`.
-
 ### GRPO + UniDock 500-Step Variant
 
 Status: `TODO`
@@ -2093,10 +1922,10 @@ Generation task manifest for the current randomness sweep:
 sgrpo-main-results/mmgenmol/generation_sweep_tasks_20260423.tsv
 ```
 
-Generation task manifest for the updated temperature sweep:
+Generation task manifest for the current narrowed temperature sweep:
 
 ```text
-sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv
+TODO
 ```
 
 Generation launch script:
@@ -2111,10 +1940,10 @@ Generation invocation for the randomness sweep:
 sbatch scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
 ```
 
-Generation invocation for the updated temperature sweep:
+Generation invocation for the current narrowed temperature sweep:
 
 ```text
-TASKS_PATH=/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv MEMLOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_generation_20260425/logs sbatch --array=0-15 scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
+TODO
 ```
 
 Generation output root for the randomness sweep:
@@ -2123,10 +1952,10 @@ Generation output root for the randomness sweep:
 /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_generation_20260423
 ```
 
-Generation output root for the updated temperature sweep:
+Generation output root for the current narrowed temperature sweep:
 
 ```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_generation_20260425
+TODO
 ```
 
 Vina docking launch script:
@@ -2141,10 +1970,10 @@ Vina docking invocation for the randomness sweep:
 sbatch scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
 ```
 
-Vina docking invocation for the updated temperature sweep:
+Vina docking invocation for the current narrowed temperature sweep:
 
 ```text
-TASKS_PATH=/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv OUTPUT_ROOT=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_vina_dock_20260425 sbatch --array=0-15 scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
+TODO
 ```
 
 Vina docking output root for the randomness sweep:
@@ -2153,16 +1982,16 @@ Vina docking output root for the randomness sweep:
 /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_vina_dock_20260423
 ```
 
-Vina docking output root for the updated temperature sweep:
+Vina docking output root for the current narrowed temperature sweep:
 
 ```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_vina_dock_20260425
+TODO
 ```
 
-Aggregation invocation for the updated temperature sweep:
+Aggregation invocation for the current narrowed temperature sweep:
 
 ```text
-python scripts/aggregate_mmgenmol_sweep_results.py --tasks_path sgrpo-main-results/mmgenmol/generation_temperature_sweep_tasks_20260425.tsv --docking_root /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_temperature_sweep_vina_dock_20260425 --output_dir sgrpo-main-results/mmgenmol --output_prefix mmgenmol_temperature_sweep_results_20260425 --expected_num_tasks 16
+TODO
 ```
 
 Aggregated result files for the current randomness sweep:
@@ -2173,12 +2002,10 @@ sgrpo-main-results/mmgenmol/mmgenmol_sweep_results_20260423.rows.jsonl
 sgrpo-main-results/mmgenmol/mmgenmol_sweep_results_20260423.md
 ```
 
-Aggregated result files for the updated temperature sweep:
+Aggregated result files for the current narrowed temperature sweep:
 
 ```text
-sgrpo-main-results/mmgenmol/mmgenmol_temperature_sweep_results_20260425.json
-sgrpo-main-results/mmgenmol/mmgenmol_temperature_sweep_results_20260425.rows.jsonl
-sgrpo-main-results/mmgenmol/mmgenmol_temperature_sweep_results_20260425.md
+TODO
 ```
 
 Diversity definition:
@@ -2213,30 +2040,11 @@ For each model and sweep point, group generated molecules by source_index. Compu
 
 #### Temperature Sweep
 
-- Generation job: `44517`
-- Vina docking job: `44534`
-- Aggregation/replot job: `45937`
-- Previous plotted results used the retired grid `temperature = 0.1, 0.3, 0.6, 1.0`.
-- Sweep grid: `temperature = 0.5, 1.0, 5.0`
+- Current narrowed sweep grid: `temperature = 0.5, 1.0, 2.0, 3.0`
 - Docking mode for the main sweep: `vina_dock` only
 - `vina_dock_mean` is reported as raw Vina dock affinity; lower is better.
 - `soft_reward_mean` is the rollout-level quality reward: `0.6 * qed_mean + 0.4 * sa_score_mean`.
-
-##### `qed_mean` vs `diversity`
-
-![mmGenMol Temperature QED vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_qed_mean_20260425.png)
-
-##### `sa_score_mean` vs `diversity`
-
-![mmGenMol Temperature SA Score vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_sa_score_mean_20260425.png)
-
-##### `soft_reward_mean` vs `diversity`
-
-![mmGenMol Temperature Soft Reward vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_soft_reward_mean_20260425.png)
-
-##### `vina_dock_mean` vs `diversity`
-
-![mmGenMol Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_temperature_diversity_vs_vina_dock_mean_20260425.png)
+- Current 4-point temperature rerun artifacts are pending. The old temperature-sweep plots were intentionally removed because they were drawn on the retired wider grid and should not remain in the main-result index.
 
 #### Paired Randomness-Temperature Sweep
 
@@ -2244,110 +2052,6 @@ For each model and sweep point, group generated molecules by source_index. Compu
 - Docking mode for the main paired sweep: `vina_dock` only
 - Aggregated result files: `TODO`
 - Plot files: `TODO`
-
-#### GRPO + DrugCLIP 1000 Sweep Results
-
-- Generation task manifests:
-
-```text
-sgrpo-main-results/mmgenmol/generation_drugclip_grpo1000_randomness_tasks_20260428.tsv
-sgrpo-main-results/mmgenmol/generation_drugclip_grpo1000_temperature_tasks_20260428.tsv
-sgrpo-main-results/mmgenmol/generation_drugclip_grpo1000_paired_tasks_20260428.tsv
-```
-
-- Aggregation jobs:
-
-```text
-50634  randomness
-50636  temperature
-50635  paired
-```
-
-- Aggregated result files:
-
-```text
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_results_20260428.json
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_results_20260428.json
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_results_20260428.json
-```
-
-- Plot files:
-
-```text
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_qed_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_sa_score_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_soft_reward_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_vina_dock_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_qed_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_sa_score_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_soft_reward_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_vina_dock_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_qed_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_sa_score_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_soft_reward_mean_20260428.png
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_vina_dock_mean_20260428.png
-```
-
-- Rollout-level reward used in these plots:
-
-```text
-0.3 * qed_mean + 0.2 * sa_score_mean + 0.5 * drugclip_score_mean
-```
-
-- Aggregation semantics:
-
-```text
-DrugCLIP offline rescore failures are excluded from the final-valid set for metric aggregation. The observed failure counts were small (1-8 molecules out of 1600, depending on sweep point).
-```
-
-##### Randomness Sweep
-
-- Sweep grid: `randomness = 0.1, 0.3, 0.6, 1.0`
-- Valid fraction stayed in `0.991875-0.997500`.
-- Diversity increased from `0.342951` to `0.469721` as randomness increased.
-- `vina_dock_mean` stayed around `-6.33` to `-6.23`.
-
-![mmGenMol GRPO + DrugCLIP Randomness QED vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_qed_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Randomness SA Score vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_sa_score_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Randomness Soft Reward vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_soft_reward_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Randomness Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_randomness_diversity_vs_vina_dock_mean_20260428.png)
-
-##### Temperature Sweep
-
-- Sweep grid: `temperature = 0.5, 1.0, 5.0`
-- `temperature = 5.0` is the clear high-diversity / low-quality corner:
-
-```text
-valid_fraction = 0.914375
-diversity = 0.816738
-soft_reward_mean = 0.290015
-vina_dock_mean = -4.685111
-```
-
-![mmGenMol GRPO + DrugCLIP Temperature QED vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_qed_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Temperature SA Score vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_sa_score_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Temperature Soft Reward vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_soft_reward_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Temperature Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_temperature_diversity_vs_vina_dock_mean_20260428.png)
-
-##### Paired Randomness-Temperature Sweep
-
-- Sweep grid: `(0.1, 0.5), (0.3, 0.8), (0.5, 1.1), (0.7, 1.4), (0.9, 1.7), (1.0, 2.0)`
-- Diversity increased monotonically from `0.395369` to `0.509445`.
-- `vina_dock_mean` degraded from `-6.310648` to `-6.096635`, showing the expected quality-diversity tradeoff.
-
-![mmGenMol GRPO + DrugCLIP Paired QED vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_qed_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Paired SA Score vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_sa_score_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Paired Soft Reward vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_soft_reward_mean_20260428.png)
-
-![mmGenMol GRPO + DrugCLIP Paired Vina Dock Mean vs Diversity](mmgenmol/mmgenmol_drugclip_grpo1000_paired_diversity_vs_vina_dock_mean_20260428.png)
 
 ## ProGen2
 
@@ -2397,12 +2101,12 @@ Notes:
 
 ### GRPO
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000100
 ```
 
 Training config:
@@ -2444,19 +2148,19 @@ reward_compute_every_n_steps = {naturalness: 1, foldability: 4, stability: 1, de
 report_to = [wandb]
 ```
 
-- Unverified assumption: `ng96` is the intended GRPO companion line because it rollout-count matches the SGRPO line (`12 * 8 = 96`) while keeping `len256 / bs2 / rbs16` fixed.
-- No verified ProGen2 `grpo` training run has been locked into this comparison index yet.
+- Completed training job: `52245`
+- Verified comparison checkpoint: `checkpoint-000100`
+- Completion evidence: `sacct` reports `52245 COMPLETED (0:0)`, and the run directory contains `checkpoint-000100`.
 - Verified implementation note: current `grpo` code path does not consume `group_advantage_weight`; the field remains in the shared config schema, but changing it alone is algorithmically inert for GRPO under the present trainer implementation.
-- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = [wandb]`.
 
 ### SGRPO
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_slurm52246/checkpoint-000100
 ```
 
 Training config:
@@ -2485,7 +2189,6 @@ CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16.yaml sbatch scripts/
 
 Notes:
 
-- Current main-result checkpoint is not locked yet.
 - Planned 8-GPU DDP main-result line:
 
 ```text
@@ -2512,56 +2215,18 @@ training peak allocated = 115.450734 GiB
 reward peak allocated = 33.102311 GiB
 ```
 
-- The main-result SGRPO line is intentionally set below the successful `ng16` 1-GPU probe to keep the first 8-GPU training asset conservative.
-- Provisional training defaults in the config are `max_steps = 200`, `learning_rate = 5e-5`, `save_steps = 20`, and `report_to = [wandb]`.
-
-### GRPO + `group_advantage_weight = 0.8`
-
-Status: `TODO`
-
-Checkpoint:
-
-```text
-TODO
-```
-
-Training config:
-
-```text
-configs/progen2_grpo_ng96_bs2_len256_rbs16_gw08.yaml
-```
-
-Launch Script:
-
-```text
-scripts/slurm/train_progen2_grpo_8gpu.sbatch
-```
-
-Expected GPU Topology:
-
-```text
-8 GPU
-```
-
-Invocation:
-
-```text
-CONFIG_PATH=configs/progen2_grpo_ng96_bs2_len256_rbs16_gw08.yaml sbatch scripts/slurm/train_progen2_grpo_8gpu.sbatch
-```
-
-Notes:
-
-- This line matches the current ProGen2 GRPO config except `group_advantage_weight = 0.8`.
-- Verified implementation note: current `grpo` code path does not consume `group_advantage_weight`, so this config difference is intentionally recorded but algorithmically inert unless the trainer logic changes.
+- Verified comparison checkpoint: `checkpoint-000100`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_slurm52246`
+- Completion evidence: the run directory contains `checkpoint-000100`. `sacct` now shows the parent job as `CANCELLED`, so the checkpoint is treated as a verified intermediate comparison asset rather than a fully completed end-state run.
 
 ### SGRPO + `group_advantage_weight = 0.8`
 
-Status: `TODO`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_slurm52572/checkpoint-000100
 ```
 
 Training config:
@@ -2591,18 +2256,99 @@ CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08.yaml sbatch scr
 Notes:
 
 - This line matches the current ProGen2 SGRPO config except `group_advantage_weight = 0.8`.
+- Completed training job: `52572`
+- Verified comparison checkpoint: `checkpoint-000100`
+- Completion evidence: `sacct` reports `52572 COMPLETED (0:0)`, and the run directory contains `checkpoint-000100`.
 
-### Pareto Curves To Maintain
+### Temperature Sweep Pipeline
 
-- TODO: `diversity` vs `naturalness`
-- TODO: `diversity` vs `foldability`
-- TODO: `diversity` vs `stability`
-- TODO: `diversity` vs `developability`
+Point-task manifest:
+
+```text
+sgrpo-main-results/progen2/progen2_temperature_sweep_tasks_20260430.tsv
+```
+
+Pipeline config:
+
+```text
+configs/progen2_temperature_sweep_pipeline_20260430.yaml
+```
+
+Generation launch script:
+
+```text
+scripts/slurm/run_progen2_sweep_gpu.sbatch
+```
+
+Generation invocation:
+
+```text
+MODE=generate-task sbatch --array=0-47 scripts/slurm/run_progen2_sweep_gpu.sbatch
+```
+
+Packed GPU reward invocations:
+
+```text
+MODE=score-packed-gpu-reward REWARD_NAME=naturalness sbatch scripts/slurm/run_progen2_sweep_gpu.sbatch
+MODE=score-packed-gpu-reward REWARD_NAME=stability sbatch scripts/slurm/run_progen2_sweep_gpu.sbatch
+```
+
+Per-point reward invocations:
+
+```text
+MODE=score-point-reward-task REWARD_NAME=foldability sbatch --array=0-47 scripts/slurm/run_progen2_sweep_gpu.sbatch
+sbatch --array=0-47 scripts/slurm/run_progen2_sweep_developability_cpu.sbatch
+```
+
+Aggregation launch script:
+
+```text
+scripts/slurm/run_progen2_sweep_aggregate_cpu.sbatch
+```
+
+Current sweep policy for this pipeline:
+
+```text
+temperature = 0.1, 0.2, ..., 1.0, 1.1, 1.2
+num_samples_per_point = 512
+generation_prompt_batch_size = 1
+num_return_sequences = 512
+naturalness.batch_size = 4096
+foldability.batch_size = 64
+stability.batch_size = 8192
+developability.batch_size = 24
+```
+
+- Unverified assumption: `stability.batch_size = 8192` is used by explicit sweep policy choice and has not been separately batch-probed yet. If the packed stability sweep OOMs, the planned fallback is `4096`.
+
+Aggregated result files:
+
+```text
+sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.md
+sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.json
+sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.rows.jsonl
+```
+
+Plot files:
+
+```text
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_naturalness_20260430.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_foldability_20260430.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_stability_20260430.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_developability_20260430.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_soft_reward_20260430.png
+```
+
+Metric definition notes:
+
+- `diversity` is the global sequence diversity over all valid sequences at each `(model, temperature)` point.
+- `soft_reward_mean` uses the training-time reward weights for each experiment.
+- `naturalness` and `stability` are calibrated once per experiment, then reused across the full temperature sweep.
 
 ## Global Open Items
 
 - `mmgenmol`: missing narrowed 4-point sweep artifacts for the locked Original / GRPO / SGRPO / GRPO Diversity-Regularizer checkpoints.
-- `progen2`: missing GRPO checkpoint and final SGRPO checkpoint
+- `progen2`: split temperature-sweep tasks are implemented but the new sweep outputs are still pending generation, scoring, and aggregation.
 
 ## Update Rule
 
