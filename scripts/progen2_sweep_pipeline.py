@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
+from concurrent.futures import ProcessPoolExecutor
 
 import torch
 import yaml
@@ -27,6 +28,11 @@ from progen2.rl.policy import ProGen2Policy
 logger = logging.getLogger(__name__)
 _PYPLOT = None
 _MARKER_CYCLE = ('o', '^', 's', 'D', 'P', 'X', 'v', '<', '>')
+_AGG_NATURALNESS_INDEX = None
+_AGG_STABILITY_INDEX = None
+_AGG_FOLDABILITY_INDEX = None
+_AGG_DEVELOPABILITY_INDEX = None
+_AGG_NUM_SAMPLES = None
 POINT_TASK_FIELDNAMES = (
     'task_id',
     'experiment',
@@ -557,6 +563,123 @@ def _index_reward_rows(path, value_keys):
     return index
 
 
+def _aggregate_num_workers():
+    raw = os.environ.get('SLURM_CPUS_PER_TASK') or os.environ.get('OMP_NUM_THREADS')
+    if raw is None:
+        cpu_count = os.cpu_count() or 1
+        return max(1, int(cpu_count))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f'Expected integer worker count environment variable, got {raw!r}') from exc
+    if value <= 0:
+        raise ValueError(f'Aggregate worker count must be positive, got {value}')
+    return value
+
+
+def _init_aggregate_worker(naturalness_index, stability_index, foldability_index, developability_index, num_samples):
+    global _AGG_NATURALNESS_INDEX
+    global _AGG_STABILITY_INDEX
+    global _AGG_FOLDABILITY_INDEX
+    global _AGG_DEVELOPABILITY_INDEX
+    global _AGG_NUM_SAMPLES
+    _AGG_NATURALNESS_INDEX = naturalness_index
+    _AGG_STABILITY_INDEX = stability_index
+    _AGG_FOLDABILITY_INDEX = foldability_index
+    _AGG_DEVELOPABILITY_INDEX = developability_index
+    _AGG_NUM_SAMPLES = int(num_samples)
+
+
+def _aggregate_one_point(task):
+    rows = _read_jsonl(task['generation_rows_path'])
+    valid_sequences = []
+    seen_valid_sequences = set()
+    sum_nat = 0.0
+    sum_fold = 0.0
+    sum_stab = 0.0
+    sum_dev = 0.0
+    sum_soft = 0.0
+    nat_raw_values = []
+    stab_raw_values = []
+    point_rows = []
+    for row in rows:
+        key = (int(task['task_id']), int(row['sample_index']))
+        nat_payload = _AGG_NATURALNESS_INDEX.get(key, {})
+        stab_payload = _AGG_STABILITY_INDEX.get(key, {})
+        fold_payload = _AGG_FOLDABILITY_INDEX.get(key, {})
+        dev_payload = _AGG_DEVELOPABILITY_INDEX.get(key, {})
+        naturalness = float(nat_payload.get('naturalness', 0.0) or 0.0)
+        foldability = float(fold_payload.get('foldability', 0.0) or 0.0)
+        stability = float(stab_payload.get('stability', 0.0) or 0.0)
+        developability = float(dev_payload.get('developability', 0.0) or 0.0)
+        soft_reward = (
+            float(task['naturalness_weight']) * naturalness
+            + float(task['foldability_weight']) * foldability
+            + float(task['stability_weight']) * stability
+            + float(task['developability_weight']) * developability
+        )
+        if row['is_valid']:
+            valid_sequences.append(row['sequence'])
+            seen_valid_sequences.add(row['sequence'])
+            if nat_payload.get('naturalness_raw') is not None:
+                nat_raw_values.append(float(nat_payload['naturalness_raw']))
+            if stab_payload.get('stability_raw') is not None:
+                stab_raw_values.append(float(stab_payload['stability_raw']))
+        sum_nat += naturalness
+        sum_fold += foldability
+        sum_stab += stability
+        sum_dev += developability
+        sum_soft += soft_reward
+        point_rows.append(
+            {
+                'task_id': int(task['task_id']),
+                'experiment': task['experiment'],
+                'display_name': task['display_name'],
+                'temperature': float(task['temperature']),
+                **row,
+                'naturalness_raw': nat_payload.get('naturalness_raw'),
+                'naturalness': naturalness,
+                'foldability': foldability,
+                'stability_raw': stab_payload.get('stability_raw'),
+                'stability': stability,
+                'developability': developability,
+                'soft_reward': soft_reward,
+            }
+        )
+    num_rows = len(rows)
+    if num_rows != _AGG_NUM_SAMPLES:
+        raise RuntimeError(
+            f'Point task {task["task_id"]} has {num_rows} generated rows, expected {_AGG_NUM_SAMPLES}'
+        )
+    diversity = float(global_edit_diversity(valid_sequences))
+    point_result = {
+        'task_id': int(task['task_id']),
+        'experiment': task['experiment'],
+        'display_name': task['display_name'],
+        'temperature': float(task['temperature']),
+        'soft_reward_mean': float(sum_soft / num_rows),
+        'reward_nat_mean': float(sum_nat / num_rows),
+        'reward_fold_mean': float(sum_fold / num_rows),
+        'reward_stab_mean': float(sum_stab / num_rows),
+        'reward_dev_mean': float(sum_dev / num_rows),
+        'diversity': diversity,
+        'valid_fraction': float(len(valid_sequences) / num_rows),
+        'invalid_fraction': float(1.0 - (len(valid_sequences) / num_rows)),
+        'unique_valid_fraction': 0.0 if not valid_sequences else float(len(seen_valid_sequences) / len(valid_sequences)),
+        'unique_overall_fraction': float(len(seen_valid_sequences) / num_rows),
+        'mean_valid_length': nanmean([len(sequence) for sequence in valid_sequences]),
+        'naturalness_raw_mean_valid': nanmean(nat_raw_values),
+        'stability_raw_mean_valid': nanmean(stab_raw_values),
+        'reward_weights': {
+            'naturalness': float(task['naturalness_weight']),
+            'foldability': float(task['foldability_weight']),
+            'stability': float(task['stability_weight']),
+            'developability': float(task['developability_weight']),
+        },
+    }
+    return point_rows, point_result
+
+
 def _plot_metric_tradeoff(results, experiments, x_key, x_label, y_key, y_label, title, output_path):
     plt = _get_pyplot()
     _ensure_parent_dir(output_path)
@@ -658,96 +781,36 @@ def _aggregate_results(config, tasks):
         if os.path.isfile(task['developability_scores_path']):
             developability_index.update(_index_reward_rows(task['developability_scores_path'], ('developability',)))
 
+    worker_count = min(len(tasks), _aggregate_num_workers())
     point_results = []
     all_rows = []
-    for task in tasks:
-        rows = _read_jsonl(task['generation_rows_path'])
-        valid_sequences = []
-        seen_valid_sequences = set()
-        sum_nat = 0.0
-        sum_fold = 0.0
-        sum_stab = 0.0
-        sum_dev = 0.0
-        sum_soft = 0.0
-        nat_raw_values = []
-        stab_raw_values = []
-        for row in rows:
-            key = (int(task['task_id']), int(row['sample_index']))
-            nat_payload = naturalness_index.get(key, {})
-            stab_payload = stability_index.get(key, {})
-            fold_payload = foldability_index.get(key, {})
-            dev_payload = developability_index.get(key, {})
-            naturalness = float(nat_payload.get('naturalness', 0.0) or 0.0)
-            foldability = float(fold_payload.get('foldability', 0.0) or 0.0)
-            stability = float(stab_payload.get('stability', 0.0) or 0.0)
-            developability = float(dev_payload.get('developability', 0.0) or 0.0)
-            soft_reward = (
-                float(task['naturalness_weight']) * naturalness
-                + float(task['foldability_weight']) * foldability
-                + float(task['stability_weight']) * stability
-                + float(task['developability_weight']) * developability
-            )
-            if row['is_valid']:
-                valid_sequences.append(row['sequence'])
-                seen_valid_sequences.add(row['sequence'])
-                if nat_payload.get('naturalness_raw') is not None:
-                    nat_raw_values.append(float(nat_payload['naturalness_raw']))
-                if stab_payload.get('stability_raw') is not None:
-                    stab_raw_values.append(float(stab_payload['stability_raw']))
-            sum_nat += naturalness
-            sum_fold += foldability
-            sum_stab += stability
-            sum_dev += developability
-            sum_soft += soft_reward
-            all_rows.append(
-                {
-                    'task_id': int(task['task_id']),
-                    'experiment': task['experiment'],
-                    'display_name': task['display_name'],
-                    'temperature': float(task['temperature']),
-                    **row,
-                    'naturalness_raw': nat_payload.get('naturalness_raw'),
-                    'naturalness': naturalness,
-                    'foldability': foldability,
-                    'stability_raw': stab_payload.get('stability_raw'),
-                    'stability': stability,
-                    'developability': developability,
-                    'soft_reward': soft_reward,
-                }
-            )
-        num_rows = len(rows)
-        if num_rows != config.num_samples:
-            raise RuntimeError(
-                f'Point task {task["task_id"]} has {num_rows} generated rows, expected {config.num_samples}'
-            )
-        diversity = float(global_edit_diversity(valid_sequences))
-        point_results.append(
-            {
-                'task_id': int(task['task_id']),
-                'experiment': task['experiment'],
-                'display_name': task['display_name'],
-                'temperature': float(task['temperature']),
-                'soft_reward_mean': float(sum_soft / num_rows),
-                'reward_nat_mean': float(sum_nat / num_rows),
-                'reward_fold_mean': float(sum_fold / num_rows),
-                'reward_stab_mean': float(sum_stab / num_rows),
-                'reward_dev_mean': float(sum_dev / num_rows),
-                'diversity': diversity,
-                'valid_fraction': float(len(valid_sequences) / num_rows),
-                'invalid_fraction': float(1.0 - (len(valid_sequences) / num_rows)),
-                'unique_valid_fraction': 0.0 if not valid_sequences else float(len(seen_valid_sequences) / len(valid_sequences)),
-                'unique_overall_fraction': float(len(seen_valid_sequences) / num_rows),
-                'mean_valid_length': nanmean([len(sequence) for sequence in valid_sequences]),
-                'naturalness_raw_mean_valid': nanmean(nat_raw_values),
-                'stability_raw_mean_valid': nanmean(stab_raw_values),
-                'reward_weights': {
-                    'naturalness': float(task['naturalness_weight']),
-                    'foldability': float(task['foldability_weight']),
-                    'stability': float(task['stability_weight']),
-                    'developability': float(task['developability_weight']),
-                },
-            }
+    if worker_count == 1:
+        _init_aggregate_worker(
+            naturalness_index,
+            stability_index,
+            foldability_index,
+            developability_index,
+            config.num_samples,
         )
+        for task in tasks:
+            point_rows, point_result = _aggregate_one_point(task)
+            all_rows.extend(point_rows)
+            point_results.append(point_result)
+    else:
+        with ProcessPoolExecutor(
+            max_workers=worker_count,
+            initializer=_init_aggregate_worker,
+            initargs=(
+                naturalness_index,
+                stability_index,
+                foldability_index,
+                developability_index,
+                config.num_samples,
+            ),
+        ) as executor:
+            for point_rows, point_result in executor.map(_aggregate_one_point, tasks):
+                all_rows.extend(point_rows)
+                point_results.append(point_result)
     return all_rows, point_results
 
 
