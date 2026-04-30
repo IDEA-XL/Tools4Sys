@@ -516,10 +516,13 @@ def _run_single_reward_controller(args):
             if reward_name in GPU_REWARD_NAMES:
                 if record['max_reserved_ratio'] < args.safe_reserved_ratio:
                     safe_candidate = int(candidate)
+                results.append(record)
+                if candidate >= args.total_sequences:
+                    break
             else:
                 if record['last_effective_batch_size'] == candidate:
                     safe_candidate = int(candidate)
-            results.append(record)
+                results.append(record)
             continue
         if _looks_like_oom(stderr_text):
             record['status'] = 'oom'
