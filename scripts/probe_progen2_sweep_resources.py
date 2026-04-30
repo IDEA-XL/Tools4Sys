@@ -236,7 +236,8 @@ def _instantiate_reward_scorer(reward_name, reward_cfg, batch_size, device_name)
 
 def _run_generation_worker(args):
     context = _resolve_eval_probe_context(args.config)
-    device = _resolve_device(args.device)
+    device_name = 'cuda:0' if args.device == 'cuda' else args.device
+    device = _resolve_device(device_name)
     if args.generation_prompt_batch_size <= 0:
         raise ValueError('generation_prompt_batch_size must be positive')
     if args.num_return_sequences <= 0:
@@ -251,7 +252,8 @@ def _run_generation_worker(args):
         official_code_dir=context['official_code_dir'],
         tokenizer_path=context['tokenizer_path'],
         device=device,
-        bf16=context['bf16'],
+        use_fp16=False,
+        autocast_dtype=torch.bfloat16 if context['bf16'] and device.type == 'cuda' else None,
     )
     policy = ProGen2Policy(model, trainable=False)
     torch.cuda.reset_peak_memory_stats(device)
@@ -295,9 +297,9 @@ def _run_reward_worker(args):
     if reward_cfg is None:
         raise ValueError(f'Missing reward config for {args.reward_name!r}')
     device = None
-    device_name = 'cpu' if args.reward_name == 'developability' else 'cuda'
-    if device_name == 'cuda':
-        device = _resolve_device('cuda')
+    device_name = 'cpu' if args.reward_name == 'developability' else 'cuda:0'
+    if device_name.startswith('cuda'):
+        device = _resolve_device(device_name)
         torch.cuda.set_device(device)
         torch.cuda.reset_peak_memory_stats(device)
     scorer = _instantiate_reward_scorer(
