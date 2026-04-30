@@ -1,0 +1,70 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.json
+output_naturalness_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_diversity_vs_naturalness_20260430.png
+output_foldability_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_diversity_vs_foldability_20260430.png
+output_stability_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_diversity_vs_stability_20260430.png
+output_developability_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_diversity_vs_developability_20260430.png
+output_soft_reward_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_diversity_vs_soft_reward_20260430.png
+output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.rows.jsonl
+
+official_code_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official
+tokenizer_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/tokenizer.json
+prompt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/prompts_unconditional.txt
+
+seed: 42
+bf16: false
+device: cuda
+num_samples: 480
+generation_prompt_batch_size: 8
+group_size: 12
+max_new_tokens: 256
+top_p: 0.95
+temperature: 0.8
+temperature_values:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  - 1.0
+  - 1.1
+  - 1.2
+calibration_temperature: 0.8
+reward_calibration_size: 256
+reward_calibration_prompt_batch_size: 8
+
+rewards:
+  naturalness:
+    model_name: esm2_t33_650M_UR50D
+    device: cuda
+    batch_size: 256
+  foldability:
+    device: cuda
+    batch_size: 64
+  stability:
+    model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official
+    base_model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd
+    device: cuda
+    batch_size: 256
+  developability:
+    model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official
+    device: cuda
+    batch_size: 24
+
+experiments:
+  - name: original
+    display_name: Original
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/checkpoints/progen2-small
+  - name: grpo_step100
+    display_name: GRPO 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000100
+  - name: sgrpo_step100
+    display_name: SGRPO 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_slurm52246/checkpoint-000100
+  - name: sgrpo_gw08_step100
+    display_name: SGRPO gw0.8 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_slurm52572/checkpoint-000100
