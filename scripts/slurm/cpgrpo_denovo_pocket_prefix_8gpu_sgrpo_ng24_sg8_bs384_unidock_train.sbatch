@@ -13,7 +13,7 @@ set -euo pipefail
 
 REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol}
 CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05.yaml}
-CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol_unidock}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-/public/home/xinwuye/ai4s-tool-joint-train/runs/unidock_official/conda_env}
 GENMOL_REWARD_WORKERS=${GENMOL_REWARD_WORKERS:-7}
 WANDB_NETRC_PATH=${WANDB_NETRC_PATH:-${HOME}/.netrc}
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/unidock_official/logs
@@ -28,7 +28,7 @@ export WANDB_PROJECT="${WANDB_PROJECT:-tools4sys}"
 export WANDB_NAME="${WANDB_NAME:-cpgrpo-denovo-pocket-prefix-8gpu-sgrpo-ng24-sg8-bs384-unidock}"
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV_NAME}"
+conda activate "${CONDA_ENV_PREFIX}"
 export PATH=/opt/gridview/slurm/bin:$PATH
 
 cd "${REPO_DIR}"

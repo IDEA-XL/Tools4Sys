@@ -13,11 +13,11 @@ set -euo pipefail
 
 REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol}
 CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_smoke.yaml}
-CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol_unidock}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-/public/home/xinwuye/ai4s-tool-joint-train/runs/unidock_official/conda_env}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV_NAME}"
+conda activate "${CONDA_ENV_PREFIX}"
 export PATH=/opt/gridview/slurm/bin:$PATH
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
