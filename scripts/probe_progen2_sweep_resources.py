@@ -342,6 +342,8 @@ def _run_generation_controller(args):
         stdout_path = os.path.join(args.output_root, 'logs', f'{run_name}.stdout.log')
         stderr_path = os.path.join(args.output_root, 'logs', f'{run_name}.stderr.log')
         os.makedirs(run_dir, exist_ok=True)
+        _ensure_parent_dir(stdout_path)
+        _ensure_parent_dir(stderr_path)
         command = [
             sys.executable,
             'scripts/probe_progen2_sweep_resources.py',
@@ -443,6 +445,8 @@ def _run_single_reward_controller(args):
         stdout_path = os.path.join(args.output_root, 'logs', f'{run_name}.stdout.log')
         stderr_path = os.path.join(args.output_root, 'logs', f'{run_name}.stderr.log')
         os.makedirs(run_dir, exist_ok=True)
+        _ensure_parent_dir(stdout_path)
+        _ensure_parent_dir(stderr_path)
         command = [
             sys.executable,
             'scripts/probe_progen2_sweep_resources.py',
