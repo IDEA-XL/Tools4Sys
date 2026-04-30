@@ -446,6 +446,7 @@ def _run_single_reward_controller(args):
         run_dir = os.path.join(args.output_root, 'runs', run_name)
         stdout_path = os.path.join(args.output_root, 'logs', f'{run_name}.stdout.log')
         stderr_path = os.path.join(args.output_root, 'logs', f'{run_name}.stderr.log')
+        worker_total_sequences = int(candidate) if reward_name in GPU_REWARD_NAMES else int(args.total_sequences)
         os.makedirs(run_dir, exist_ok=True)
         _ensure_parent_dir(stdout_path)
         _ensure_parent_dir(stderr_path)
@@ -460,7 +461,7 @@ def _run_single_reward_controller(args):
             '--batch-size',
             str(candidate),
             '--total-sequences',
-            str(args.total_sequences),
+            str(worker_total_sequences),
             '--sequence-length',
             str(args.sequence_length),
             '--seed',
@@ -480,6 +481,7 @@ def _run_single_reward_controller(args):
         record = {
             'reward_name': reward_name,
             'batch_size': int(candidate),
+            'total_sequences': int(worker_total_sequences),
             'stdout_path': stdout_path,
             'stderr_path': stderr_path,
             'return_code': int(completed.returncode),
@@ -517,8 +519,6 @@ def _run_single_reward_controller(args):
                 if record['max_reserved_ratio'] < args.safe_reserved_ratio:
                     safe_candidate = int(candidate)
                 results.append(record)
-                if candidate >= args.total_sequences:
-                    break
             else:
                 if record['last_effective_batch_size'] == candidate:
                     safe_candidate = int(candidate)
