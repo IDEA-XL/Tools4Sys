@@ -49,6 +49,7 @@ _AA_INDEX_TO_RESIDUE_NAME = {
     18: 'TRP',
     19: 'TYR',
 }
+_HYDROGEN_ATOMIC_NUMBER = 1
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,60 @@ def _parse_unidock_energy(output_path: Path) -> float:
     return float(match.group(1))
 
 
+def _periodic_table():
+    try:
+        from rdkit.Chem import GetPeriodicTable
+    except ImportError as exc:
+        raise RuntimeError('RDKit is required to normalize Uni-Dock receptor atoms') from exc
+    return GetPeriodicTable()
+
+
+def _element_symbol_from_atomic_number(atomic_number: int) -> str:
+    try:
+        normalized_atomic_number = int(atomic_number)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'Invalid receptor atomic number: {atomic_number!r}') from exc
+    if normalized_atomic_number <= 0:
+        raise ValueError(f'Receptor atomic number must be positive, got {normalized_atomic_number}')
+    symbol = str(_periodic_table().GetElementSymbol(normalized_atomic_number)).strip()
+    if not symbol:
+        raise ValueError(f'Failed to resolve element symbol for atomic number {normalized_atomic_number}')
+    return symbol
+
+
+def _first_alpha_index(text: str) -> int | None:
+    for index, char in enumerate(text):
+        if char.isalpha():
+            return index
+    return None
+
+
+def _normalize_hydrogen_like_atom_name(atom_name: str) -> str:
+    first_alpha_idx = _first_alpha_index(atom_name)
+    if first_alpha_idx is None:
+        raise ValueError(f'Hydrogen-like receptor atom name contains no alphabetic characters: {atom_name!r}')
+    first_alpha = atom_name[first_alpha_idx].upper()
+    if first_alpha == 'H':
+        return atom_name
+    if first_alpha == 'D':
+        return f'{atom_name[:first_alpha_idx]}H{atom_name[first_alpha_idx + 1:]}'
+    raise ValueError(
+        'Hydrogen-like receptor atom name must begin with H or D at its first alphabetic position, '
+        f'got {atom_name!r}'
+    )
+
+
+def _normalize_receptor_atom_name(atom_name: str, atomic_number: int | None = None) -> str:
+    stripped = atom_name.strip()
+    if not stripped:
+        raise ValueError('Encountered an empty atom name while building a Uni-Dock receptor PDB')
+    if len(stripped) > 4:
+        raise ValueError(f'Atom name exceeds PDB width limit: {atom_name!r}')
+    if atomic_number is not None and int(atomic_number) == _HYDROGEN_ATOMIC_NUMBER:
+        stripped = _normalize_hydrogen_like_atom_name(stripped)
+    return stripped
+
+
 def _infer_pdb_element(atom_name: str) -> str:
     stripped = atom_name.strip()
     letters = ''.join(char for char in stripped if char.isalpha())
@@ -202,12 +257,45 @@ def _infer_pdb_element(atom_name: str) -> str:
 
 
 def _format_pdb_atom_name(atom_name: str) -> str:
-    stripped = atom_name.strip()
-    if not stripped:
-        raise ValueError('Encountered an empty atom name while building a Uni-Dock receptor PDB')
-    if len(stripped) > 4:
-        raise ValueError(f'Atom name exceeds PDB width limit: {atom_name!r}')
-    return stripped.rjust(4)
+    return atom_name.strip().rjust(4)
+
+
+def _resolve_receptor_atom_specs(raw_entry: dict) -> tuple[list[str], list[str]]:
+    atom_names = [_decode_atom_name(item) for item in raw_entry['protein_atom_name']]
+    raw_atomic_numbers = raw_entry.get('protein_element')
+    if raw_atomic_numbers is None:
+        normalized_atom_names = [_normalize_receptor_atom_name(atom_name) for atom_name in atom_names]
+        element_symbols = [_infer_pdb_element(atom_name) for atom_name in normalized_atom_names]
+        if any(symbol == 'D' for symbol in element_symbols):
+            first_invalid_index = next(index for index, symbol in enumerate(element_symbols) if symbol == 'D')
+            raise ValueError(
+                'Uni-Dock receptor reconstruction requires protein_element when atom names imply deuterium-like '
+                f'elements; first offending atom_name={normalized_atom_names[first_invalid_index]!r}'
+            )
+        return normalized_atom_names, element_symbols
+
+    atomic_numbers = np.asarray(raw_atomic_numbers, dtype=np.int64)
+    if atomic_numbers.ndim != 1:
+        raise ValueError(f'protein_element must be a 1D array, got shape {list(atomic_numbers.shape)}')
+    if atomic_numbers.shape[0] != len(atom_names):
+        raise ValueError(
+            'protein_element must be length-aligned with protein_atom_name for Uni-Dock receptor reconstruction: '
+            f'{atomic_numbers.shape[0]} vs {len(atom_names)}'
+        )
+
+    normalized_atom_names: list[str] = []
+    element_symbols: list[str] = []
+    for atom_name, atomic_number in zip(atom_names, atomic_numbers.tolist()):
+        normalized_atom_name = _normalize_receptor_atom_name(atom_name, atomic_number)
+        element_symbol = _element_symbol_from_atomic_number(atomic_number)
+        if element_symbol == 'D':
+            raise ValueError(
+                'Receptor element normalization unexpectedly produced D after atomic-number mapping: '
+                f'atom_name={atom_name!r} atomic_number={atomic_number}'
+            )
+        normalized_atom_names.append(normalized_atom_name)
+        element_symbols.append(element_symbol)
+    return normalized_atom_names, element_symbols
 
 
 def _build_receptor_pdb_lines(raw_entry: dict) -> list[str]:
@@ -217,12 +305,14 @@ def _build_receptor_pdb_lines(raw_entry: dict) -> list[str]:
         raise ValueError(f'Uni-Dock receptor reconstruction is missing required keys: {missing}')
 
     atom_positions = np.asarray(raw_entry['protein_pos'], dtype=np.float32)
-    atom_names = [_decode_atom_name(item) for item in raw_entry['protein_atom_name']]
+    atom_names, element_symbols = _resolve_receptor_atom_specs(raw_entry)
     atom_to_aa_type = np.asarray(raw_entry['protein_atom_to_aa_type'], dtype=np.int64)
     if atom_positions.ndim != 2 or atom_positions.shape[1] != 3:
         raise ValueError(f'protein_pos must have shape [num_atoms, 3], got {list(atom_positions.shape)}')
     if len(atom_names) != atom_positions.shape[0] or atom_to_aa_type.shape[0] != atom_positions.shape[0]:
         raise ValueError('protein atom-level arrays must share the same length for Uni-Dock receptor reconstruction')
+    if len(element_symbols) != atom_positions.shape[0]:
+        raise ValueError('Resolved receptor element symbols must share the same length as protein_pos')
 
     residue_start_indices = [idx for idx, atom_name in enumerate(atom_names) if atom_name == 'N']
     if not residue_start_indices:
@@ -244,11 +334,12 @@ def _build_receptor_pdb_lines(raw_entry: dict) -> list[str]:
         residue_name = _AA_INDEX_TO_RESIDUE_NAME.get(int(unique_types[0]))
         if residue_name is None:
             raise ValueError(f'Unsupported amino acid index for Uni-Dock receptor reconstruction: {int(unique_types[0])}')
-        for atom_name, atom_position in zip(residue_atom_names, residue_positions):
+        residue_element_symbols = element_symbols[start_idx:end_idx]
+        for atom_name, atom_position, element_symbol in zip(residue_atom_names, residue_positions, residue_element_symbols):
             x, y, z = (float(atom_position[0]), float(atom_position[1]), float(atom_position[2]))
             pdb_lines.append(
                 f"ATOM  {atom_serial:5d} {_format_pdb_atom_name(atom_name)} {residue_name:>3s} A{residue_serial:4d}"
-                f"    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {_infer_pdb_element(atom_name):>2s}\n"
+                f"    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {element_symbol:>2s}\n"
             )
             atom_serial += 1
     if not pdb_lines:
