@@ -1,4 +1,5 @@
 import math
+from collections import Counter
 
 from progen2.rewards.common import is_valid_protein_sequence, normalize_protein_sequence
 from progen2.rewards.diversity import compute_group_diversity_reward, normalized_edit_similarity
@@ -24,13 +25,25 @@ def global_edit_diversity(sequences):
     valid_sequences = [normalize_protein_sequence(sequence) for sequence in sequences if is_valid_protein_sequence(sequence)]
     if len(valid_sequences) < 2:
         return 0.0
-    similarities = []
-    for left_idx in range(len(valid_sequences)):
-        for right_idx in range(left_idx + 1, len(valid_sequences)):
-            similarities.append(normalized_edit_similarity(valid_sequences[left_idx], valid_sequences[right_idx]))
-    if not similarities:
+    sequence_counts = Counter(valid_sequences)
+    unique_sequences = list(sequence_counts.keys())
+    total_pairs = len(valid_sequences) * (len(valid_sequences) - 1) // 2
+    if total_pairs <= 0:
         return 0.0
-    return float(1.0 - (sum(similarities) / len(similarities)))
+    weighted_similarity_sum = 0.0
+    for left_idx, left_sequence in enumerate(unique_sequences):
+        left_count = sequence_counts[left_sequence]
+        if left_count >= 2:
+            weighted_similarity_sum += math.comb(left_count, 2) * 1.0
+        for right_idx in range(left_idx + 1, len(unique_sequences)):
+            right_sequence = unique_sequences[right_idx]
+            right_count = sequence_counts[right_sequence]
+            weighted_similarity_sum += (
+                left_count
+                * right_count
+                * normalized_edit_similarity(left_sequence, right_sequence)
+            )
+    return float(1.0 - (weighted_similarity_sum / float(total_pairs)))
 
 
 def compute_group_diversity_rewards(sequences, group_size):
