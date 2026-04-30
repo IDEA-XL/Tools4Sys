@@ -16,7 +16,7 @@ bf16: false
 device: cuda
 num_samples: 480
 generation_prompt_batch_size: 8
-group_size: 12
+num_return_sequences: 12
 max_new_tokens: 256
 top_p: 0.95
 temperature: 0.8

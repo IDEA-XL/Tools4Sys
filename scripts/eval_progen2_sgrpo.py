@@ -13,7 +13,7 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from progen2.data.prompts import load_prompt_texts
-from progen2.evaluation import classify_protein_sequence, compute_group_diversity_rewards, nanmean
+from progen2.evaluation import classify_protein_sequence, global_edit_diversity, nanmean
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
 from progen2.rewards import CompositeProteinReward
 from progen2.rewards.composite import normalize_protein_reward_weights
@@ -81,7 +81,7 @@ class EvalConfig:
     device: str = 'cuda'
     num_samples: int = 960
     generation_prompt_batch_size: int = 8
-    group_size: int = 12
+    num_return_sequences: int = 12
     max_new_tokens: int = 64
     top_p: float = 0.95
     temperature: float = 0.8
@@ -151,12 +151,12 @@ def load_config(path):
         raise ValueError(f'num_samples must be positive, got {config.num_samples}')
     if config.generation_prompt_batch_size <= 0:
         raise ValueError('generation_prompt_batch_size must be positive')
-    if config.group_size <= 1:
-        raise ValueError('group_size must be greater than 1')
-    if config.num_samples % config.group_size != 0:
+    if config.num_return_sequences <= 0:
+        raise ValueError('num_return_sequences must be positive')
+    if config.num_samples % config.num_return_sequences != 0:
         raise ValueError(
-            'num_samples must be divisible by group_size: '
-            f'{config.num_samples} vs {config.group_size}'
+            'num_samples must be divisible by num_return_sequences: '
+            f'{config.num_samples} vs {config.num_return_sequences}'
         )
     if config.max_new_tokens <= 0:
         raise ValueError('max_new_tokens must be positive')
@@ -210,7 +210,7 @@ def _cycle_prompt_batch(prompts, batch_size, start_index):
 
 
 def _default_reward_batch_size(config):
-    return int(config.generation_prompt_batch_size * config.group_size)
+    return int(config.generation_prompt_batch_size * config.num_return_sequences)
 
 
 def _collect_calibration_sequences(policy, prompts, config, seed, temperature):
@@ -251,7 +251,7 @@ def _collect_calibration_sequences(policy, prompts, config, seed, temperature):
 def _generate_eval_rows(policy, prompts, config, seed, temperature):
     rows = []
     prompt_cursor = 0
-    prompts_remaining = config.num_samples // config.group_size
+    prompts_remaining = config.num_samples // config.num_return_sequences
     batch_index = 0
     sample_index = 0
     while prompts_remaining > 0:
@@ -260,7 +260,7 @@ def _generate_eval_rows(policy, prompts, config, seed, temperature):
         prompt_cursor = (prompt_cursor + len(prompt_batch)) % len(prompts)
         rollout = policy.generate_rollouts(
             prompt_batch,
-            num_return_sequences=config.group_size,
+            num_return_sequences=config.num_return_sequences,
             max_new_tokens=config.max_new_tokens,
             top_p=config.top_p,
             temperature=temperature,
@@ -304,12 +304,12 @@ def _initialize_row_metrics(rows):
                 'liability_reward': 0.0,
                 'developability': 0.0,
                 'soft_reward': 0.0,
-                'group_diversity_reward': 0.0,
+                'diversity': 0.0,
             }
         )
 
 
-def _score_rows(rows, reward_model, group_size):
+def _score_rows(rows, reward_model):
     _initialize_row_metrics(rows)
     valid_indices = [idx for idx, row in enumerate(rows) if row['is_valid']]
     valid_sequences = [rows[idx]['sequence'] for idx in valid_indices]
@@ -335,21 +335,10 @@ def _score_rows(rows, reward_model, group_size):
             rows[row_index]['developability'] = float(details['developability'][detail_index])
             rows[row_index]['soft_reward'] = float(details['total'][detail_index])
 
-    group_rewards = compute_group_diversity_rewards([row['sequence'] for row in rows], group_size=group_size)
-    if len(group_rewards) * group_size != len(rows):
-        raise RuntimeError(
-            f'group reward count does not match rows: groups={len(group_rewards)} '
-            f'group_size={group_size} rows={len(rows)}'
-        )
-    for group_index, group_reward in enumerate(group_rewards):
-        start = group_index * group_size
-        end = start + group_size
-        for row_index in range(start, end):
-            rows[row_index]['group_diversity_reward'] = float(group_reward)
-
     valid_sequences_set = set(valid_sequences)
     valid_only_metrics = {f'{key}_valid_only': float(value) for key, value in reward_metrics.items()}
     soft_reward_mean = float(sum(row['soft_reward'] for row in rows) / len(rows))
+    diversity = float(global_edit_diversity(valid_sequences))
     return {
         'soft_reward_mean': soft_reward_mean,
         'reward_mean': soft_reward_mean,
@@ -359,7 +348,7 @@ def _score_rows(rows, reward_model, group_size):
         'reward_dev_mean': float(sum(row['developability'] for row in rows) / len(rows)),
         'reward_sol_mean': float(sum(row['solubility'] for row in rows) / len(rows)),
         'reward_liability_mean': float(sum(row['liability_reward'] for row in rows) / len(rows)),
-        'group_diversity_mean': float(sum(group_rewards) / len(group_rewards)),
+        'diversity': diversity,
         'valid_fraction': float(len(valid_indices) / len(rows)),
         'invalid_fraction': float(1.0 - (len(valid_indices) / len(rows))),
         'unique_valid_fraction': 0.0 if not valid_sequences else float(len(valid_sequences_set) / len(valid_sequences)),
@@ -377,14 +366,14 @@ def _build_markdown(config, results):
         '',
         f'- `num_samples`: {config.num_samples}',
         f'- `generation_prompt_batch_size`: {config.generation_prompt_batch_size}',
-        f'- `group_size`: {config.group_size}',
+        f'- `num_return_sequences`: {config.num_return_sequences}',
         f'- `max_new_tokens`: {config.max_new_tokens}',
         f'- `top_p`: {config.top_p}',
         f'- `calibration_temperature`: {config.calibration_temperature if config.calibration_temperature is not None else config.temperature}',
         f'- `temperature_values`: {", ".join(f"{value:.1f}" for value in config.temperature_values or [])}',
         f'- `reward_calibration_size`: {config.reward_calibration_size}',
         '',
-        '| Model | Temperature | Soft Reward | Naturalness | Foldability | Stability | Developability | Group Diversity | Valid Fraction | Unique Valid Fraction | Mean Valid Length |',
+        '| Model | Temperature | Soft Reward | Naturalness | Foldability | Stability | Developability | Diversity | Valid Fraction | Unique Valid Fraction | Mean Valid Length |',
         '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ]
     for row in results:
@@ -399,7 +388,7 @@ def _build_markdown(config, results):
                     _format_metric(row['reward_fold_mean']),
                     _format_metric(row['reward_stab_mean']),
                     _format_metric(row['reward_dev_mean']),
-                    _format_metric(row['group_diversity_mean']),
+                    _format_metric(row['diversity']),
                     _format_metric(row['valid_fraction']),
                     _format_metric(row['unique_valid_fraction']),
                     _format_metric(row['mean_valid_length']),
@@ -413,7 +402,7 @@ def _build_markdown(config, results):
             'Column notes:',
             '- `Soft Reward` is the rollout-level weighted sum of normalized reward components.',
             '- Calibration is performed once per experiment at `calibration_temperature`, then reused across the full temperature sweep to keep reward scales comparable.',
-            '- `Group Diversity` is the mean contiguous-group diversity reward using the configured `group_size`.',
+            '- `Diversity` is the global edit-distance diversity over all valid sequences at that sweep point.',
             '- `Valid Fraction` uses the supported 20-residue alphabet check.',
             '',
         ]
@@ -508,7 +497,7 @@ def evaluate_experiment(config, experiment, prompts, device):
             seed=config.seed + (1000 * sweep_index),
             temperature=float(temperature),
         )
-        metrics = _score_rows(rows, reward_model, group_size=config.group_size)
+        metrics = _score_rows(rows, reward_model)
         metrics.update(
             {
                 'experiment': experiment.name,
@@ -558,9 +547,9 @@ def main():
         experiments=config.experiments,
         x_key='reward_nat_mean',
         x_label='Naturalness',
-        y_key='group_diversity_mean',
-        y_label='Group Diversity',
-        title='Naturalness vs Group Diversity',
+        y_key='diversity',
+        y_label='Diversity',
+        title='Naturalness vs Diversity',
         output_path=config.output_naturalness_diversity_plot_path,
     )
     _plot_metric_tradeoff(
@@ -568,9 +557,9 @@ def main():
         experiments=config.experiments,
         x_key='reward_fold_mean',
         x_label='Foldability',
-        y_key='group_diversity_mean',
-        y_label='Group Diversity',
-        title='Foldability vs Group Diversity',
+        y_key='diversity',
+        y_label='Diversity',
+        title='Foldability vs Diversity',
         output_path=config.output_foldability_diversity_plot_path,
     )
     _plot_metric_tradeoff(
@@ -578,9 +567,9 @@ def main():
         experiments=config.experiments,
         x_key='reward_stab_mean',
         x_label='Stability',
-        y_key='group_diversity_mean',
-        y_label='Group Diversity',
-        title='Stability vs Group Diversity',
+        y_key='diversity',
+        y_label='Diversity',
+        title='Stability vs Diversity',
         output_path=config.output_stability_diversity_plot_path,
     )
     _plot_metric_tradeoff(
@@ -588,9 +577,9 @@ def main():
         experiments=config.experiments,
         x_key='reward_dev_mean',
         x_label='Developability',
-        y_key='group_diversity_mean',
-        y_label='Group Diversity',
-        title='Developability vs Group Diversity',
+        y_key='diversity',
+        y_label='Diversity',
+        title='Developability vs Diversity',
         output_path=config.output_developability_diversity_plot_path,
     )
     _plot_metric_tradeoff(
@@ -598,9 +587,9 @@ def main():
         experiments=config.experiments,
         x_key='soft_reward_mean',
         x_label='Soft Reward',
-        y_key='group_diversity_mean',
-        y_label='Group Diversity',
-        title='Soft Reward vs Group Diversity',
+        y_key='diversity',
+        y_label='Diversity',
+        title='Soft Reward vs Diversity',
         output_path=config.output_soft_reward_diversity_plot_path,
     )
 
