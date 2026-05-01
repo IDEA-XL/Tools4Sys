@@ -2300,6 +2300,18 @@ MODE=score-point-reward-task REWARD_NAME=foldability sbatch --array=0-47 scripts
 sbatch --array=0-47 scripts/slurm/run_progen2_sweep_developability_cpu.sbatch
 ```
 
+Point-diversity launch script:
+
+```text
+scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
+```
+
+Point-diversity invocation:
+
+```text
+sbatch --array=0-47 scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
+```
+
 Aggregation launch script:
 
 ```text
@@ -2320,6 +2332,18 @@ developability.batch_size = 24
 ```
 
 - Unverified assumption: `stability.batch_size = 8192` is used by explicit sweep policy choice and has not been separately batch-probed yet. If the packed stability sweep OOMs, the planned fallback is `4096`.
+
+Completed sweep jobs:
+
+```text
+53013  generation array
+53014  packed naturalness scoring
+53015  packed stability scoring
+53069  foldability array
+53070  developability array
+53418  point-diversity array
+53419  final aggregate
+```
 
 Aggregated result files:
 
@@ -2345,10 +2369,28 @@ Metric definition notes:
 - `soft_reward_mean` uses the training-time reward weights for each experiment.
 - `naturalness` and `stability` are calibrated once per experiment, then reused across the full temperature sweep.
 
+Key observations:
+
+- `Original` reaches its best `soft_reward_mean` at `temperature=0.5` (`0.5945`) and its highest diversity at `temperature=0.7` (`0.8487`).
+- `GRPO 100` reaches the best `soft_reward_mean` among the four compared models at `temperature=0.5` (`0.7289`), but its diversity stays much lower (`0.3665` at that point, `0.4873` at best).
+- `SGRPO 100` gives the strongest high-diversity frontier: best `soft_reward_mean` at `temperature=0.4` (`0.7765`), and highest diversity at `temperature=1.2` (`0.8070`) while still retaining `soft_reward_mean=0.4532`.
+- `SGRPO gw0.8 100` is consistently over-collapsed in this sweep: diversity only rises from `0.0039` to `0.1808` across the full grid.
+
+Plots:
+
+![ProGen2 Naturalness vs Diversity](progen2/progen2_temperature_diversity_vs_naturalness_20260430.png)
+
+![ProGen2 Foldability vs Diversity](progen2/progen2_temperature_diversity_vs_foldability_20260430.png)
+
+![ProGen2 Stability vs Diversity](progen2/progen2_temperature_diversity_vs_stability_20260430.png)
+
+![ProGen2 Developability vs Diversity](progen2/progen2_temperature_diversity_vs_developability_20260430.png)
+
+![ProGen2 Soft Reward vs Diversity](progen2/progen2_temperature_diversity_vs_soft_reward_20260430.png)
+
 ## Global Open Items
 
 - `mmgenmol`: missing narrowed 4-point sweep artifacts for the locked Original / GRPO / SGRPO / GRPO Diversity-Regularizer checkpoints.
-- `progen2`: split temperature-sweep tasks are implemented but the new sweep outputs are still pending generation, scoring, and aggregation.
 
 ## Update Rule
 
