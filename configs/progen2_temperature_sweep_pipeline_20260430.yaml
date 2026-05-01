@@ -2,6 +2,7 @@ tasks_path: /public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results
 generation_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/generation
 foldability_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/foldability
 developability_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/developability
+diversity_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/diversity
 packed_naturalness_scores_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/naturalness/naturalness.rows.jsonl
 packed_stability_scores_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/stability/stability.rows.jsonl
 

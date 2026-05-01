@@ -15,7 +15,11 @@ sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
 from progen2.data.prompts import load_prompt_texts
-from progen2.evaluation import classify_protein_sequence, global_edit_diversity, nanmean
+from progen2.evaluation import (
+    classify_protein_sequence,
+    global_edit_diversity_parallel,
+    nanmean,
+)
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
 from progen2.rewards.composite import normalize_protein_reward_weights
 from progen2.rewards.developability import ProteinSolScorer
@@ -47,6 +51,7 @@ POINT_TASK_FIELDNAMES = (
     'generation_rows_path',
     'foldability_scores_path',
     'developability_scores_path',
+    'diversity_scores_path',
 )
 
 
@@ -68,6 +73,7 @@ class SweepConfig:
     generation_output_root: str
     foldability_output_root: str
     developability_output_root: str
+    diversity_output_root: str
     packed_naturalness_scores_path: str
     packed_stability_scores_path: str
     output_markdown_path: str
@@ -341,6 +347,11 @@ def build_point_tasks(config):
                         sweep_dir,
                         'developability.rows.jsonl',
                     ),
+                    'diversity_scores_path': os.path.join(
+                        config.diversity_output_root,
+                        sweep_dir,
+                        'diversity.json',
+                    ),
                 }
             )
             task_id += 1
@@ -555,12 +566,81 @@ def _score_point_reward_task(config, task, reward_name, output_path):
     raise ValueError(f'Unsupported point reward {reward_name!r}')
 
 
+def _point_diversity_num_workers():
+    raw = os.environ.get('SLURM_CPUS_PER_TASK') or os.environ.get('OMP_NUM_THREADS')
+    if raw is None:
+        cpu_count = os.cpu_count() or 1
+        return max(1, int(cpu_count))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f'Expected integer point diversity worker count, got {raw!r}') from exc
+    if value <= 0:
+        raise ValueError(f'Point diversity worker count must be positive, got {value}')
+    return value
+
+
+def _score_point_diversity_task(config, task, output_path):
+    rows = _read_jsonl(task['generation_rows_path'])
+    valid_sequences = []
+    seen_valid_sequences = set()
+    valid_lengths = []
+    for row in rows:
+        if row['is_valid']:
+            sequence = row['sequence']
+            valid_sequences.append(sequence)
+            seen_valid_sequences.add(sequence)
+            valid_lengths.append(len(sequence))
+    num_rows = len(rows)
+    if num_rows != config.num_samples:
+        raise RuntimeError(
+            f'Point task {task["task_id"]} has {num_rows} generated rows, expected {config.num_samples}'
+        )
+    diversity = float(global_edit_diversity_parallel(valid_sequences, num_workers=_point_diversity_num_workers()))
+    payload = {
+        'task_id': int(task['task_id']),
+        'experiment': task['experiment'],
+        'display_name': task['display_name'],
+        'temperature': float(task['temperature']),
+        'diversity': diversity,
+        'valid_fraction': float(len(valid_sequences) / num_rows),
+        'invalid_fraction': float(1.0 - (len(valid_sequences) / num_rows)),
+        'unique_valid_fraction': 0.0 if not valid_sequences else float(len(seen_valid_sequences) / len(valid_sequences)),
+        'unique_overall_fraction': float(len(seen_valid_sequences) / num_rows),
+        'mean_valid_length': nanmean(valid_lengths),
+    }
+    _ensure_parent_dir(output_path)
+    with open(output_path, 'w') as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+
+
 def _index_reward_rows(path, value_keys):
     index = {}
     for row in _read_jsonl(path):
         key = (int(row['task_id']), int(row['sample_index']))
         index[key] = {field: row.get(field) for field in value_keys}
     return index
+
+
+def _load_diversity_payload(path):
+    with open(path) as handle:
+        payload = json.load(handle)
+    required_fields = (
+        'task_id',
+        'experiment',
+        'display_name',
+        'temperature',
+        'diversity',
+        'valid_fraction',
+        'invalid_fraction',
+        'unique_valid_fraction',
+        'unique_overall_fraction',
+        'mean_valid_length',
+    )
+    for field in required_fields:
+        if field not in payload:
+            raise ValueError(f'Missing diversity field {field!r} in {path}')
+    return payload
 
 
 def _aggregate_num_workers():
@@ -592,8 +672,6 @@ def _init_aggregate_worker(naturalness_index, stability_index, foldability_index
 
 def _aggregate_one_point(task):
     rows = _read_jsonl(task['generation_rows_path'])
-    valid_sequences = []
-    seen_valid_sequences = set()
     sum_nat = 0.0
     sum_fold = 0.0
     sum_stab = 0.0
@@ -602,6 +680,7 @@ def _aggregate_one_point(task):
     nat_raw_values = []
     stab_raw_values = []
     point_rows = []
+    diversity_payload = _load_diversity_payload(task['diversity_scores_path'])
     for row in rows:
         key = (int(task['task_id']), int(row['sample_index']))
         nat_payload = _AGG_NATURALNESS_INDEX.get(key, {})
@@ -619,8 +698,6 @@ def _aggregate_one_point(task):
             + float(task['developability_weight']) * developability
         )
         if row['is_valid']:
-            valid_sequences.append(row['sequence'])
-            seen_valid_sequences.add(row['sequence'])
             if nat_payload.get('naturalness_raw') is not None:
                 nat_raw_values.append(float(nat_payload['naturalness_raw']))
             if stab_payload.get('stability_raw') is not None:
@@ -651,7 +728,6 @@ def _aggregate_one_point(task):
         raise RuntimeError(
             f'Point task {task["task_id"]} has {num_rows} generated rows, expected {_AGG_NUM_SAMPLES}'
         )
-    diversity = float(global_edit_diversity(valid_sequences))
     point_result = {
         'task_id': int(task['task_id']),
         'experiment': task['experiment'],
@@ -662,12 +738,12 @@ def _aggregate_one_point(task):
         'reward_fold_mean': float(sum_fold / num_rows),
         'reward_stab_mean': float(sum_stab / num_rows),
         'reward_dev_mean': float(sum_dev / num_rows),
-        'diversity': diversity,
-        'valid_fraction': float(len(valid_sequences) / num_rows),
-        'invalid_fraction': float(1.0 - (len(valid_sequences) / num_rows)),
-        'unique_valid_fraction': 0.0 if not valid_sequences else float(len(seen_valid_sequences) / len(valid_sequences)),
-        'unique_overall_fraction': float(len(seen_valid_sequences) / num_rows),
-        'mean_valid_length': nanmean([len(sequence) for sequence in valid_sequences]),
+        'diversity': float(diversity_payload['diversity']),
+        'valid_fraction': float(diversity_payload['valid_fraction']),
+        'invalid_fraction': float(diversity_payload['invalid_fraction']),
+        'unique_valid_fraction': float(diversity_payload['unique_valid_fraction']),
+        'unique_overall_fraction': float(diversity_payload['unique_overall_fraction']),
+        'mean_valid_length': float(diversity_payload['mean_valid_length']),
         'naturalness_raw_mean_valid': nanmean(nat_raw_values),
         'stability_raw_mean_valid': nanmean(stab_raw_values),
         'reward_weights': {
@@ -881,6 +957,16 @@ def cmd_score_point_reward_task(args):
     logger.info('Wrote %s scores to %s', args.reward_name, output_path)
 
 
+def cmd_score_point_diversity_task(args):
+    config = load_config(args.config)
+    tasks = _load_point_tasks(config.tasks_path)
+    task = next((task for task in tasks if int(task['task_id']) == args.task_id), None)
+    if task is None:
+        raise ValueError(f'No task found for task_id={args.task_id}')
+    _score_point_diversity_task(config, task, task['diversity_scores_path'])
+    logger.info('Wrote diversity metrics to %s', task['diversity_scores_path'])
+
+
 def cmd_aggregate(args):
     config = load_config(args.config)
     tasks = _load_point_tasks(config.tasks_path)
@@ -987,6 +1073,10 @@ def main():
     point_reward_task.add_argument('--reward-name', required=True, choices=('foldability', 'developability'))
     point_reward_task.add_argument('--task-id', type=int, required=True)
 
+    point_diversity_task = subparsers.add_parser('score-point-diversity-task')
+    point_diversity_task.add_argument('--config', required=True)
+    point_diversity_task.add_argument('--task-id', type=int, required=True)
+
     aggregate = subparsers.add_parser('aggregate')
     aggregate.add_argument('--config', required=True)
 
@@ -1003,6 +1093,9 @@ def main():
         return
     if args.mode == 'score-point-reward-task':
         cmd_score_point_reward_task(args)
+        return
+    if args.mode == 'score-point-diversity-task':
+        cmd_score_point_diversity_task(args)
         return
     if args.mode == 'aggregate':
         cmd_aggregate(args)
