@@ -1982,6 +1982,50 @@ unidock_score = 0.5
 
 - `unidock_batch_size = 384` is locked for this family from the same 2-GPU smoke validation used above.
 
+### SGRPO + UniDock 500-Step Variant + Reward-Sum Hierarchy + LOO Group Credit
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_ms500.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_ms500.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `SGRPO + UniDock 500-Step Variant` above except:
+
+```text
+hierarchy = reward_sum
+group_rewrad_credit = loo
+group_rewrad_credit_temperature = 1.0
+```
+
 ### SGRPO + UniDock
 
 Status: `TODO`
@@ -2019,6 +2063,50 @@ CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta
 Notes:
 
 - This line matches `SGRPO + UniDock 500-Step Variant` above except `max_steps = 1000`.
+
+### SGRPO + UniDock + Reward-Sum Hierarchy + LOO Group Credit
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `SGRPO + UniDock` above except:
+
+```text
+hierarchy = reward_sum
+group_rewrad_credit = loo
+group_rewrad_credit_temperature = 1.0
+```
 
 ### SGRPO + UniDock 2000-Step Variant
 
@@ -2363,6 +2451,50 @@ reward peak allocated = 33.102311 GiB
 - Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_slurm52246`
 - Completion evidence: the run directory contains `checkpoint-000100`. `sacct` now shows the parent job as `CANCELLED`, so the checkpoint is treated as a verified intermediate comparison asset rather than a fully completed end-state run.
 
+### SGRPO + Reward-Sum Hierarchy + LOO Group Credit
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_rewardsum_loo.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Notes:
+
+- This line matches the current ProGen2 SGRPO config except:
+
+```text
+hierarchy = reward_sum
+group_rewrad_credit = loo
+group_rewrad_credit_temperature = 1.0
+```
+
 ### SGRPO + `group_advantage_weight = 0.8`
 
 Status: `Verified`
@@ -2403,6 +2535,50 @@ Notes:
 - Completed training job: `52572`
 - Verified comparison checkpoint: `checkpoint-000100`
 - Completion evidence: `sacct` reports `52572 COMPLETED (0:0)`, and the run directory contains `checkpoint-000100`.
+
+### SGRPO + `group_advantage_weight = 0.8` + Reward-Sum Hierarchy + LOO Group Credit
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Notes:
+
+- This line matches `SGRPO + group_advantage_weight = 0.8` above except:
+
+```text
+hierarchy = reward_sum
+group_rewrad_credit = loo
+group_rewrad_credit_temperature = 1.0
+```
 
 ### Temperature Sweep Pipeline
 
