@@ -983,6 +983,105 @@ Notes:
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 32`
 
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.7`
+
+Status: `TODO`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw07_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw07_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `group_advantage_weight = 0.7`.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.3`
+
+Status: `TODO`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw03_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw03_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `group_advantage_weight = 0.3`.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.1`
+
+Status: `TODO`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw01_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw01_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `group_advantage_weight = 0.1`.
+
 Status: `Running`
 
 Training config:
