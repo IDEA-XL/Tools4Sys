@@ -983,7 +983,7 @@ Notes:
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 32`
 
-Status: `Submitted`
+Status: `Running`
 
 Training config:
 
@@ -1013,10 +1013,13 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `num_generations = 32`.
+- Training job: `53591`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng32_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260501_153029`
+- First `10` training steps completed without errors.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 16`
 
-Status: `Submitted`
+Status: `Running`
 
 Training config:
 
@@ -1046,10 +1049,13 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `num_generations = 16`.
+- Training job: `53592`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng16_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260501_153029`
+- First `10` training steps completed without errors.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 8`
 
-Status: `Submitted`
+Status: `Running`
 
 Training config:
 
@@ -1079,10 +1085,13 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `num_generations = 8`.
+- Training job: `53593`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng8_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260501_153029`
+- First `10` training steps completed without errors.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 4`
 
-Status: `Submitted`
+Status: `Running`
 
 Training config:
 
@@ -1112,6 +1121,9 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `num_generations = 4`.
+- Training job: `53594`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng4_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260501_153027`
+- First `10` training steps completed without errors.
 
 ### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness 2000-Step Variant
 
