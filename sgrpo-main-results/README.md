@@ -2631,6 +2631,138 @@ group_rewrad_credit_temperature = 1.0
 - Current queue reason: `AssocGrpGRES`
 - First 10 training steps are not available yet because the job has not started.
 
+### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 8`, `per_device_prompt_batch_size = 3`
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Notes:
+
+- Based on `configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_rewardsum_loo.yaml`.
+- Only changed:
+
+```text
+num_generations = 8
+per_device_prompt_batch_size = 3
+```
+
+### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 6`, `per_device_prompt_batch_size = 4`
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_sgrpo_ng6_sg8_bs4_len256_rbs16_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_sgrpo_ng6_sg8_bs4_len256_rbs16_rewardsum_loo.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Notes:
+
+- Based on `configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_rewardsum_loo.yaml`.
+- Only changed:
+
+```text
+num_generations = 6
+per_device_prompt_batch_size = 4
+```
+
+### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 4`, `per_device_prompt_batch_size = 6`
+
+Status: `TODO`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_sgrpo_ng4_sg8_bs6_len256_rbs16_rewardsum_loo.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_sgrpo_ng4_sg8_bs6_len256_rbs16_rewardsum_loo.yaml sbatch scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
+```
+
+Notes:
+
+- Based on `configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_rewardsum_loo.yaml`.
+- Only changed:
+
+```text
+num_generations = 4
+per_device_prompt_batch_size = 6
+```
+
 ### SGRPO + `group_advantage_weight = 0.8`
 
 Status: `Verified`
