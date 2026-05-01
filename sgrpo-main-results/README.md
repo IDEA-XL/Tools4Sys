@@ -1988,7 +1988,7 @@ unidock_score = 0.5
 
 ### GRPO + UniDock
 
-Status: `TODO`
+Status: `Running`
 
 Checkpoint:
 
@@ -2674,10 +2674,13 @@ Notes:
 num_generations = 8
 per_device_prompt_batch_size = 3
 ```
+- Submitted training job: `53810`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo_slurm53810`
+- First 10 training steps completed without errors.
 
 ### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 6`, `per_device_prompt_batch_size = 4`
 
-Status: `TODO`
+Status: `Running`
 
 Checkpoint:
 
@@ -2718,10 +2721,13 @@ Notes:
 num_generations = 6
 per_device_prompt_batch_size = 4
 ```
+- Submitted training job: `53811`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng6_sg8_bs4_len256_rbs16_rewardsum_loo_slurm53811`
+- First 10 training steps completed without errors.
 
 ### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 4`, `per_device_prompt_batch_size = 6`
 
-Status: `TODO`
+Status: `Running`
 
 Checkpoint:
 
@@ -2762,6 +2768,9 @@ Notes:
 num_generations = 4
 per_device_prompt_batch_size = 6
 ```
+- Submitted training job: `53812`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng4_sg8_bs6_len256_rbs16_rewardsum_loo_slurm53812`
+- First 10 training steps completed without errors.
 
 ### SGRPO + `group_advantage_weight = 0.8`
 
