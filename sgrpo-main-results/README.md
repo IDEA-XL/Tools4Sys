@@ -1814,7 +1814,7 @@ Notes:
 
 ### GRPO + UniDock 500-Step Variant
 
-Status: `TODO`
+Status: `Running`
 
 Checkpoint:
 
@@ -2025,10 +2025,13 @@ hierarchy = reward_sum
 group_rewrad_credit = loo
 group_rewrad_credit_temperature = 1.0
 ```
+- Submitted training job: `53599`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_ms500_20260501_160306`
+- First 10 training steps completed without errors.
 
 ### SGRPO + UniDock
 
-Status: `TODO`
+Status: `Running`
 
 Checkpoint:
 
@@ -2107,10 +2110,13 @@ hierarchy = reward_sum
 group_rewrad_credit = loo
 group_rewrad_credit_temperature = 1.0
 ```
+- Submitted training job: `53600`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_20260501_160306`
+- First 10 training steps completed without errors.
 
 ### SGRPO + UniDock 2000-Step Variant
 
-Status: `TODO`
+Status: `Pending`
 
 Checkpoint:
 
@@ -2494,6 +2500,10 @@ hierarchy = reward_sum
 group_rewrad_credit = loo
 group_rewrad_credit_temperature = 1.0
 ```
+- Submitted training job: `53601`
+- Expected run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_rewardsum_loo_slurm53601`
+- Current queue reason: `AssocGrpGRES`
+- First 10 training steps are not available yet because the job has not started.
 
 ### SGRPO + `group_advantage_weight = 0.8`
 
@@ -2538,7 +2548,7 @@ Notes:
 
 ### SGRPO + `group_advantage_weight = 0.8` + Reward-Sum Hierarchy + LOO Group Credit
 
-Status: `TODO`
+Status: `Pending`
 
 Checkpoint:
 
@@ -2579,6 +2589,10 @@ hierarchy = reward_sum
 group_rewrad_credit = loo
 group_rewrad_credit_temperature = 1.0
 ```
+- Submitted training job: `53602`
+- Expected run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602`
+- Current queue reason: `AssocGrpGRES`
+- First 10 training steps are not available yet because the job has not started.
 
 ### Temperature Sweep Pipeline
 
