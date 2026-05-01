@@ -21,6 +21,7 @@ from genmol.mm.docking import (
     DEFAULT_FIXED_BOX_SIZE,
     _embed_ligand_from_smiles,
     _translate_ligand_to_center,
+    _validate_written_ligand_sdf,
     _write_ligand_sdf,
 )
 from genmol.mm.utils.drugclip import _CrossDockedRawEntryStore
@@ -50,6 +51,10 @@ _AA_INDEX_TO_RESIDUE_NAME = {
     19: 'TYR',
 }
 _HYDROGEN_ATOMIC_NUMBER = 1
+_UNIDOCK_LIGAND_FAILURE_MARKERS = {
+    'no_atoms': 'No atoms in this ligand.',
+    'bond_length_assertion': 'model.cpp(1101)',
+}
 
 
 @dataclass(frozen=True)
@@ -66,6 +71,33 @@ class UniDockConfig:
     timeout_sec: int = 1800
     box_size: tuple[float, float, float] = DEFAULT_FIXED_BOX_SIZE
     score_cache_size: int = 4096
+
+
+class _UniDockCommandFailure(RuntimeError):
+    def __init__(
+        self,
+        *,
+        command: list[str],
+        returncode: int,
+        stdout: str,
+        stderr: str,
+        failure_kind: str | None,
+    ) -> None:
+        self.command = list(command)
+        self.returncode = int(returncode)
+        self.stdout = str(stdout)
+        self.stderr = str(stderr)
+        self.failure_kind = failure_kind
+        super().__init__(self._format_message())
+
+    def _format_message(self) -> str:
+        return (
+            'Uni-Dock command failed:\n'
+            f'command={" ".join(self.command)}\n'
+            f'returncode={self.returncode}\n'
+            f'stdout={self.stdout}\n'
+            f'stderr={self.stderr}'
+        )
 
 
 def _stable_key(text: str) -> str:
@@ -174,6 +206,7 @@ def _prepare_ligand_sdf(smiles: str, center: np.ndarray, output_path: Path) -> N
     ligand = _embed_ligand_from_smiles(smiles)
     ligand = _translate_ligand_to_center(ligand, center)
     _write_ligand_sdf(ligand, output_path)
+    _validate_written_ligand_sdf(output_path, smiles=smiles)
 
 
 def _prepare_ligand_sdf_task(smiles: str, center: np.ndarray, output_path: str) -> tuple[bool, str | None]:
@@ -192,6 +225,14 @@ def _parse_unidock_energy(output_path: Path) -> float:
     if match is None:
         raise ValueError(f'Failed to parse Uni-Dock ENERGY from {output_path}')
     return float(match.group(1))
+
+
+def _classify_unidock_failure(stdout: str, stderr: str) -> str | None:
+    text = f'{stdout}\n{stderr}'
+    for failure_kind, marker in _UNIDOCK_LIGAND_FAILURE_MARKERS.items():
+        if marker in text:
+            return failure_kind
+    return None
 
 
 def _periodic_table():
@@ -415,6 +456,9 @@ class UniDockScorer:
             'unidock_fail_prepare_count': 0,
             'unidock_fail_output_missing_count': 0,
             'unidock_fail_parse_count': 0,
+            'unidock_fail_runtime_count': 0,
+            'unidock_fail_isolated_ligand_count': 0,
+            'unidock_runtime_split_count': 0,
         }
 
     def close(self):
@@ -461,6 +505,153 @@ class UniDockScorer:
         self._receptor_path_cache[cache_key] = receptor_path
         return receptor_path
 
+    def _execute_unidock_command(
+        self,
+        *,
+        receptor_path: Path,
+        pocket_center: np.ndarray,
+        ligand_paths: list[Path],
+        output_dir: Path,
+    ) -> None:
+        command = [
+            self.binary_path,
+            '--receptor',
+            str(receptor_path),
+            '--gpu_batch',
+            *[str(ligand_path) for ligand_path in ligand_paths],
+            '--dir',
+            str(output_dir),
+            '--search_mode',
+            str(self.config.search_mode),
+            '--scoring',
+            str(self.config.scoring),
+            '--center_x',
+            str(float(pocket_center[0])),
+            '--center_y',
+            str(float(pocket_center[1])),
+            '--center_z',
+            str(float(pocket_center[2])),
+            '--size_x',
+            str(float(self.box_size[0])),
+            '--size_y',
+            str(float(self.box_size[1])),
+            '--size_z',
+            str(float(self.box_size[2])),
+            '--num_modes',
+            str(self.num_modes),
+            '--cpu',
+            str(self.rank_cpu_count),
+            '--device_id',
+            '0',
+            '--verbosity',
+            '0',
+        ]
+        if self.max_gpu_memory_mb > 0:
+            command.extend(['--max_gpu_memory', str(self.max_gpu_memory_mb)])
+
+        dock_start = time.perf_counter()
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout_sec,
+            env=self._build_env(),
+        )
+        self.last_score_stats['unidock_dock_sec'] += time.perf_counter() - dock_start
+        if result.returncode != 0:
+            raise _UniDockCommandFailure(
+                command=command,
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                failure_kind=_classify_unidock_failure(result.stdout, result.stderr),
+            )
+
+    def _parse_unidock_outputs(
+        self,
+        *,
+        output_dir: Path,
+        ligand_input_paths: list[Path],
+        prepared_indices: list[int],
+        outputs: list[float | None],
+    ) -> None:
+        parse_start = time.perf_counter()
+        for prepared_idx in prepared_indices:
+            ligand_path = ligand_input_paths[prepared_idx]
+            output_path = output_dir / f'{ligand_path.stem}_out.sdf'
+            if not output_path.exists():
+                matches = sorted(output_dir.glob(f'{ligand_path.stem}*.sdf'))
+                if len(matches) != 1:
+                    self.last_score_stats['unidock_fail_output_missing_count'] += 1
+                    continue
+                output_path = matches[0]
+            try:
+                outputs[prepared_idx] = _parse_unidock_energy(output_path)
+            except Exception:
+                self.last_score_stats['unidock_fail_parse_count'] += 1
+                continue
+        self.last_score_stats['unidock_parse_sec'] += time.perf_counter() - parse_start
+
+    def _score_prepared_indices(
+        self,
+        *,
+        receptor_path: Path,
+        pocket_center: np.ndarray,
+        ligand_input_paths: list[Path],
+        prepared_indices: list[int],
+        outputs: list[float | None],
+        output_root_dir: Path,
+    ) -> None:
+        if not prepared_indices:
+            return
+        self.last_score_stats['unidock_chunk_count'] += 1
+        output_dir = output_root_dir / f'run_{self.last_score_stats["unidock_chunk_count"]:04d}'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ligand_paths = [ligand_input_paths[prepared_idx] for prepared_idx in prepared_indices]
+        try:
+            self._execute_unidock_command(
+                receptor_path=receptor_path,
+                pocket_center=pocket_center,
+                ligand_paths=ligand_paths,
+                output_dir=output_dir,
+            )
+        except _UniDockCommandFailure as exc:
+            if exc.failure_kind is None:
+                raise RuntimeError(str(exc)) from exc
+            self.last_score_stats['unidock_fail_runtime_count'] += 1
+            if len(prepared_indices) == 1:
+                self.last_score_stats['unidock_fail_isolated_ligand_count'] += 1
+                outputs[prepared_indices[0]] = None
+                return
+            midpoint = len(prepared_indices) // 2
+            if midpoint <= 0:
+                raise RuntimeError(str(exc)) from exc
+            self.last_score_stats['unidock_runtime_split_count'] += 1
+            self._score_prepared_indices(
+                receptor_path=receptor_path,
+                pocket_center=pocket_center,
+                ligand_input_paths=ligand_input_paths,
+                prepared_indices=prepared_indices[:midpoint],
+                outputs=outputs,
+                output_root_dir=output_root_dir,
+            )
+            self._score_prepared_indices(
+                receptor_path=receptor_path,
+                pocket_center=pocket_center,
+                ligand_input_paths=ligand_input_paths,
+                prepared_indices=prepared_indices[midpoint:],
+                outputs=outputs,
+                output_root_dir=output_root_dir,
+            )
+            return
+        self._parse_unidock_outputs(
+            output_dir=output_dir,
+            ligand_input_paths=ligand_input_paths,
+            prepared_indices=prepared_indices,
+            outputs=outputs,
+        )
+
     def _run_unidock_chunk(
         self,
         receptor_path: Path,
@@ -473,9 +664,9 @@ class UniDockScorer:
         with tempfile.TemporaryDirectory(prefix=f'unidock_{pocket_key}_') as temp_dir_str:
             temp_dir = Path(temp_dir_str)
             ligand_dir = temp_dir / 'ligands'
-            output_dir = temp_dir / 'outputs'
+            output_root_dir = temp_dir / 'outputs'
             ligand_dir.mkdir(parents=True, exist_ok=True)
-            output_dir.mkdir(parents=True, exist_ok=True)
+            output_root_dir.mkdir(parents=True, exist_ok=True)
 
             prepare_start = time.perf_counter()
             ligand_input_paths: list[Path] = []
@@ -519,78 +710,14 @@ class UniDockScorer:
             outputs: list[float | None] = [None for _ in smiles_chunk]
             if not prepared_indices:
                 return outputs
-
-            command = [
-                self.binary_path,
-                '--receptor',
-                str(receptor_path),
-                '--gpu_batch',
-                *[str(ligand_input_paths[prepared_idx]) for prepared_idx in prepared_indices],
-                '--dir',
-                str(output_dir),
-                '--search_mode',
-                str(self.config.search_mode),
-                '--scoring',
-                str(self.config.scoring),
-                '--center_x',
-                str(float(pocket_center[0])),
-                '--center_y',
-                str(float(pocket_center[1])),
-                '--center_z',
-                str(float(pocket_center[2])),
-                '--size_x',
-                str(float(self.box_size[0])),
-                '--size_y',
-                str(float(self.box_size[1])),
-                '--size_z',
-                str(float(self.box_size[2])),
-                '--num_modes',
-                str(self.num_modes),
-                '--cpu',
-                str(self.rank_cpu_count),
-                '--device_id',
-                '0',
-                '--verbosity',
-                '0',
-            ]
-            if self.max_gpu_memory_mb > 0:
-                command.extend(['--max_gpu_memory', str(self.max_gpu_memory_mb)])
-
-            dock_start = time.perf_counter()
-            result = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_sec,
-                env=self._build_env(),
+            self._score_prepared_indices(
+                receptor_path=receptor_path,
+                pocket_center=pocket_center,
+                ligand_input_paths=ligand_input_paths,
+                prepared_indices=prepared_indices,
+                outputs=outputs,
+                output_root_dir=output_root_dir,
             )
-            self.last_score_stats['unidock_dock_sec'] += time.perf_counter() - dock_start
-            if result.returncode != 0:
-                raise RuntimeError(
-                    'Uni-Dock command failed:\n'
-                    f'command={" ".join(command)}\n'
-                    f'returncode={result.returncode}\n'
-                    f'stdout={result.stdout}\n'
-                    f'stderr={result.stderr}'
-                )
-
-            parse_start = time.perf_counter()
-            for prepared_idx in prepared_indices:
-                ligand_path = ligand_input_paths[prepared_idx]
-                output_path = output_dir / f'{ligand_path.stem}_out.sdf'
-                if not output_path.exists():
-                    matches = sorted(output_dir.glob(f'{ligand_path.stem}*.sdf'))
-                    if len(matches) != 1:
-                        self.last_score_stats['unidock_fail_output_missing_count'] += 1
-                        continue
-                    output_path = matches[0]
-                try:
-                    outputs[prepared_idx] = _parse_unidock_energy(output_path)
-                except Exception:
-                    self.last_score_stats['unidock_fail_parse_count'] += 1
-                    continue
-            self.last_score_stats['unidock_parse_sec'] += time.perf_counter() - parse_start
             return outputs
 
     def score(self, smiles_list: list[str], pocket_entries: list[dict]) -> list[float | None]:
@@ -654,8 +781,6 @@ class UniDockScorer:
             if not unique_smiles:
                 continue
 
-            chunk_count = math.ceil(len(unique_smiles) / self.batch_size)
-            self.last_score_stats['unidock_chunk_count'] += int(chunk_count)
             for chunk_start in range(0, len(unique_smiles), self.batch_size):
                 smiles_chunk = unique_smiles[chunk_start:chunk_start + self.batch_size]
                 cache_key_chunk = unique_cache_keys[chunk_start:chunk_start + self.batch_size]

@@ -116,7 +116,11 @@ def _embed_ligand_from_smiles(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f'RDKit failed to parse generated SMILES: {smiles!r}')
+    _validate_embeddable_ligand(mol, smiles=smiles, stage='parsed SMILES')
     mol = Chem.AddHs(mol, addCoords=True)
+    _validate_embeddable_ligand(mol, smiles=smiles, stage='hydrogenated SMILES')
+    if not AllChem.UFFHasAllMoleculeParams(mol):
+        raise ValueError(f'RDKit UFF parameterization is unsupported for generated SMILES: {smiles!r}')
     params = AllChem.ETKDGv3()
     params.randomSeed = 0
     status = AllChem.EmbedMolecule(mol, params)
@@ -133,6 +137,33 @@ def _write_ligand_sdf(ligand_rdmol, ligand_sdf_path):
         writer.write(ligand_rdmol)
     finally:
         writer.close()
+
+
+def _validate_embeddable_ligand(ligand_rdmol, *, smiles: str, stage: str) -> None:
+    atom_count = int(ligand_rdmol.GetNumAtoms())
+    if atom_count <= 0:
+        raise ValueError(f'Generated SMILES produced a ligand with zero atoms during {stage}: {smiles!r}')
+    heavy_atom_count = int(ligand_rdmol.GetNumHeavyAtoms())
+    if heavy_atom_count <= 0:
+        raise ValueError(f'Generated SMILES produced a ligand with zero heavy atoms during {stage}: {smiles!r}')
+
+
+def _validate_written_ligand_sdf(ligand_sdf_path, *, smiles: str) -> None:
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    supplier = Chem.SDMolSupplier(str(ligand_sdf_path), removeHs=False)
+    molecules = [mol for mol in supplier if mol is not None]
+    if len(molecules) != 1:
+        raise RuntimeError(
+            f'Expected exactly one ligand after SDF roundtrip, got {len(molecules)} for generated SMILES: {smiles!r}'
+        )
+    roundtrip_mol = molecules[0]
+    _validate_embeddable_ligand(roundtrip_mol, smiles=smiles, stage='SDF roundtrip')
+    if not AllChem.UFFHasAllMoleculeParams(roundtrip_mol):
+        raise ValueError(
+            f'RDKit UFF parameterization is unsupported after SDF roundtrip for generated SMILES: {smiles!r}'
+        )
 
 
 def _ligand_center_of_mass(ligand_rdmol):
