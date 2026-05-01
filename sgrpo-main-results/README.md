@@ -985,7 +985,15 @@ Notes:
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.7`
 
-Status: `TODO`
+Status: `Running`
+
+Job ID: `53797`
+
+Run directory:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw07_rewardsum_loo_ms2000_20260502_020043
+```
 
 Training config:
 
@@ -1015,10 +1023,19 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `group_advantage_weight = 0.7`.
+- First 10 training steps completed without errors.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.3`
 
-Status: `TODO`
+Status: `Running`
+
+Job ID: `53798`
+
+Run directory:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw03_rewardsum_loo_ms2000_20260502_020043
+```
 
 Training config:
 
@@ -1048,10 +1065,19 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `group_advantage_weight = 0.3`.
+- First 10 training steps completed without errors.
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.1`
 
-Status: `TODO`
+Status: `Running`
+
+Job ID: `53799`
+
+Run directory:
+
+```text
+/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw01_rewardsum_loo_ms2000_20260502_020043
+```
 
 Training config:
 
@@ -1081,6 +1107,7 @@ Notes:
 
 - Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
 - Only changed `group_advantage_weight = 0.1`.
+- First 10 training steps completed without errors.
 
 Status: `Running`
 
