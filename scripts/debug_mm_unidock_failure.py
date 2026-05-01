@@ -166,10 +166,14 @@ def main():
     parser.add_argument('--config', required=True)
     parser.add_argument('--resume_from_checkpoint', required=True)
     parser.add_argument('--output_dir', required=True)
-    parser.add_argument('--target_source_index', required=True, type=int)
-    parser.add_argument('--expected_failure_log', required=True)
+    parser.add_argument('--target_source_index', type=int, default=None)
+    parser.add_argument('--expected_failure_log', default=None)
     parser.add_argument('--report_path', required=True)
-    parser.add_argument('--mode', required=True, choices=('capture_no_atoms', 'isolate_internal_error'))
+    parser.add_argument(
+        '--mode',
+        required=True,
+        choices=('capture_no_atoms', 'isolate_internal_error', 'catch_first_no_atoms'),
+    )
     parser.add_argument('--target_ligand_hash', default=None)
     parser.add_argument('--max_steps', required=True, type=int)
     args = parser.parse_args()
@@ -182,9 +186,17 @@ def main():
     config.log_completions = False
     os.makedirs(args.output_dir, exist_ok=True)
 
-    expected_pairs = _parse_expected_failure_command(args.expected_failure_log, args.target_source_index)
-    expected_hashes_in_order = [hash_value for _index, hash_value in expected_pairs]
-    expected_hash_set = set(expected_hashes_in_order)
+    if args.mode == 'catch_first_no_atoms':
+        expected_hashes_in_order = []
+        expected_hash_set = set()
+    else:
+        if args.target_source_index is None:
+            raise ValueError('--target_source_index is required unless mode=catch_first_no_atoms')
+        if not args.expected_failure_log:
+            raise ValueError('--expected_failure_log is required unless mode=catch_first_no_atoms')
+        expected_pairs = _parse_expected_failure_command(args.expected_failure_log, args.target_source_index)
+        expected_hashes_in_order = [hash_value for _index, hash_value in expected_pairs]
+        expected_hash_set = set(expected_hashes_in_order)
 
     trainer = PocketPrefixCpGRPOTrainer(config=config, output_dir=args.output_dir)
     scorer = trainer.reward_model._unidock
@@ -193,11 +205,62 @@ def main():
     raw_entry_store = scorer._raw_entry_store
 
     original_score = scorer.score
+    original_run_unidock_chunk = scorer._run_unidock_chunk
     captured = False
     seen_target_batches: list[dict] = []
 
+    def debug_run_unidock_chunk(*, receptor_path, pocket_center, smiles_chunk, pocket_key):
+        nonlocal captured
+        try:
+            return original_run_unidock_chunk(
+                receptor_path=receptor_path,
+                pocket_center=pocket_center,
+                smiles_chunk=smiles_chunk,
+                pocket_key=pocket_key,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if args.mode != 'catch_first_no_atoms' or 'No atoms in this ligand.' not in str(exc):
+                raise
+            match = re.search(r'lig_(\d{4})_([0-9a-f]{16})\.sdf', str(exc))
+            if match is None:
+                raise ValueError(
+                    'Caught Uni-Dock no-atoms failure but failed to parse ligand hash from exception'
+                ) from exc
+            ligand_hash = match.group(2)
+            stable_to_smiles = {_stable_key(smiles): smiles for smiles in smiles_chunk}
+            if ligand_hash not in stable_to_smiles:
+                raise ValueError(
+                    f'Caught Uni-Dock no-atoms failure for hash {ligand_hash}, but hash not present in current chunk'
+                ) from exc
+            failing_smiles = stable_to_smiles[ligand_hash]
+            payload = {
+                'status': 'captured',
+                'mode': args.mode,
+                'global_step_before_step_increment': int(trainer.global_step),
+                'generation_cycle_idx': int(trainer.generation_cycle_idx),
+                'process_index': int(trainer.accelerator.process_index),
+                'receptor_path': str(receptor_path),
+                'pocket_key': pocket_key,
+                'target_ligand_hash': ligand_hash,
+                'target_ligand_properties': _canonical_props(failing_smiles),
+                'chunk_size': int(len(smiles_chunk)),
+                'chunk_hashes_in_order': [_stable_key(smiles) for smiles in smiles_chunk],
+            }
+            with tempfile.TemporaryDirectory(prefix='mm_unidock_no_atoms_') as temp_dir_str:
+                temp_dir = Path(temp_dir_str)
+                payload['target_ligand_sdf_analysis'] = _prepare_sdf_analysis(
+                    failing_smiles,
+                    pocket_center,
+                    temp_dir,
+                )
+            captured = True
+            _write_report(args.report_path, payload)
+            raise _ReplayStop(f'Debug payload written to {args.report_path}') from exc
+
     def debug_score(smiles_list, pocket_entries):
         nonlocal captured
+        if args.mode == 'catch_first_no_atoms':
+            return original_score(smiles_list, pocket_entries)
         grouped = {}
         for smiles, pocket_entry in zip(smiles_list, pocket_entries):
             if 'source_index' not in pocket_entry:
@@ -285,6 +348,7 @@ def main():
         raise _ReplayStop(f'Debug payload written to {args.report_path}')
 
     scorer.score = debug_score
+    scorer._run_unidock_chunk = debug_run_unidock_chunk
 
     try:
         trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
@@ -307,6 +371,7 @@ def main():
             )
     finally:
         scorer.score = original_score
+        scorer._run_unidock_chunk = original_run_unidock_chunk
         trainer.close()
 
 
