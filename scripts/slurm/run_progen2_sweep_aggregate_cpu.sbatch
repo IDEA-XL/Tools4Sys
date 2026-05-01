@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -p cpu
 #SBATCH -N 1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=64G
 #SBATCH -t 08:00:00
 #SBATCH -J p2sweepagg
 #SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/genmol/slurm_progen2sweepagg_%j.out
