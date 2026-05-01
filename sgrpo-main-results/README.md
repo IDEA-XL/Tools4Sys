@@ -981,6 +981,138 @@ Notes:
 - Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260426_115639`
 - Training completed successfully.
 
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 32`
+
+Status: `Submitted`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng32_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng32_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `num_generations = 32`.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 16`
+
+Status: `Submitted`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng16_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng16_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `num_generations = 16`.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 8`
+
+Status: `Submitted`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng8_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng8_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `num_generations = 8`.
+
+### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 4`
+
+Status: `Submitted`
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_sgrpo_ng4_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng4_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng64_bs1024.sbatch
+```
+
+Notes:
+
+- Based on `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`.
+- Only changed `num_generations = 4`.
+
 ### SGRPO Reward-Sum Hierarchy + Sampled Temperature/Randomness 2000-Step Variant
 
 Status: `Verified`

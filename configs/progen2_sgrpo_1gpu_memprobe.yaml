@@ -19,7 +19,6 @@ beta: 0.01
 epsilon: 0.2
 logging_steps: 1
 save_steps: 1000
-save_total_limit: 1
 report_to: []
 rl_algorithm: sgrpo
 num_generations: 4
