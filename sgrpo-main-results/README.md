@@ -2353,6 +2353,8 @@ sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.json
 sgrpo-main-results/progen2/progen2_temperature_sweep_20260430.rows.jsonl
 ```
 
+- `progen2_temperature_sweep_20260430.rows.jsonl` is retained on `pudong` for sample-level replotting and audit use; it is not synced into the local repo by default.
+
 Plot files:
 
 ```text
