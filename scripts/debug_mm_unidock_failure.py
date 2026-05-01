@@ -184,6 +184,7 @@ def main():
 
     expected_pairs = _parse_expected_failure_command(args.expected_failure_log, args.target_source_index)
     expected_hashes_in_order = [hash_value for _index, hash_value in expected_pairs]
+    expected_hash_set = set(expected_hashes_in_order)
 
     trainer = PocketPrefixCpGRPOTrainer(config=config, output_dir=args.output_dir)
     scorer = trainer.reward_model._unidock
@@ -192,8 +193,11 @@ def main():
     raw_entry_store = scorer._raw_entry_store
 
     original_score = scorer.score
+    captured = False
+    seen_target_batches: list[dict] = []
 
     def debug_score(smiles_list, pocket_entries):
+        nonlocal captured
         grouped = {}
         for smiles, pocket_entry in zip(smiles_list, pocket_entries):
             if 'source_index' not in pocket_entry:
@@ -206,7 +210,26 @@ def main():
 
         current_smiles = [smiles for smiles, _entry in current_source_entries]
         current_hashes = [_stable_key(smiles) for smiles in current_smiles]
-        if current_hashes != expected_hashes_in_order:
+        seen_target_batches.append(
+            {
+                'source_index': int(args.target_source_index),
+                'hash_count': int(len(current_hashes)),
+                'hashes_in_order': current_hashes,
+                'expected_hash_count': int(len(expected_hashes_in_order)),
+                'matches_expected_order': bool(current_hashes == expected_hashes_in_order),
+                'matches_expected_set': bool(set(current_hashes) == expected_hash_set),
+                'contains_target_ligand_hash': (
+                    None if args.target_ligand_hash is None else bool(args.target_ligand_hash in current_hashes)
+                ),
+            }
+        )
+
+        if args.mode == 'capture_no_atoms':
+            should_capture = args.target_ligand_hash is not None and args.target_ligand_hash in current_hashes
+        else:
+            should_capture = len(current_hashes) == len(expected_hashes_in_order) and set(current_hashes) == expected_hash_set
+
+        if not should_capture:
             return original_score(smiles_list, pocket_entries)
 
         pocket_entry = current_source_entries[0][1]
@@ -229,6 +252,7 @@ def main():
             'receptor_path': str(receptor_path),
             'protein_filename': raw_entry.get('protein_filename'),
             'ligand_filename': raw_entry.get('ligand_filename'),
+            'seen_target_batches': seen_target_batches,
         }
 
         with tempfile.TemporaryDirectory(prefix='mm_unidock_replay_') as temp_dir_str:
@@ -256,6 +280,7 @@ def main():
                     scorer._pocket_cache_key(pocket_entry),
                 )
 
+        captured = True
         _write_report(args.report_path, payload)
         raise _ReplayStop(f'Debug payload written to {args.report_path}')
 
@@ -265,6 +290,21 @@ def main():
         trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     except _ReplayStop:
         logger.info('Replay captured target batch and stopped intentionally')
+    else:
+        if not captured:
+            _write_report(
+                args.report_path,
+                {
+                    'status': 'no_match',
+                    'mode': args.mode,
+                    'target_source_index': int(args.target_source_index),
+                    'target_ligand_hash': args.target_ligand_hash,
+                    'expected_hashes_in_order': expected_hashes_in_order,
+                    'seen_target_batches': seen_target_batches,
+                    'global_step_after_run': int(trainer.global_step),
+                    'generation_cycle_idx_after_run': int(trainer.generation_cycle_idx),
+                },
+            )
     finally:
         scorer.score = original_score
         trainer.close()
