@@ -761,6 +761,7 @@ def _plot_metric_tradeoff(results, experiments, x_key, x_label, y_key, y_label, 
     _ensure_parent_dir(output_path)
     figure, axis = plt.subplots(figsize=(7.5, 5.75), dpi=160)
     experiment_order = {experiment.name: idx for idx, experiment in enumerate(experiments)}
+    label_offsets = ((4, 4), (4, -10), (-20, 4), (-20, -10))
     for experiment in experiments:
         experiment_rows = [row for row in results if row['experiment'] == experiment.name]
         if not experiment_rows:
@@ -780,6 +781,17 @@ def _plot_metric_tradeoff(results, experiments, x_key, x_label, y_key, y_label, 
             linewidth=1.8,
             markersize=6.5,
         )
+        for row, x_value, y_value in zip(experiment_rows, x_values, y_values):
+            x_offset, y_offset = label_offsets[int(row['task_id']) % len(label_offsets)]
+            axis.annotate(
+                f'{float(row["temperature"]):.1f}',
+                xy=(x_value, y_value),
+                xytext=(x_offset, y_offset),
+                textcoords='offset points',
+                color=style['color'],
+                fontsize=6.5,
+                alpha=0.9,
+            )
     axis.set_title(title)
     axis.set_xlabel(x_label)
     axis.set_ylabel(y_label)
