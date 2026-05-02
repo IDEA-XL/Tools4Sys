@@ -165,6 +165,7 @@ Notes:
 - Training job: `41711`
 - Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
 - Retention-only config: `configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_stl0.yaml`
+- Active retention-only rerun submitted with `--exclude=server13`: `55789`
 
 ### GRPO 2000-Step Variant + HBD
 
@@ -1024,6 +1025,7 @@ Notes:
 - Training completed successfully.
 - Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
 - Retention-only config: `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_stl0.yaml`
+- Active retention-only rerun submitted with `--exclude=server13`: `55791`
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.7`
 
@@ -2123,6 +2125,7 @@ Notes:
 - Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present in the locked rerun directory ending in `_20260430_192150`.
 - Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
 - Retention-only config: `configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_stl0.yaml`
+- Active retention-only rerun submitted with `--exclude=server13`: `55790`
 
 ### GRPO + UniDock + HBD
 
@@ -2389,6 +2392,7 @@ group_rewrad_credit_temperature = 1.0
 - Completion evidence: `sacct` reports `53600 COMPLETED (0:0)`, and the run directory contains `checkpoint-001000/model.ckpt`.
 - Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
 - Retention-only config: `configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_stl0.yaml`
+- Active retention-only rerun submitted with `--exclude=server13`: `55792`
 
 ### SGRPO + UniDock 2000-Step Variant
 
