@@ -5,7 +5,9 @@ from progen2.rl.trainer import (
     _distributed_calibration_batch_sizes,
     _shard_list_for_rank,
     default_reward_batch_size,
+    find_last_checkpoint,
     load_config,
+    resolve_output_dir,
 )
 from progen2.rewards.composite import CompositeProteinReward, build_protein_reward_calibration
 
@@ -110,6 +112,30 @@ def test_shard_list_for_rank_balances_contiguous_ranges():
     assert _shard_list_for_rank(items, 3, 0) == [0, 1, 2, 3]
     assert _shard_list_for_rank(items, 3, 1) == [4, 5, 6]
     assert _shard_list_for_rank(items, 3, 2) == [7, 8, 9]
+
+
+def test_find_last_checkpoint_returns_highest_numbered_checkpoint(tmp_path):
+    (tmp_path / 'checkpoint-000020').mkdir()
+    (tmp_path / 'checkpoint-000200').mkdir()
+    (tmp_path / 'checkpoint-000040').mkdir()
+    assert find_last_checkpoint(tmp_path) == str(tmp_path / 'checkpoint-000200')
+
+
+def test_resolve_output_dir_uses_checkpoint_parent_when_resuming(tmp_path):
+    checkpoint_dir = tmp_path / 'run' / 'checkpoint-000040'
+    checkpoint_dir.mkdir(parents=True)
+    config = type('Config', (), {'output_dir': None})()
+    assert resolve_output_dir(config, 'unused.yaml', resume_from_checkpoint=str(checkpoint_dir)) == str(
+        checkpoint_dir.parent
+    )
+
+
+def test_resolve_output_dir_rejects_resume_outside_configured_output_dir(tmp_path):
+    checkpoint_dir = tmp_path / 'run-a' / 'checkpoint-000040'
+    checkpoint_dir.mkdir(parents=True)
+    config = type('Config', (), {'output_dir': str(tmp_path / 'run-b')})()
+    with pytest.raises(ValueError, match='resume checkpoint parent directory must match configured output_dir'):
+        resolve_output_dir(config, 'unused.yaml', resume_from_checkpoint=str(checkpoint_dir))
 
 
 def test_build_protein_reward_calibration_uses_only_supported_rewards():

@@ -3,6 +3,8 @@ import logging
 import math
 import os
 import random
+import re
+import shutil
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -13,7 +15,11 @@ import yaml
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 
-from progen2.checkpoint import PROGEN2_SGRPO_VARIANT, stamp_checkpoint_variant
+from progen2.checkpoint import (
+    PROGEN2_SGRPO_VARIANT,
+    require_checkpoint_variant,
+    stamp_checkpoint_variant,
+)
 from progen2.data.prompts import load_prompt_texts
 from progen2.modeling.wrapper import OfficialProGen2CausalLM
 from progen2.rewards import (
@@ -42,6 +48,7 @@ from rl_shared.sgrpo import (
 
 
 logger = logging.getLogger(__name__)
+_CHECKPOINT_PATTERN = re.compile(r'^checkpoint-(\d+)$')
 
 
 def default_reward_compute_every_n_steps():
@@ -223,7 +230,44 @@ def load_config(path):
     return config
 
 
-def resolve_output_dir(config, config_path):
+def find_last_checkpoint(output_dir):
+    if not os.path.isdir(output_dir):
+        return None
+    matches = []
+    for name in os.listdir(output_dir):
+        match = _CHECKPOINT_PATTERN.match(name)
+        if match is not None and os.path.isdir(os.path.join(output_dir, name)):
+            matches.append((int(match.group(1)), os.path.join(output_dir, name)))
+    if not matches:
+        return None
+    return max(matches, key=lambda item: item[0])[1]
+
+
+def _require_path(path, description):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'Missing {description}: {path}')
+
+
+def resolve_output_dir(config, config_path, resume_from_checkpoint=None):
+    if resume_from_checkpoint is not None:
+        checkpoint_dir = os.path.abspath(resume_from_checkpoint)
+        if not os.path.isdir(checkpoint_dir):
+            raise FileNotFoundError(f'resume checkpoint directory not found: {checkpoint_dir}')
+        checkpoint_name = os.path.basename(checkpoint_dir)
+        if _CHECKPOINT_PATTERN.match(checkpoint_name) is None:
+            raise ValueError(
+                'resume_from_checkpoint must point to a checkpoint-XXXXXX directory, '
+                f'got {checkpoint_dir}'
+            )
+        checkpoint_output_dir = os.path.dirname(checkpoint_dir)
+        if config.output_dir is not None:
+            configured_output_dir = os.path.abspath(config.output_dir)
+            if configured_output_dir != checkpoint_output_dir:
+                raise ValueError(
+                    'resume checkpoint parent directory must match configured output_dir: '
+                    f'{checkpoint_output_dir} vs {configured_output_dir}'
+                )
+        return checkpoint_output_dir
     if config.output_dir is not None:
         return config.output_dir
     cluster_root = '/public/home/xinwuye/ai4s-tool-joint-train'
@@ -518,6 +562,12 @@ class ProGen2SGRPOTrainer:
         self._prompt_cursor = (self._prompt_cursor + self.config.per_device_prompt_batch_size) % len(self.prompts)
         return batch
 
+    def _prompt_cursor_after_steps(self, completed_steps):
+        return (
+            (self.accelerator.process_index + int(completed_steps))
+            * self.config.per_device_prompt_batch_size
+        ) % len(self.prompts)
+
     def _calibration_sequences(self):
         target = int(self.config.reward_calibration_size)
         per_device_prompt_batch_size = int(self.config.reward_calibration_prompt_batch_size)
@@ -617,14 +667,17 @@ class ProGen2SGRPOTrainer:
         calibration_sequences = self._calibration_sequences()
         calibration = self._distributed_reward_calibration(calibration_sequences)
         if self.accelerator.is_main_process:
-            calibration_tmp_path = f'{self.calibration_path}.tmp'
-            with open(calibration_tmp_path, 'w') as handle:
-                json.dump(calibration, handle, indent=2, sort_keys=True)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(calibration_tmp_path, self.calibration_path)
+            self._write_calibration_json(self.calibration_path, calibration)
             logger.info('Reward calibration complete')
         self.accelerator.wait_for_everyone()
+
+    def _write_calibration_json(self, path, calibration):
+        calibration_tmp_path = f'{path}.tmp'
+        with open(calibration_tmp_path, 'w') as handle:
+            json.dump(calibration, handle, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(calibration_tmp_path, path)
 
     def _score_rollout_rewards(self, sequences, *, step_number):
         valid_indices = [
@@ -762,21 +815,64 @@ class ProGen2SGRPOTrainer:
 
     def save_checkpoint(self):
         checkpoint_dir = os.path.join(self.output_dir, f'checkpoint-{self.global_step:06d}')
+        accelerator_state_dir = os.path.join(checkpoint_dir, 'accelerator_state')
+        calibration_checkpoint_path = os.path.join(checkpoint_dir, self._CALIBRATION_FILE_NAME)
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        self.accelerator.wait_for_everyone()
+        self.accelerator.save_state(accelerator_state_dir)
+        self.accelerator.wait_for_everyone()
+        if not self.accelerator.is_main_process:
+            return
+        _require_path(self.calibration_path, 'reward calibration')
         unwrapped = self.accelerator.unwrap_model(self.policy.model.model)
-        unwrapped.save_pretrained(checkpoint_dir, state_dict=self.accelerator.get_state_dict(self.policy.model.model))
+        unwrapped.save_pretrained(
+            checkpoint_dir,
+            state_dict=self.accelerator.get_state_dict(self.policy.model.model),
+        )
         trainer_state = {
             'global_step': int(self.global_step),
             'config': asdict(self.config),
         }
         stamp_checkpoint_variant(trainer_state, PROGEN2_SGRPO_VARIANT)
         torch.save(trainer_state, os.path.join(checkpoint_dir, 'trainer_state.pt'))
+        shutil.copyfile(self.calibration_path, calibration_checkpoint_path)
+
+    def _load_checkpoint(self, checkpoint_dir):
+        checkpoint_dir = os.path.abspath(checkpoint_dir)
+        accelerator_state_dir = os.path.join(checkpoint_dir, 'accelerator_state')
+        trainer_state_path = os.path.join(checkpoint_dir, 'trainer_state.pt')
+        calibration_checkpoint_path = os.path.join(checkpoint_dir, self._CALIBRATION_FILE_NAME)
+        _require_path(accelerator_state_dir, 'accelerator state')
+        _require_path(trainer_state_path, 'trainer state')
+        _require_path(calibration_checkpoint_path, 'reward calibration snapshot')
+
+        trainer_state = torch.load(trainer_state_path, map_location='cpu', weights_only=False)
+        require_checkpoint_variant(trainer_state, PROGEN2_SGRPO_VARIANT, trainer_state_path)
+
+        self.accelerator.load_state(accelerator_state_dir)
+        with open(calibration_checkpoint_path) as handle:
+            calibration = json.load(handle)
+        self.reward_model.set_calibration(calibration)
+        self.global_step = int(trainer_state['global_step'])
+        self._prompt_cursor = self._prompt_cursor_after_steps(self.global_step)
+        if self.accelerator.is_main_process:
+            self._write_calibration_json(self.calibration_path, calibration)
+        self.accelerator.wait_for_everyone()
 
     def _log(self, metrics):
         payload = {'step': int(self.global_step), **metrics}
         if self.accelerator.is_main_process:
             _write_jsonl(self.metrics_path, payload)
             with open(self.state_path, 'w') as handle:
-                json.dump({'global_step': self.global_step}, handle, indent=2, sort_keys=True)
+                json.dump(
+                    {
+                        'global_step': self.global_step,
+                        'prompt_cursor': self._prompt_cursor,
+                    },
+                    handle,
+                    indent=2,
+                    sort_keys=True,
+                )
         if self.config.report_to:
             self.accelerator.log(metrics, step=self.global_step)
 
@@ -823,13 +919,17 @@ class ProGen2SGRPOTrainer:
         }
         return metrics, step_peak_reserved, step_peak_allocated
 
-    def train(self):
+    def train(self, resume_from_checkpoint=None):
         os.makedirs(self.output_dir, exist_ok=True)
         logger.info('Starting ProGen2 SGRPO training in %s', self.output_dir)
-        self.calibrate()
+        if resume_from_checkpoint is not None:
+            logger.info('Resuming from checkpoint: %s', resume_from_checkpoint)
+            self._load_checkpoint(resume_from_checkpoint)
+        else:
+            self.calibrate()
 
-        for step_idx in range(self.config.max_steps):
-            logger.info('Starting train step %d/%d', step_idx + 1, self.config.max_steps)
+        while self.global_step < self.config.max_steps:
+            logger.info('Starting train step %d/%d', self.global_step + 1, self.config.max_steps)
             rollout_phase_metrics = {}
             reward_phase_metrics = {}
             training_phase_metrics = {}
@@ -846,7 +946,7 @@ class ProGen2SGRPOTrainer:
             rollout = self._generate_rollouts(
                 prompts,
                 num_return_sequences=self.num_return_sequences,
-                seed=self.config.seed + step_idx,
+                seed=self.config.seed + self.global_step,
             )
             if self.device.type == 'cuda':
                 rollout_phase_metrics, rollout_step_peak_reserved, rollout_step_peak_allocated = (

@@ -13,6 +13,7 @@ set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 CONFIG_PATH=${CONFIG_PATH:-configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16.yaml}
+RESUME_FROM_CHECKPOINT=${RESUME_FROM_CHECKPOINT:-}
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 PROTBERT_DIR=${PROTBERT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd}
 CUDA_TOOLCHAIN_DIR=${CUDA_TOOLCHAIN_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/cuda_toolchain_cu124}
@@ -106,9 +107,13 @@ print(module.__file__)
 PY
 
 MASTER_PORT=$((20000 + SLURM_JOB_ID % 10000))
+TRAIN_ARGS=("${CONFIG_PATH}")
+if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+  TRAIN_ARGS+=("--resume_from_checkpoint" "${RESUME_FROM_CHECKPOINT}")
+fi
 accelerate launch \
   --config_file configs/accelerate_ddp_8gpu.yaml \
   --num_processes 8 \
   --main_process_port "${MASTER_PORT}" \
   scripts/train_progen2_sgrpo.py \
-  "${CONFIG_PATH}"
+  "${TRAIN_ARGS[@]}"
