@@ -2766,12 +2766,12 @@ group_rewrad_credit_temperature = 1.0
 
 ### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 8`, `per_device_prompt_batch_size = 3`
 
-Status: `Running`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo_slurm54206/checkpoint-000060
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo_slurm54206/checkpoint-000100
 ```
 
 Training config:
@@ -2809,10 +2809,10 @@ per_device_prompt_batch_size = 3
 ```
 - Initial training job `53810` failed on `server13` after producing only `checkpoint-000040`.
 - The line was resubmitted with `--exclude=server13` as job `54206`.
-- Current run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo_slurm54206`
-- The replacement run is still in progress on `server01`.
-- Latest verified in-run artifact is `checkpoint-000060`; the run directory currently contains `checkpoint-000020`, `checkpoint-000040`, and `checkpoint-000060`.
-- No locked `checkpoint-000100` is adopted yet.
+- Verified comparison checkpoint: `checkpoint-000100`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo_slurm54206`
+- Completion evidence: the run directory contains `checkpoint-000100` and later checkpoints through `checkpoint-000200`.
+- The locked main-result comparison uses the user-requested `checkpoint-000100`.
 
 ### SGRPO + Reward-Sum Hierarchy + LOO Group Credit + `num_generations = 6`, `per_device_prompt_batch_size = 4`
 
@@ -3022,7 +3022,7 @@ scripts/slurm/run_progen2_sweep_gpu.sbatch
 Generation invocation:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=generate-task sbatch --array=0-95 scripts/slurm/run_progen2_sweep_gpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=generate-task sbatch --array=0-107 scripts/slurm/run_progen2_sweep_gpu.sbatch
 ```
 
 Packed GPU reward invocations:
@@ -3035,8 +3035,8 @@ CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=score-
 Per-point reward invocations:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=score-point-reward-task REWARD_NAME=foldability sbatch --array=0-95 scripts/slurm/run_progen2_sweep_gpu.sbatch
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch --array=0-95 scripts/slurm/run_progen2_sweep_developability_cpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=score-point-reward-task REWARD_NAME=foldability sbatch --array=0-107 scripts/slurm/run_progen2_sweep_gpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch --array=0-107 scripts/slurm/run_progen2_sweep_developability_cpu.sbatch
 ```
 
 Point-diversity launch script:
@@ -3048,7 +3048,7 @@ scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
 Point-diversity invocation:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch --array=0-95 scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch --array=0-107 scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
 ```
 
 Aggregation launch script:
@@ -3083,16 +3083,14 @@ developability.batch_size = 24
 Completed sweep jobs:
 
 ```text
-54296  packed naturalness scoring
-54297  packed stability scoring
-54298  foldability array initial pass
-54492  foldability array repair for the `server13` failures
-54299  developability array
-54300  point-diversity array
-54546  final aggregate
+55162  generation array for task ids `96-107` (`sgrpo_ng8_bs3_rewardsum_loo_step100`)
+55163  packed naturalness scoring over the full `0-107` manifest
+55164  packed stability scoring over the full `0-107` manifest
+55165  foldability array for task ids `96-107`
+55166  developability array for task ids `96-107`
+55167  point-diversity array for task ids `96-107`
+55168  final aggregate
 ```
-
-- Generation outputs in the configured `generation_output_root` were already present and were reused for this pass; the exact generation array job id was not re-resolved in this update.
 
 Aggregated result files:
 
@@ -3123,9 +3121,10 @@ Metric definition notes:
 
 Key observations:
 
-- `SGRPO RewardSum LOO 100` reaches the strongest peak `soft_reward_mean` in the full 8-model comparison at `temperature=0.4` (`0.8237`) while retaining moderate diversity (`0.3917`).
+- `SGRPO RewardSum LOO 100` reaches the strongest peak `soft_reward_mean` in the full 9-model comparison at `temperature=0.4` (`0.8237`) while retaining moderate diversity (`0.3917`).
 - `SGRPO gw0.8 RewardSum LOO 100` gives the strongest high-diversity frontier in this sweep extension: diversity reaches `0.8498` at `temperature=1.2` with `soft_reward_mean=0.4764`.
-- Among the altered `num_generations / per_device_prompt_batch_size` variants, `SGRPO RewardSum LOO ng4 bs6 100` is clearly stronger than `ng6 bs4`: it peaks at `soft_reward_mean=0.7969` (`temperature=0.6`) and still reaches diversity `0.8306` at `temperature=1.2`.
+- Among the altered `num_generations / per_device_prompt_batch_size` variants, `SGRPO RewardSum LOO ng4 bs6 100` remains the strongest overall frontier: it peaks at `soft_reward_mean=0.7969` (`temperature=0.6`) and still reaches diversity `0.8306` at `temperature=1.2`.
+- The newly completed `SGRPO RewardSum LOO ng8 bs3 100` is the sharpest low-temperature variant: it starts at `soft_reward_mean=0.7923`, `naturalness=0.9997`, `foldability=0.8171`, and `developability=0.7760` at `temperature=0.1`, but its diversity frontier tops out lower than `ng4 bs6` (`0.7372` at `temperature=1.1`).
 
 Plots:
 
