@@ -8,7 +8,11 @@ from pathlib import Path
 sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
-from scripts.aggregate_mmgenmol_sweep_results import _plot_metric
+from scripts.aggregate_mmgenmol_sweep_results import (
+    _build_markdown,
+    _build_plot_jobs,
+    _plot_metric,
+)
 
 
 def _read_json(path):
@@ -101,35 +105,52 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     output_json_path = os.path.join(args.output_dir, f'{args.output_prefix}.json')
     output_rows_path = os.path.join(args.output_dir, f'{args.output_prefix}.rows.jsonl')
+    output_markdown_path = os.path.join(args.output_dir, f'{args.output_prefix}.md')
     _write_json(output_json_path, rows)
     _write_jsonl(output_rows_path, rows)
 
     plot_paths = []
     sweep_types = sorted({row['sweep_type'] for row in rows})
-    for sweep_type in sweep_types:
-        for metric_key, metric_label in [
-            ('qed_mean', 'QED'),
-            ('sa_score_mean', 'SA Score'),
-            ('soft_reward_mean', 'Soft Quality Score'),
-            ('vina_dock_mean', 'Vina Dock Mean'),
-        ]:
-            plot_path = os.path.join(
-                args.output_dir,
-                f'{args.plot_name_prefix}_{sweep_type}_diversity_vs_{metric_key}_{args.output_prefix.rsplit("_", 1)[-1]}.png',
-            )
-            _plot_metric(
-                rows,
-                sweep_type,
-                metric_key,
-                metric_label,
-                plot_path,
-                plot_title_prefix=args.plot_title_prefix,
-            )
-            plot_paths.append(plot_path)
+    plot_suffix = args.output_prefix.rsplit("_", 1)[-1]
+    titled_plot_paths = []
+    for (
+        title,
+        plot_path,
+        sweep_type,
+        metric_key,
+        metric_label,
+        title_prefix,
+        model_names,
+        with_unidock_baseline,
+    ) in _build_plot_jobs(
+        rows,
+        output_dir=args.output_dir,
+        plot_name_prefix=args.plot_name_prefix,
+        plot_title_prefix=args.plot_title_prefix,
+        plot_suffix=plot_suffix,
+        sweep_types=sweep_types,
+    ):
+        _plot_metric(
+            rows,
+            sweep_type,
+            metric_key,
+            metric_label,
+            plot_path,
+            plot_title_prefix=title_prefix,
+            model_names=model_names,
+            with_unidock_baseline=with_unidock_baseline,
+        )
+        plot_paths.append(plot_path)
+        titled_plot_paths.append((title, plot_path))
+
+    markdown = _build_markdown(rows, titled_plot_paths, output_json_path, output_rows_path)
+    with open(output_markdown_path, 'w') as handle:
+        handle.write(markdown)
 
     print(json.dumps({
         'output_json_path': output_json_path,
         'output_rows_path': output_rows_path,
+        'output_markdown_path': output_markdown_path,
         'plot_paths': plot_paths,
         'num_rows': len(rows),
     }, indent=2, sort_keys=True))

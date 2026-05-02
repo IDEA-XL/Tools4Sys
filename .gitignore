@@ -20,3 +20,29 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Local monitoring / scheduler logs
+monitor_*.log
+slurm_*.out
+slurm_*.err
+
+# Local ad-hoc figures
+figs/
+
+# Local caches / temp workdirs
+.codex-backup/
+wandb/
+tmp_*
+tmp_probe_sync_placeholder/
+
+# Sweep intermediate artifacts
+sgrpo-main-results/**/*.rows.jsonl
+sgrpo-main-results/**/*incremental*.json
+sgrpo-main-results/**/*incremental*.md
+sgrpo-main-results/**/*incremental*.png
+
+# Local task manifests
+sgrpo-main-results/mmgenmol/generation_*.tsv
+
+# Retired mmgenmol DrugCLIP outputs
+sgrpo-main-results/mmgenmol/mmgenmol_drugclip_*

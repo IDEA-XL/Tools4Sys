@@ -16,9 +16,114 @@ MARKER_CYCLE = ('o', '^', 's', 'D', 'P', 'X', 'v', '<', '>')
 sys.path.append(os.path.realpath('.'))
 sys.path.append(os.path.join(os.path.realpath('.'), 'src'))
 
-from genmol.mm.crossdocked import load_crossdocked_manifest
-from genmol.mm.reward import compute_soft_reward, normalize_molecular_reward_weights, sa_to_score
-from genmol.mm.utils import DrugCLIPConfig, DrugCLIPScorer
+MOLECULAR_REWARD_NAME_ORDER = (
+    'qed',
+    'sa_score',
+    'drugclip_score',
+    'unidock_score',
+)
+DEFAULT_MOLECULAR_REWARD_WEIGHTS = {
+    'qed': 0.6,
+    'sa_score': 0.4,
+    'drugclip_score': 0.0,
+    'unidock_score': 0.0,
+}
+
+
+def sa_to_score(sa_value):
+    return max(0.0, min((6.0 - float(sa_value)) / 5.0, 1.0))
+
+
+def unidock_affinity_to_score(unidock_affinity):
+    return max(0.0, min((-float(unidock_affinity)) / 10.0, 1.0))
+
+
+def normalize_molecular_reward_weights(config):
+    if config is None:
+        raw = dict(DEFAULT_MOLECULAR_REWARD_WEIGHTS)
+    else:
+        raw = dict(DEFAULT_MOLECULAR_REWARD_WEIGHTS)
+        for reward_name in MOLECULAR_REWARD_NAME_ORDER:
+            if reward_name in config and config[reward_name] is not None:
+                raw[reward_name] = config[reward_name]
+    normalized = {}
+    for reward_name in MOLECULAR_REWARD_NAME_ORDER:
+        value = raw[reward_name]
+        try:
+            weight = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'molecular reward weight for {reward_name!r} must be numeric, got {value!r}') from exc
+        if weight < 0.0:
+            raise ValueError(f'molecular reward weight for {reward_name!r} must be non-negative, got {weight}')
+        normalized[reward_name] = weight
+    return normalized
+
+
+def compute_soft_reward(
+    qed_value,
+    sa_score_value,
+    drugclip_score_value=None,
+    unidock_score_value=None,
+    reward_weights=None,
+):
+    normalized_weights = normalize_molecular_reward_weights(reward_weights)
+    outputs = 0.0
+    if normalized_weights['qed'] > 0.0:
+        if qed_value is None:
+            raise ValueError('qed_value is required when qed reward weight is positive')
+        outputs += normalized_weights['qed'] * float(qed_value)
+    if normalized_weights['sa_score'] > 0.0:
+        if sa_score_value is None:
+            raise ValueError('sa_score_value is required when sa_score reward weight is positive')
+        outputs += normalized_weights['sa_score'] * float(sa_score_value)
+    if normalized_weights['drugclip_score'] > 0.0:
+        if drugclip_score_value is None:
+            raise ValueError('drugclip_score_value is required when drugclip_score reward weight is positive')
+        outputs += normalized_weights['drugclip_score'] * float(drugclip_score_value)
+    if normalized_weights['unidock_score'] > 0.0:
+        if unidock_score_value is None:
+            raise ValueError('unidock_score_value is required when unidock_score reward weight is positive')
+        outputs += normalized_weights['unidock_score'] * float(unidock_score_value)
+    return float(outputs)
+
+
+MODEL_REWARD_WEIGHTS = {
+    'original_5500': {'qed': 0.6, 'sa_score': 0.4, 'drugclip_score': 0.0, 'unidock_score': 0.0},
+    'grpo_1000': {'qed': 0.6, 'sa_score': 0.4, 'drugclip_score': 0.0, 'unidock_score': 0.0},
+    'sgrpo_1000': {'qed': 0.6, 'sa_score': 0.4, 'drugclip_score': 0.0, 'unidock_score': 0.0},
+    'grpo_divreg005_1000': {'qed': 0.6, 'sa_score': 0.4, 'drugclip_score': 0.0, 'unidock_score': 0.0},
+    'grpo_unidock_500': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
+    'grpo_unidock_1000': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
+    'sgrpo_unidock_500': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
+    'sgrpo_unidock_1000': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
+    'sgrpo_unidock_rewardsum_loo_500': {
+        'qed': 0.3,
+        'sa_score': 0.2,
+        'drugclip_score': 0.0,
+        'unidock_score': 0.5,
+    },
+    'sgrpo_unidock_rewardsum_loo_1000': {
+        'qed': 0.3,
+        'sa_score': 0.2,
+        'drugclip_score': 0.0,
+        'unidock_score': 0.5,
+    },
+}
+
+VINA_DERIVED_DOCKING_REWARD_LABEL = 'Vina-derived Docking Reward Proxy'
+ORIGINAL_MODEL_NAME = 'original_5500'
+WITH_UNIDOCK_PLOT_REWARD_WEIGHTS = {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5}
+
+
+def _reward_weights_for_model(model_name):
+    try:
+        return dict(MODEL_REWARD_WEIGHTS[model_name])
+    except KeyError as exc:
+        raise ValueError(f'No reward-weight mapping registered for model_name={model_name!r}') from exc
+
+
+def _uses_unidock_reward(model_name):
+    return normalize_molecular_reward_weights(_reward_weights_for_model(model_name))['unidock_score'] > 0.0
 
 
 def _read_jsonl(path):
@@ -62,6 +167,8 @@ def _require_file(path, label):
 
 
 def _build_pocket_entry_index(manifest_path, manifest_split):
+    from genmol.mm.crossdocked import load_crossdocked_manifest
+
     entries, _ = load_crossdocked_manifest(manifest_path, manifest_split)
     by_source_index = {}
     for entry in entries:
@@ -264,7 +371,8 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
             sa_by_smiles[smiles] = float(sa_value)
             sa_score_by_smiles[smiles] = float(sa_to_score(sa_value))
             fp_by_smiles[smiles] = fingerprint_generator.GetFingerprint(mol)
-    normalized_reward_weights = normalize_molecular_reward_weights(args.reward_weights)
+    normalized_reward_weights = normalize_molecular_reward_weights(_reward_weights_for_model(task['model_name']))
+    uses_unidock_reward = normalized_reward_weights['unidock_score'] > 0.0
     base_valid_mask = [smiles is not None for smiles in canonical_smiles_by_row]
     final_valid_mask = list(base_valid_mask)
     drugclip_score_by_row = [None] * len(generated_rows)
@@ -304,6 +412,7 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
     sa_scores = []
     soft_rewards = []
     used_drugclip_scores = []
+    used_unidock_scores = []
     docking_success_flags = []
     docking_affinities = []
     score_only_affinities = []
@@ -315,6 +424,10 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
                 f'Docking source_index mismatch for task_id={task["task_id"]}: '
                 f'expected source_index={source_index}, got {docking_row.get("source_index")}'
             )
+        docking_record = docking_row['record']
+        is_success = bool(docking_record['is_success'])
+        if uses_unidock_reward and final_valid_mask[row_idx] and not is_success:
+            final_valid_mask[row_idx] = False
         if not final_valid_mask[row_idx]:
             continue
         if smiles is None:
@@ -330,21 +443,25 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
                     f'DrugCLIP score missing for final-valid row {row_idx} in task_id={task["task_id"]}'
                 )
             used_drugclip_scores.append(drugclip_score_value)
+        unidock_score_value = None
+        if is_success:
+            dock_affinity = float(docking_record['dock_affinity'])
+            docking_affinities.append(dock_affinity)
+            score_only_affinities.append(float(docking_record['score_only_affinity']))
+            minimize_affinities.append(float(docking_record['minimize_affinity']))
+            if uses_unidock_reward:
+                unidock_score_value = float(unidock_affinity_to_score(dock_affinity))
+                used_unidock_scores.append(unidock_score_value)
         soft_rewards.append(
             compute_soft_reward(
                 qed_by_smiles[smiles],
                 sa_score_by_smiles[smiles],
                 drugclip_score_value=drugclip_score_value,
+                unidock_score_value=unidock_score_value,
                 reward_weights=normalized_reward_weights,
             )
         )
-        docking_record = docking_row['record']
-        is_success = bool(docking_record['is_success'])
         docking_success_flags.append(is_success)
-        if is_success:
-            docking_affinities.append(float(docking_record['dock_affinity']))
-            score_only_affinities.append(float(docking_record['score_only_affinity']))
-            minimize_affinities.append(float(docking_record['minimize_affinity']))
 
     if len(rows_by_source_index) != args.expected_num_pockets:
         raise ValueError(
@@ -392,6 +509,7 @@ def _compute_task_metrics(task, args, chem, qed, sa_oracle, fingerprint_generato
         'sa_mean': _mean(sa_values),
         'sa_score_mean': _mean(sa_scores),
         'drugclip_score_mean': _mean(used_drugclip_scores) if used_drugclip_scores else float('nan'),
+        'unidock_score_mean': _mean(used_unidock_scores) if used_unidock_scores else float('nan'),
         'soft_reward_mean': _mean(soft_rewards),
         'diversity': _mean(pocket_diversities),
         'diversity_definition': (
@@ -423,6 +541,12 @@ def _display_name(name):
         'grpo_1000': 'GRPO 1000',
         'sgrpo_1000': 'SGRPO 1000',
         'grpo_divreg005_1000': 'GRPO DivReg 0.05 1000',
+        'grpo_unidock_500': 'GRPO + UniDock 500',
+        'grpo_unidock_1000': 'GRPO + UniDock 1000',
+        'sgrpo_unidock_500': 'SGRPO + UniDock 500',
+        'sgrpo_unidock_1000': 'SGRPO + UniDock 1000',
+        'sgrpo_unidock_rewardsum_loo_500': 'SGRPO + UniDock RewardSum LOO 500',
+        'sgrpo_unidock_rewardsum_loo_1000': 'SGRPO + UniDock RewardSum LOO 1000',
         'grpo_drugclip_1000': 'GRPO + DrugCLIP 1000',
     }.get(name, name)
 
@@ -431,9 +555,15 @@ def _model_order(name):
     order = {
         'original_5500': 0,
         'grpo_1000': 1,
-        'sgrpo_1000': 2,
-        'grpo_divreg005_1000': 3,
-        'grpo_drugclip_1000': 4,
+        'grpo_divreg005_1000': 2,
+        'grpo_unidock_500': 3,
+        'grpo_unidock_1000': 4,
+        'sgrpo_1000': 5,
+        'sgrpo_unidock_500': 6,
+        'sgrpo_unidock_1000': 7,
+        'sgrpo_unidock_rewardsum_loo_500': 8,
+        'sgrpo_unidock_rewardsum_loo_1000': 9,
+        'grpo_drugclip_1000': 10,
     }
     return order.get(name, len(order))
 
@@ -450,19 +580,73 @@ def _series_style(series_index):
     }
 
 
-def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path, *, plot_title_prefix):
+def _sorted_model_names(rows):
+    model_names = []
+    for row in sorted(rows, key=lambda item: (_model_order(item['model_name']), item['model_name'])):
+        if row['model_name'] not in model_names:
+            model_names.append(row['model_name'])
+    return model_names
+
+
+def _resolve_metric_value(row, metric_key, *, with_unidock_baseline=False):
+    if metric_key == 'unidock_score_mean':
+        value = row.get('unidock_score_mean')
+        if value is not None and math.isfinite(float(value)):
+            return float(value)
+        vina_dock_mean = row.get('vina_dock_mean')
+        if vina_dock_mean is None or not math.isfinite(float(vina_dock_mean)):
+            raise ValueError(
+                f"Cannot derive {metric_key} for model={row['model_name']} "
+                f"sweep_type={row['sweep_type']} sweep_value={row['sweep_value']}"
+            )
+        return float(unidock_affinity_to_score(float(vina_dock_mean)))
+    if metric_key == 'soft_reward_mean' and with_unidock_baseline and not _uses_unidock_reward(row['model_name']):
+        unidock_score_value = _resolve_metric_value(row, 'unidock_score_mean', with_unidock_baseline=False)
+        return float(
+            compute_soft_reward(
+                row['qed_mean'],
+                row['sa_score_mean'],
+                unidock_score_value=unidock_score_value,
+                reward_weights=WITH_UNIDOCK_PLOT_REWARD_WEIGHTS,
+            )
+        )
+    value = row.get(metric_key)
+    if value is None or not math.isfinite(float(value)):
+        raise ValueError(
+            f"Non-finite {metric_key} for model={row['model_name']} "
+            f"sweep_type={row['sweep_type']} sweep_value={row['sweep_value']}: {value}"
+        )
+    return float(value)
+
+
+def _plot_metric(
+    rows,
+    sweep_type,
+    metric_key,
+    metric_label,
+    output_path,
+    *,
+    plot_title_prefix,
+    model_names=None,
+    with_unidock_baseline=False,
+):
     sweep_rows = [row for row in rows if row['sweep_type'] == sweep_type]
     if not sweep_rows:
         raise ValueError(f'No rows for sweep_type={sweep_type!r}')
-    model_names = []
-    for row in sorted(sweep_rows, key=lambda item: (_model_order(item['model_name']), item['model_name'])):
-        if row['model_name'] not in model_names:
-            model_names.append(row['model_name'])
+    if model_names is None:
+        model_names = _sorted_model_names(sweep_rows)
+    else:
+        model_names = [name for name in model_names if any(row['model_name'] == name for row in sweep_rows)]
+    if not model_names:
+        raise ValueError(f'No model rows remain for sweep_type={sweep_type!r} metric={metric_key!r}')
     fig, ax = plt.subplots(figsize=(8, 6))
     for series_index, model_name in enumerate(model_names):
         model_rows = [row for row in sweep_rows if row['model_name'] == model_name]
         model_rows.sort(key=lambda row: float(row['sweep_value']))
-        x_values = [float(row[metric_key]) for row in model_rows]
+        x_values = [
+            _resolve_metric_value(row, metric_key, with_unidock_baseline=with_unidock_baseline)
+            for row in model_rows
+        ]
         y_values = [float(row['diversity']) for row in model_rows]
         style = _series_style(series_index)
         ax.plot(
@@ -494,20 +678,76 @@ def _plot_metric(rows, sweep_type, metric_key, metric_label, output_path, *, plo
     plt.close(fig)
 
 
-def _build_markdown(rows, plot_paths, json_path, rows_path, *, reward_weights):
-    normalized_reward_weights = normalize_molecular_reward_weights(reward_weights)
-    soft_reward_formula_terms = []
-    if normalized_reward_weights['qed'] > 0.0:
-        soft_reward_formula_terms.append(f'{normalized_reward_weights["qed"]:.3f} * qed_mean')
-    if normalized_reward_weights['sa_score'] > 0.0:
-        soft_reward_formula_terms.append(f'{normalized_reward_weights["sa_score"]:.3f} * sa_score_mean')
-    if normalized_reward_weights['drugclip_score'] > 0.0:
-        soft_reward_formula_terms.append(
-            f'{normalized_reward_weights["drugclip_score"]:.3f} * drugclip_score_mean'
-        )
-    soft_reward_formula = ' + '.join(soft_reward_formula_terms) if soft_reward_formula_terms else '0.0'
-    include_drugclip_column = any(
-        row.get('drugclip_score_mean') is not None and math.isfinite(float(row['drugclip_score_mean']))
+def _build_plot_jobs(rows, *, output_dir, plot_name_prefix, plot_title_prefix, plot_suffix, sweep_types):
+    all_model_names = _sorted_model_names(rows)
+    no_unidock_model_names = [name for name in all_model_names if not _uses_unidock_reward(name)]
+    with_unidock_model_names = [name for name in all_model_names if _uses_unidock_reward(name)]
+    with_unidock_plus_original_model_names = list(with_unidock_model_names)
+    if ORIGINAL_MODEL_NAME in all_model_names and ORIGINAL_MODEL_NAME not in with_unidock_plus_original_model_names:
+        with_unidock_plus_original_model_names = [ORIGINAL_MODEL_NAME] + with_unidock_plus_original_model_names
+    plot_jobs = []
+    for sweep_type in sweep_types:
+        for metric_key, metric_label in [
+            ('qed_mean', 'QED'),
+            ('sa_score_mean', 'SA Score'),
+        ]:
+            plot_jobs.append(
+                (
+                    f'all-model {sweep_type} {metric_label} vs diversity',
+                    os.path.join(
+                        output_dir,
+                        f'{plot_name_prefix}_{sweep_type}_diversity_vs_{metric_key}_{plot_suffix}.png',
+                    ),
+                    sweep_type,
+                    metric_key,
+                    metric_label,
+                    f'{plot_title_prefix} All Models',
+                    all_model_names,
+                    False,
+                )
+            )
+        if no_unidock_model_names:
+            plot_jobs.append(
+                (
+                    f'no-UniDock {sweep_type} Soft Reward vs diversity',
+                    os.path.join(
+                        output_dir,
+                        f'{plot_name_prefix}_no_unidock_{sweep_type}_diversity_vs_soft_reward_mean_{plot_suffix}.png',
+                    ),
+                    sweep_type,
+                    'soft_reward_mean',
+                    'Soft Reward',
+                    f'{plot_title_prefix} No-UniDock',
+                    no_unidock_model_names,
+                    False,
+                )
+            )
+        if with_unidock_plus_original_model_names:
+            for metric_key, metric_label in [
+                ('unidock_score_mean', VINA_DERIVED_DOCKING_REWARD_LABEL),
+                ('soft_reward_mean', 'Soft Reward'),
+            ]:
+                plot_jobs.append(
+                    (
+                        f'with-UniDock {sweep_type} {metric_label} vs diversity',
+                        os.path.join(
+                            output_dir,
+                            f'{plot_name_prefix}_with_unidock_{sweep_type}_diversity_vs_{metric_key}_{plot_suffix}.png',
+                        ),
+                        sweep_type,
+                        metric_key,
+                        metric_label,
+                        f'{plot_title_prefix} With-UniDock + Original Baseline',
+                        with_unidock_plus_original_model_names,
+                        True,
+                    )
+                )
+    return plot_jobs
+
+
+def _build_markdown(rows, plot_paths, json_path, rows_path):
+    include_unidock_column = any(
+        row.get('unidock_score_mean') is not None and math.isfinite(float(row['unidock_score_mean']))
         for row in rows
     )
     lines = [
@@ -520,21 +760,22 @@ def _build_markdown(rows, plot_paths, json_path, rows_path, *, reward_weights):
         '- `docking_mode`: `vina_dock`',
         '- `diversity`: per sweep point, compute internal diversity separately within each pocket group, then average over pockets.',
         '- `qed_mean` and `sa_score_mean`: means over valid generated molecules in the sweep point.',
-        f'- `soft_reward_mean`: `{soft_reward_formula}`, matching the rollout-level training reward before invalid and alert gating.',
+        '- `unidock_score_mean`: legacy field name. The value is a Vina-derived docking reward proxy computed by transforming offline `vina_dock` affinity with `unidock_affinity_to_score`; it is reported only for the UniDock-trained model family.',
+        '- `soft_reward_mean`: computed per model with that model family\'s registered training-time reward weights.',
         '- `vina_dock_mean`: mean Vina dock affinity over successful dockings; lower is better.',
         '',
     ]
-    if include_drugclip_column:
+    if include_unidock_column:
         lines.extend(
             [
-                '| Model | Sweep | Value | Diversity | QED | SA Score | DrugCLIP Score | Soft Quality Score | Vina Dock Mean | Dock Success | Valid Fraction |',
+                '| Model | Sweep | Value | Diversity | QED | SA Score | UniDock Reward | Soft Reward | Vina Dock Mean | Dock Success | Valid Fraction |',
                 '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
             ]
         )
     else:
         lines.extend(
             [
-                '| Model | Sweep | Value | Diversity | QED | SA Score | Soft Quality Score | Vina Dock Mean | Dock Success | Valid Fraction |',
+                '| Model | Sweep | Value | Diversity | QED | SA Score | Soft Reward | Vina Dock Mean | Dock Success | Valid Fraction |',
                 '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
             ]
         )
@@ -547,8 +788,8 @@ def _build_markdown(rows, plot_paths, json_path, rows_path, *, reward_weights):
             _format_metric(row['qed_mean']),
             _format_metric(row['sa_score_mean']),
         ]
-        if include_drugclip_column:
-            cells.append(_format_metric(row['drugclip_score_mean']))
+        if include_unidock_column:
+            cells.append(_format_metric(row.get('unidock_score_mean', float('nan'))))
         cells.extend(
             [
                 _format_metric(row['soft_reward_mean']),
@@ -602,11 +843,6 @@ def _resolve_plot_suffix(output_prefix):
 
 def main():
     args = parse_args()
-    args.reward_weights = {
-        'qed': args.qed_weight,
-        'sa_score': args.sa_score_weight,
-        'drugclip_score': args.drugclip_score_weight,
-    }
     tasks = _parse_task_manifest(args.tasks_path)
     if len(tasks) != args.expected_num_tasks:
         raise ValueError(f'Expected {args.expected_num_tasks} tasks, found {len(tasks)}')
@@ -620,6 +856,8 @@ def main():
     args.pocket_entries_by_source_index = None
     args.drugclip_scorer = None
     if args.drugclip_score_weight > 0.0:
+        from genmol.mm.utils import DrugCLIPConfig, DrugCLIPScorer
+
         _require_file(args.manifest_path, 'manifest_path')
         _require_file(args.crossdocked_lmdb_path, 'crossdocked_lmdb_path')
         _require_file(args.drugclip_checkpoint_path, 'drugclip_checkpoint_path')
@@ -670,33 +908,40 @@ def main():
     if not sweep_types:
         raise ValueError('No supported sweep types found; expected at least one of randomness or temperature')
     plot_suffix = _resolve_plot_suffix(args.output_prefix)
-    for sweep_type in sweep_types:
-        for metric_key, metric_label in [
-            ('qed_mean', 'QED'),
-            ('sa_score_mean', 'SA Score'),
-            ('soft_reward_mean', 'Soft Quality Score'),
-            ('vina_dock_mean', 'Vina Dock Mean'),
-        ]:
-            plot_path = os.path.join(
-                args.output_dir,
-                f'{args.plot_name_prefix}_{sweep_type}_diversity_vs_{metric_key}_{plot_suffix}.png',
-            )
-            _plot_metric(
-                rows,
-                sweep_type,
-                metric_key,
-                metric_label,
-                plot_path,
-                plot_title_prefix=args.plot_title_prefix,
-            )
-            plot_paths.append((f'{sweep_type} {metric_label} vs diversity', plot_path))
+    for (
+        title,
+        plot_path,
+        sweep_type,
+        metric_key,
+        metric_label,
+        title_prefix,
+        model_names,
+        with_unidock_baseline,
+    ) in _build_plot_jobs(
+        rows,
+        output_dir=args.output_dir,
+        plot_name_prefix=args.plot_name_prefix,
+        plot_title_prefix=args.plot_title_prefix,
+        plot_suffix=plot_suffix,
+        sweep_types=sweep_types,
+    ):
+        _plot_metric(
+            rows,
+            sweep_type,
+            metric_key,
+            metric_label,
+            plot_path,
+            plot_title_prefix=title_prefix,
+            model_names=model_names,
+            with_unidock_baseline=with_unidock_baseline,
+        )
+        plot_paths.append((title, plot_path))
 
     markdown = _build_markdown(
         rows,
         plot_paths,
         output_json_path,
         output_rows_path,
-        reward_weights=args.reward_weights,
     )
     with open(output_markdown_path, 'w') as handle:
         handle.write(markdown)
