@@ -120,3 +120,10 @@ experiments:
     foldability: 0.30
     stability: 0.20
     developability: 0.25
+  - name: sgrpo_ng8_bs3_rewardsum_loo_step100
+    display_name: SGRPO RewardSum LOO ng8 bs3 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng8_sg8_bs3_len256_rbs16_rewardsum_loo_slurm54206/checkpoint-000100
+    naturalness: 0.25
+    foldability: 0.30
+    stability: 0.20
+    developability: 0.25
