@@ -163,6 +163,8 @@ Notes:
 - Completed rerun with `max_steps = 2000`.
 - All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step GRPO run.
 - Training job: `41711`
+- Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
+- Retention-only config: `configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_stl0.yaml`
 
 ### GRPO 2000-Step Variant + HBD
 
@@ -202,6 +204,7 @@ Notes:
 
 - This line matches `GRPO 2000-Step Variant` above except `hbd = true` and `save_total_limit = 0`.
 - The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
+- Submitted training job: `55719`
 
 ### GRPO + `qed = 0.8, sa_score = 0.2`
 
@@ -1019,8 +1022,8 @@ Notes:
 - `group_rewrad_credit_temperature = 1.0`.
 - Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260426_115639`
 - Training completed successfully.
-
-### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `num_generations = 32`
+- Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
+- Retention-only config: `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_stl0.yaml`
 
 ### SGRPO Reward-Sum Hierarchy + LOO Group Credit 2000-Step Variant + `group_advantage_weight = 0.7`
 
@@ -2118,6 +2121,8 @@ Notes:
 - This line matches `GRPO + UniDock 500-Step Variant` above except `max_steps = 1000`.
 - Verified comparison checkpoint: `checkpoint-001000`
 - Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present in the locked rerun directory ending in `_20260430_192150`.
+- Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
+- Retention-only config: `configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_stl0.yaml`
 
 ### GRPO + UniDock + HBD
 
@@ -2157,6 +2162,8 @@ Notes:
 
 - This line matches `GRPO + UniDock` above except `hbd = true` and `save_total_limit = 0`.
 - The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
+- Initial submission `55720` failed on `server13` before GPU initialization completed (`Can't initialize NVML` / `CUDA unknown error`), so that run is excluded as a node-level failure.
+- Active resubmission excluding `server13`: `55752`
 
 ### GRPO + UniDock 2000-Step Variant
 
@@ -2380,6 +2387,8 @@ group_rewrad_credit_temperature = 1.0
 - Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo_pocket_prefix/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_20260501_160306`
 - Verified comparison checkpoint: `checkpoint-001000`
 - Completion evidence: `sacct` reports `53600 COMPLETED (0:0)`, and the run directory contains `checkpoint-001000/model.ckpt`.
+- Checkpoint-retention-only equivalent rerun is being tracked separately for intermediate-checkpoint analysis only; it keeps all checkpoints with `save_total_limit = 0` and does not change the locked comparison asset.
+- Retention-only config: `configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_stl0.yaml`
 
 ### SGRPO + UniDock 2000-Step Variant
 
@@ -2766,6 +2775,7 @@ Notes:
 
 - This line matches `GRPO` above except `hbd = true`.
 - The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
+- Submitted training job: `55721`
 
 ### SGRPO
 
