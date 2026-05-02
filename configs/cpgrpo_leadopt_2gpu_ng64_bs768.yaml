@@ -42,7 +42,6 @@ generation_batch_size: 768
 generation_temperature: 1.0
 randomness: 0.3
 min_seed_len: 60
-rescore_chunk_size: 64
 log_completions: true
 log_level: info
 report_to:
