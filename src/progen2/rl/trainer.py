@@ -771,15 +771,24 @@ class ProGen2SGRPOTrainer:
                 f'{len(global_sequences)} vs {global_rewards.numel()}'
             )
 
-        adjusted_rewards, hbd_metrics = self._hbd_memory.apply(
-            global_sequences,
-            memory_scores=global_rewards.tolist(),
-            reward_values=global_rewards.tolist(),
+        hbd_update_payload = None
+        if self.accelerator.is_main_process:
+            planned_update = self._hbd_memory.plan_update(
+                global_sequences,
+                memory_scores=global_rewards.tolist(),
+                reward_values=global_rewards.tolist(),
+            )
+            hbd_update_payload = planned_update.to_payload()
+        hbd_update_payload = self._broadcast_object(hbd_update_payload)
+        self._hbd_memory.apply_update(hbd_update_payload)
+        adjusted_rewards = torch.tensor(
+            hbd_update_payload['final_rewards'],
+            device=self.device,
+            dtype=torch.float32,
         )
-        adjusted_rewards = torch.tensor(adjusted_rewards, device=self.device, dtype=torch.float32)
         local_start = self.accelerator.process_index * local_count
         local_end = local_start + local_count
-        return adjusted_rewards[local_start:local_end], hbd_metrics
+        return adjusted_rewards[local_start:local_end], hbd_update_payload['metrics']
 
     def _build_group_mean_individual_rewards(self, individual_reward_tensors):
         outputs = {}

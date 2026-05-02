@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -45,17 +46,38 @@ class _Bucket:
     count: int
 
 
+@dataclass(frozen=True)
+class _PlannedHBDUpdate:
+    bucket_count_before: int
+    final_rewards: tuple[float, ...]
+    bucket_increments: tuple[tuple[int, int], ...]
+    new_bucket_values: tuple[str, ...]
+    metrics: dict[str, float]
+
+    def to_payload(self):
+        return {
+            'bucket_count_before': int(self.bucket_count_before),
+            'final_rewards': list(self.final_rewards),
+            'bucket_increments': [[int(bucket_idx), int(increment)] for bucket_idx, increment in self.bucket_increments],
+            'new_bucket_values': list(self.new_bucket_values),
+            'metrics': {str(key): float(value) for key, value in self.metrics.items()},
+        }
+
+
 class HistoryBasedDiversityMemory:
-    def __init__(self, config, *, featurize, similarity):
+    def __init__(self, config, *, featurize, similarity, batch_matcher=None):
         if not isinstance(config, HBDConfig):
             raise TypeError(f'config must be an HBDConfig, got {type(config)!r}')
         if not callable(featurize):
             raise TypeError('featurize must be callable')
         if not callable(similarity):
             raise TypeError('similarity must be callable')
+        if batch_matcher is not None and not callable(batch_matcher):
+            raise TypeError('batch_matcher must be callable when provided')
         self.config = config
         self._featurize = featurize
         self._similarity = similarity
+        self._batch_matcher = batch_matcher
         self._buckets: list[_Bucket] = []
 
     def reset(self):
@@ -119,8 +141,17 @@ class HistoryBasedDiversityMemory:
         self._buckets = restored
 
     def apply(self, items, *, memory_scores, reward_values=None):
+        planned_update = self.plan_update(
+            items,
+            memory_scores=memory_scores,
+            reward_values=reward_values,
+        )
+        self.apply_update(planned_update)
+        return list(planned_update.final_rewards), dict(planned_update.metrics)
+
+    def plan_update(self, items, *, memory_scores, reward_values=None):
         if not self.config.enabled:
-            raise RuntimeError('HBD memory apply() called while HBD is disabled')
+            raise RuntimeError('HBD memory plan_update() called while HBD is disabled')
         if reward_values is None:
             reward_values = memory_scores
         if len(items) != len(memory_scores):
@@ -134,12 +165,13 @@ class HistoryBasedDiversityMemory:
 
         final_rewards = [float(reward) for reward in reward_values]
         bucket_increments: dict[int, int] = {}
-        new_bucket_records: list[tuple[str, object]] = []
+        new_bucket_values: list[str] = []
         considered_count = 0
         penalized_count = 0
         accepted_existing_count = 0
         created_bucket_count = 0
         bucket_count_before = len(self._buckets)
+        eligible_records: list[tuple[int, str, object]] = []
 
         for idx, (item, score, reward) in enumerate(zip(items, memory_scores, reward_values)):
             score_value = float(score)
@@ -156,9 +188,15 @@ class HistoryBasedDiversityMemory:
             considered_count += 1
             index_value = str(item)
             feature = self._featurize(index_value)
-            matched_bucket_idx, best_similarity = self._best_bucket(feature)
+            eligible_records.append((idx, index_value, feature))
+
+        match_results = self._resolve_match_results(eligible_records)
+        for (idx, index_value, _feature), (matched_bucket_idx, best_similarity) in zip(
+            eligible_records,
+            match_results,
+        ):
             if matched_bucket_idx is None or best_similarity < self.config.similarity_cutoff:
-                new_bucket_records.append((index_value, feature))
+                new_bucket_values.append(index_value)
                 created_bucket_count += 1
                 continue
 
@@ -171,27 +209,84 @@ class HistoryBasedDiversityMemory:
             penalized_count += 1
             final_rewards[idx] = 0.0
 
-        for bucket_idx, increment in bucket_increments.items():
+        bucket_count_after = bucket_count_before + len(new_bucket_values)
+        return _PlannedHBDUpdate(
+            bucket_count_before=int(bucket_count_before),
+            final_rewards=tuple(final_rewards),
+            bucket_increments=tuple(sorted((int(bucket_idx), int(increment)) for bucket_idx, increment in bucket_increments.items())),
+            new_bucket_values=tuple(new_bucket_values),
+            metrics={
+                'enabled': 1.0,
+                'eligible_count': float(considered_count),
+                'penalized_count': float(penalized_count),
+                'accepted_existing_count': float(accepted_existing_count),
+                'created_bucket_count': float(created_bucket_count),
+                'bucket_count_before': float(bucket_count_before),
+                'bucket_count_after': float(bucket_count_after),
+            },
+        )
+
+    def apply_update(self, planned_update):
+        normalized = self._normalize_planned_update(planned_update)
+        if normalized.bucket_count_before != len(self._buckets):
+            raise ValueError(
+                'HBD bucket count mismatch before apply_update: '
+                f'expected {normalized.bucket_count_before}, got {len(self._buckets)}'
+            )
+        for bucket_idx, increment in normalized.bucket_increments:
+            if not 0 <= bucket_idx < len(self._buckets):
+                raise IndexError(
+                    f'HBD bucket increment index out of range: {bucket_idx} for {len(self._buckets)} buckets'
+                )
+            if increment <= 0:
+                raise ValueError(f'HBD bucket increment must be positive, got {increment}')
             bucket = self._buckets[bucket_idx]
             bucket.count = min(self.config.bucket_size, bucket.count + increment)
-        for index_value, feature in new_bucket_records:
+        for index_value in normalized.new_bucket_values:
             self._buckets.append(
                 _Bucket(
                     index_value=index_value,
-                    index_feature=feature,
+                    index_feature=self._featurize(index_value),
                     count=1,
                 )
             )
 
-        return final_rewards, {
-            'enabled': 1.0,
-            'eligible_count': float(considered_count),
-            'penalized_count': float(penalized_count),
-            'accepted_existing_count': float(accepted_existing_count),
-            'created_bucket_count': float(created_bucket_count),
-            'bucket_count_before': float(bucket_count_before),
-            'bucket_count_after': float(len(self._buckets)),
-        }
+    def _normalize_planned_update(self, planned_update):
+        if isinstance(planned_update, _PlannedHBDUpdate):
+            return planned_update
+        if not isinstance(planned_update, dict):
+            raise TypeError(f'HBD planned update must be a dict or _PlannedHBDUpdate, got {type(planned_update)!r}')
+        final_rewards = planned_update.get('final_rewards')
+        bucket_increments = planned_update.get('bucket_increments')
+        new_bucket_values = planned_update.get('new_bucket_values')
+        metrics = planned_update.get('metrics')
+        if not isinstance(final_rewards, list):
+            raise TypeError(f'HBD final_rewards must be a list, got {type(final_rewards)!r}')
+        if not isinstance(bucket_increments, list):
+            raise TypeError(f'HBD bucket_increments must be a list, got {type(bucket_increments)!r}')
+        if not isinstance(new_bucket_values, list):
+            raise TypeError(f'HBD new_bucket_values must be a list, got {type(new_bucket_values)!r}')
+        if not isinstance(metrics, dict):
+            raise TypeError(f'HBD metrics must be a dict, got {type(metrics)!r}')
+        return _PlannedHBDUpdate(
+            bucket_count_before=int(planned_update['bucket_count_before']),
+            final_rewards=tuple(float(value) for value in final_rewards),
+            bucket_increments=tuple((int(bucket_idx), int(increment)) for bucket_idx, increment in bucket_increments),
+            new_bucket_values=tuple(str(value) for value in new_bucket_values),
+            metrics={str(key): float(value) for key, value in metrics.items()},
+        )
+
+    def _resolve_match_results(self, eligible_records):
+        if not eligible_records:
+            return []
+        features = [feature for _, _, feature in eligible_records]
+        if self._batch_matcher is not None and self._buckets:
+            return self._batch_matcher(
+                features,
+                tuple(bucket.index_feature for bucket in self._buckets),
+                self.config.similarity_cutoff,
+            )
+        return [self._best_bucket(feature) for feature in features]
 
     def _best_bucket(self, feature):
         best_bucket_idx = None
@@ -219,6 +314,7 @@ def build_sequence_hbd_memory(config):
         config,
         featurize=_normalize_sequence_feature,
         similarity=_normalized_edit_similarity,
+        batch_matcher=_build_sequence_batch_matcher(),
     )
 
 
@@ -255,23 +351,105 @@ def _normalize_sequence_feature(sequence):
     return normalized
 
 
+def _build_sequence_batch_matcher():
+    _, _, _ = _get_sequence_distance_backend()
+    worker_count = _get_hbd_cpu_worker_count()
+
+    def _match(features, bucket_features, similarity_cutoff):
+        return _find_best_sequence_bucket_matches(
+            features,
+            bucket_features,
+            similarity_cutoff=similarity_cutoff,
+            worker_count=worker_count,
+        )
+
+    return _match
+
+
+@lru_cache(maxsize=1)
+def _get_sequence_distance_backend():
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise ImportError(
+            'Sequence HBD requires numpy for the rapidfuzz distance backend. '
+            'Install the project environment from genmol/env/requirements*.'
+        ) from exc
+    try:
+        from rapidfuzz import process as rapidfuzz_process
+        from rapidfuzz.distance import Levenshtein
+    except ImportError as exc:
+        raise ImportError(
+            'Sequence HBD requires rapidfuzz. Add it to the active environment before enabling HBD for progen2.'
+        ) from exc
+    return np, rapidfuzz_process, Levenshtein
+
+
+@lru_cache(maxsize=1)
+def _get_hbd_cpu_worker_count():
+    affinity_count = None
+    if hasattr(os, 'sched_getaffinity'):
+        try:
+            affinity_count = len(os.sched_getaffinity(0))
+        except OSError:
+            affinity_count = None
+    if affinity_count is not None and affinity_count > 0:
+        return affinity_count
+    cpu_count = os.cpu_count()
+    if cpu_count is None or cpu_count <= 0:
+        raise RuntimeError('failed to determine available CPU worker count for sequence HBD')
+    return int(cpu_count)
+
+
+def _find_best_sequence_bucket_matches(features, bucket_features, *, similarity_cutoff, worker_count):
+    if not features:
+        return []
+    if not bucket_features:
+        return [(None, float('-inf')) for _ in features]
+    np, rapidfuzz_process, Levenshtein = _get_sequence_distance_backend()
+    bucket_lengths = [len(feature) for feature in bucket_features]
+    grouped_queries: dict[int, list[tuple[int, str]]] = {}
+    for feature_idx, feature in enumerate(features):
+        grouped_queries.setdefault(len(feature), []).append((feature_idx, feature))
+
+    match_results: list[tuple[int | None, float]] = [(None, float('-inf')) for _ in features]
+    for query_length, query_group in grouped_queries.items():
+        candidate_indices = [
+            bucket_idx
+            for bucket_idx, bucket_length in enumerate(bucket_lengths)
+            if _length_gap_can_reach_similarity_cutoff(query_length, bucket_length, similarity_cutoff)
+        ]
+        if not candidate_indices:
+            continue
+        candidate_sequences = [bucket_features[bucket_idx] for bucket_idx in candidate_indices]
+        similarities = rapidfuzz_process.cdist(
+            [feature for _, feature in query_group],
+            candidate_sequences,
+            scorer=Levenshtein.normalized_similarity,
+            score_cutoff=similarity_cutoff,
+            workers=worker_count,
+            dtype=np.float32,
+        )
+        for row_idx, (feature_idx, _feature) in enumerate(query_group):
+            row = similarities[row_idx]
+            if row.size == 0:
+                continue
+            best_column = int(row.argmax())
+            best_similarity = float(row[best_column])
+            if best_similarity >= similarity_cutoff:
+                match_results[feature_idx] = (candidate_indices[best_column], best_similarity)
+    return match_results
+
+
+def _length_gap_can_reach_similarity_cutoff(left_length, right_length, similarity_cutoff):
+    minimum_distance = abs(int(left_length) - int(right_length))
+    max_distance = math.floor((1.0 - float(similarity_cutoff)) * max(int(left_length), int(right_length)) + 1e-12)
+    return minimum_distance <= max_distance
+
+
 @lru_cache(maxsize=4096)
 def _normalized_edit_similarity(left_sequence, right_sequence):
     left_sequence = _normalize_sequence_feature(left_sequence)
     right_sequence = _normalize_sequence_feature(right_sequence)
-    len_left = len(left_sequence)
-    len_right = len(right_sequence)
-    dp = [[0] * (len_right + 1) for _ in range(len_left + 1)]
-    for left_idx in range(len_left + 1):
-        dp[left_idx][0] = left_idx
-    for right_idx in range(len_right + 1):
-        dp[0][right_idx] = right_idx
-    for left_idx in range(1, len_left + 1):
-        for right_idx in range(1, len_right + 1):
-            substitution_cost = 0 if left_sequence[left_idx - 1] == right_sequence[right_idx - 1] else 1
-            dp[left_idx][right_idx] = min(
-                dp[left_idx - 1][right_idx] + 1,
-                dp[left_idx][right_idx - 1] + 1,
-                dp[left_idx - 1][right_idx - 1] + substitution_cost,
-            )
-    return 1.0 - (dp[len_left][len_right] / float(max(len_left, len_right)))
+    _, _, Levenshtein = _get_sequence_distance_backend()
+    return float(Levenshtein.normalized_similarity(left_sequence, right_sequence))

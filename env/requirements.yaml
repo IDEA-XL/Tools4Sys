@@ -17,6 +17,7 @@ dependencies:
     - pandas==2.1.0
     - numpy==1.26.4
     - transformers==4.56.2
+    - rapidfuzz>=3.13.0
     - wandb==0.13.5
     - safe-mol
     - PyTDC==0.4.1
