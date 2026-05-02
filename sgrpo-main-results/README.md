@@ -164,6 +164,45 @@ Notes:
 - All other hyperparameters and launch topology are intentionally unchanged relative to the locked 1000-step GRPO run.
 - Training job: `41711`
 
+### GRPO 2000-Step Variant + HBD
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+```
+
+Notes:
+
+- This line matches `GRPO 2000-Step Variant` above except `hbd = true` and `save_total_limit = 0`.
+- The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
+
 ### GRPO + `qed = 0.8, sa_score = 0.2`
 
 Status: `Verified`
@@ -2080,6 +2119,45 @@ Notes:
 - Verified comparison checkpoint: `checkpoint-001000`
 - Completion evidence: `train_results.json` reports `step = 1000`, and `checkpoint-001000/model.ckpt` is present in the locked rerun directory ending in `_20260430_192150`.
 
+### GRPO + UniDock + HBD
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+```
+
+Notes:
+
+- This line matches `GRPO + UniDock` above except `hbd = true` and `save_total_limit = 0`.
+- The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
+
 ### GRPO + UniDock 2000-Step Variant
 
 Status: `Verified`
@@ -2649,6 +2727,45 @@ report_to = [wandb]
 - Verified comparison checkpoint: `checkpoint-000100`
 - Completion evidence: `sacct` reports `52245 COMPLETED (0:0)`, and the run directory contains `checkpoint-000100`.
 - Verified implementation note: current `grpo` code path does not consume `group_advantage_weight`; the field remains in the shared config schema, but changing it alone is algorithmically inert for GRPO under the present trainer implementation.
+
+### GRPO + HBD
+
+Status: `Partial`
+
+Checkpoint:
+
+```text
+TODO
+```
+
+Training config:
+
+```text
+configs/progen2_grpo_ng96_bs2_len256_rbs16_hbd.yaml
+```
+
+Launch Script:
+
+```text
+scripts/slurm/train_progen2_grpo_8gpu.sbatch
+```
+
+Expected GPU Topology:
+
+```text
+8 GPU
+```
+
+Invocation:
+
+```text
+CONFIG_PATH=configs/progen2_grpo_ng96_bs2_len256_rbs16_hbd.yaml sbatch scripts/slurm/train_progen2_grpo_8gpu.sbatch
+```
+
+Notes:
+
+- This line matches `GRPO` above except `hbd = true`.
+- The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
 
 ### SGRPO
 
