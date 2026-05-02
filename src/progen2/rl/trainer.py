@@ -45,6 +45,7 @@ from rl_shared.sgrpo import (
     compute_sgrpo_advantages,
     validate_reward_threshold_names,
 )
+from rl_shared.hbd import build_sequence_hbd_memory, validate_hbd_config
 
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,10 @@ class ProGen2TrainConfig:
     reward_calibration_size: int = 4096
     reward_calibration_prompt_batch_size: int = 8
     rewards: dict = field(default_factory=dict)
+    hbd: bool = False
+    hbd_bucket_size: int = 25
+    hbd_score_threshold_for_memory: float = 0.6
+    hbd_similarity_cutoff: float = 0.6
 
 
 def load_config(path):
@@ -227,6 +232,14 @@ def load_config(path):
         raise ValueError('reward_calibration_size must be positive')
     if config.reward_calibration_prompt_batch_size <= 0:
         raise ValueError('reward_calibration_prompt_batch_size must be positive')
+    validate_hbd_config(
+        enabled=config.hbd,
+        bucket_size=config.hbd_bucket_size,
+        score_threshold_for_memory=config.hbd_score_threshold_for_memory,
+        similarity_cutoff=config.hbd_similarity_cutoff,
+    )
+    if config.hbd and config.rl_algorithm != 'grpo':
+        raise ValueError('hbd is only supported when rl_algorithm=grpo')
     return config
 
 
@@ -471,6 +484,15 @@ class ProGen2SGRPOTrainer:
             reward_compute_every_n_steps=config.reward_compute_every_n_steps,
             reward_weights=config.rollout_reward_weights,
         )
+        self._hbd_memory = None
+        if self.config.hbd:
+            hbd_config = validate_hbd_config(
+                enabled=self.config.hbd,
+                bucket_size=self.config.hbd_bucket_size,
+                score_threshold_for_memory=self.config.hbd_score_threshold_for_memory,
+                similarity_cutoff=self.config.hbd_similarity_cutoff,
+            )
+            self._hbd_memory = build_sequence_hbd_memory(hbd_config)
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
         self.calibration_path = os.path.join(output_dir, self._CALIBRATION_FILE_NAME)
@@ -726,6 +748,39 @@ class ProGen2SGRPOTrainer:
             group_credits.extend(compute_group_diversity_loo_credits(group_sequences))
         return torch.tensor(group_credits, device=self.device, dtype=torch.float32)
 
+    def _apply_hbd(self, sequences, rollout_rewards):
+        if self._hbd_memory is None:
+            raise RuntimeError('_apply_hbd called while HBD is disabled')
+        if rollout_rewards.dim() != 1:
+            raise ValueError(f'rollout_rewards must be 1D, got shape={tuple(rollout_rewards.shape)}')
+        local_count = len(sequences)
+        if rollout_rewards.numel() != local_count:
+            raise ValueError(
+                'sequence/reward length mismatch for HBD: '
+                f'{local_count} vs {rollout_rewards.numel()}'
+            )
+
+        gathered_sequences = self._all_gather_object(sequences)
+        global_sequences = []
+        for shard in gathered_sequences:
+            global_sequences.extend(shard)
+        global_rewards = self.accelerator.gather(rollout_rewards.detach()).to(device=self.device, dtype=torch.float32)
+        if global_rewards.numel() != len(global_sequences):
+            raise ValueError(
+                'global sequence/reward length mismatch for HBD: '
+                f'{len(global_sequences)} vs {global_rewards.numel()}'
+            )
+
+        adjusted_rewards, hbd_metrics = self._hbd_memory.apply(
+            global_sequences,
+            memory_scores=global_rewards.tolist(),
+            reward_values=global_rewards.tolist(),
+        )
+        adjusted_rewards = torch.tensor(adjusted_rewards, device=self.device, dtype=torch.float32)
+        local_start = self.accelerator.process_index * local_count
+        local_end = local_start + local_count
+        return adjusted_rewards[local_start:local_end], hbd_metrics
+
     def _build_group_mean_individual_rewards(self, individual_reward_tensors):
         outputs = {}
         for reward_name, reward_values in individual_reward_tensors.items():
@@ -832,6 +887,7 @@ class ProGen2SGRPOTrainer:
         trainer_state = {
             'global_step': int(self.global_step),
             'config': asdict(self.config),
+            'hbd_state': None if self._hbd_memory is None else self._hbd_memory.state_dict(),
         }
         stamp_checkpoint_variant(trainer_state, PROGEN2_SGRPO_VARIANT)
         torch.save(trainer_state, os.path.join(checkpoint_dir, 'trainer_state.pt'))
@@ -855,6 +911,14 @@ class ProGen2SGRPOTrainer:
         self.reward_model.set_calibration(calibration)
         self.global_step = int(trainer_state['global_step'])
         self._prompt_cursor = self._prompt_cursor_after_steps(self.global_step)
+        hbd_state = trainer_state.get('hbd_state')
+        if self._hbd_memory is None:
+            if hbd_state is not None:
+                raise ValueError('checkpoint contains HBD state but current config has hbd disabled')
+        else:
+            if hbd_state is None:
+                raise ValueError('checkpoint is missing HBD state while current config has hbd enabled')
+            self._hbd_memory.load_state_dict(hbd_state)
         if self.accelerator.is_main_process:
             self._write_calibration_json(self.calibration_path, calibration)
         self.accelerator.wait_for_everyone()
@@ -959,6 +1023,12 @@ class ProGen2SGRPOTrainer:
                 rollout.protein_sequences,
                 step_number=self.global_step + 1,
             )
+            hbd_metrics = {}
+            if self._hbd_memory is not None:
+                rollout_rewards, hbd_metrics = self._apply_hbd(
+                    rollout.protein_sequences,
+                    rollout_rewards,
+                )
             group_rewards = self._score_group_rewards(rollout.protein_sequences)
             group_reward_credits = None
             if self.config.rl_algorithm == 'sgrpo' and self.config.group_rewrad_credit == 'loo':
@@ -1030,6 +1100,7 @@ class ProGen2SGRPOTrainer:
                 'group_advantage_mean': float(group_advantages.mean().item()),
                 'rollout_advantage_mean': float(rollout_advantages.mean().item()),
                 **{key: float(value) for key, value in reward_metrics.items()},
+                **{f'hbd/{key}': float(value) for key, value in hbd_metrics.items()},
                 **{key: float(value) for key, value in advantage_metrics.items()},
                 **{key: float(value.item() if hasattr(value, 'item') else value) for key, value in loss_metrics.items()},
                 **rollout_phase_metrics,

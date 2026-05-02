@@ -38,6 +38,7 @@ from genmol.rl.specs import (
     sample_supergroup_shared_specs,
     serialize_specs,
 )
+from rl_shared.hbd import build_molecule_hbd_memory, validate_hbd_config
 from rl_shared.sampling import normalize_scalar_or_range
 from genmol.rl.trainer import (
     _aggregate_scalar_list,
@@ -137,6 +138,10 @@ class PocketPrefixTrainConfig:
     unidock_timeout_sec: int = 1800
     pocket_encoder: dict = field(default_factory=dict)
     conditioning: dict = field(default_factory=dict)
+    hbd: bool = False
+    hbd_bucket_size: int = 25
+    hbd_score_threshold_for_memory: float = 0.6
+    hbd_similarity_cutoff: float = 0.6
 
 
 @dataclass
@@ -242,6 +247,12 @@ def load_config(path):
     config.group_rewrad_credit_temperature = float(config.group_rewrad_credit_temperature)
     if config.group_rewrad_credit_temperature <= 0.0:
         raise ValueError('group_rewrad_credit_temperature must be positive')
+    validate_hbd_config(
+        enabled=config.hbd,
+        bucket_size=config.hbd_bucket_size,
+        score_threshold_for_memory=config.hbd_score_threshold_for_memory,
+        similarity_cutoff=config.hbd_similarity_cutoff,
+    )
     if config.rl_algorithm != 'coupled_sgrpo':
         has_active_threshold = any(
             threshold is not None for threshold in config.individual_reward_thresholds.values()
@@ -256,6 +267,8 @@ def load_config(path):
             raise ValueError('group_rewrad_credit is only supported when rl_algorithm=coupled_sgrpo')
         if config.group_rewrad_credit_temperature != 1.0:
             raise ValueError('group_rewrad_credit_temperature is only supported when rl_algorithm=coupled_sgrpo')
+    if config.hbd and config.rl_algorithm != 'coupled_grpo':
+        raise ValueError('hbd is only supported when rl_algorithm=coupled_grpo')
     if not config.manifest_path:
         raise ValueError('manifest_path is required for pocket_prefix_mm de novo RL')
     if config.split not in {'train', 'val', 'test'}:
@@ -412,6 +425,15 @@ class PocketPrefixCpGRPOTrainer:
             drugclip_config=drugclip_config,
             unidock_config=unidock_config,
         )
+        self._hbd_memory = None
+        if self.config.hbd:
+            hbd_config = validate_hbd_config(
+                enabled=self.config.hbd,
+                bucket_size=self.config.hbd_bucket_size,
+                score_threshold_for_memory=self.config.hbd_score_threshold_for_memory,
+                similarity_cutoff=self.config.hbd_similarity_cutoff,
+            )
+            self._hbd_memory = build_molecule_hbd_memory(hbd_config)
         self.metrics_path = os.path.join(output_dir, 'metrics.jsonl')
         self.text_logs_path = os.path.join(output_dir, 'completions.jsonl')
         self.state_path = os.path.join(output_dir, 'trainer_state.json')
@@ -541,6 +563,17 @@ class PocketPrefixCpGRPOTrainer:
             self._last_reward_metrics[mode]['diversity_regularizer/zero_std_ratio'] = float(
                 metadata['diversity_regularizer/zero_std_ratio']
             )
+        for name in (
+            'hbd/enabled',
+            'hbd/eligible_count',
+            'hbd/penalized_count',
+            'hbd/accepted_existing_count',
+            'hbd/created_bucket_count',
+            'hbd/bucket_count_before',
+            'hbd/bucket_count_after',
+        ):
+            if name in metadata:
+                self._last_reward_metrics[mode][name] = float(metadata[name])
         bucket['reward'].append(float(metadata['reward_mean']))
         bucket['reward_std'].append(float(metadata['reward_std']))
         bucket['advantage_mean'].append(float(metadata['advantage_mean']))
@@ -615,6 +648,17 @@ class PocketPrefixCpGRPOTrainer:
             bucket['diversity_regularizer/group_reward_mean'].append(float(metadata['diversity_regularizer/group_reward_mean']))
         if 'diversity_regularizer/zero_std_ratio' in metadata:
             bucket['diversity_regularizer/zero_std_ratio'].append(float(metadata['diversity_regularizer/zero_std_ratio']))
+        for name in (
+            'hbd/enabled',
+            'hbd/eligible_count',
+            'hbd/penalized_count',
+            'hbd/accepted_existing_count',
+            'hbd/created_bucket_count',
+            'hbd/bucket_count_before',
+            'hbd/bucket_count_after',
+        ):
+            if name in metadata:
+                bucket[name].append(float(metadata[name]))
 
     def _record_loss_metrics(self, mode, step_metrics):
         if mode not in self._metrics:
@@ -777,15 +821,36 @@ class PocketPrefixCpGRPOTrainer:
         reward_records = self.reward_model.score(rollout.smiles, pocket_entries=local_pocket_entries)
         local_rewards = torch.tensor([record.reward for record in reward_records], device=self.device, dtype=torch.float32)
         global_rewards = self.accelerator.gather(local_rewards).detach()
+        hbd_metrics = {}
         global_group_rewards = None
         global_group_reward_credits = None
         global_group_mean_individual_rewards = None
-        if self.config.rl_algorithm == 'coupled_sgrpo' or self.config.diversity_regularizer_weight > 0.0:
+        if (
+            self.config.rl_algorithm == 'coupled_sgrpo'
+            or self.config.diversity_regularizer_weight > 0.0
+            or self._hbd_memory is not None
+        ):
             global_smiles = self._all_gather_objects([record.smiles for record in reward_records])
             if len(global_smiles) != self.global_sample_count:
                 raise ValueError(
                     f'Expected {self.global_sample_count} gathered smiles, got {len(global_smiles)}'
                 )
+            if self._hbd_memory is not None:
+                local_soft_for_hbd = torch.tensor(
+                    [
+                        float('-inf') if record.soft_reward is None else float(record.soft_reward)
+                        for record in reward_records
+                    ],
+                    device=self.device,
+                    dtype=torch.float32,
+                )
+                global_soft_for_hbd = self.accelerator.gather(local_soft_for_hbd).detach()
+                adjusted_rewards, hbd_metrics = self._hbd_memory.apply(
+                    global_smiles,
+                    memory_scores=global_soft_for_hbd.tolist(),
+                    reward_values=global_rewards.tolist(),
+                )
+                global_rewards = torch.tensor(adjusted_rewards, device=self.device, dtype=torch.float32)
             group_diversities = []
             group_diversity_credits = []
             for group_start in range(0, len(global_smiles), self.config.num_generations):
@@ -885,6 +950,8 @@ class PocketPrefixCpGRPOTrainer:
                     'diversity_regularizer/zero_std_ratio': float(diversity_regularizer_metrics['group_zero_std_ratio']),
                 }
             )
+        extra_advantage_metrics.update({f'hbd/{key}': float(value) for key, value in hbd_metrics.items()})
+        local_final_rewards = global_rewards[local_start:local_end].to(device=self.device)
 
         local_valid = torch.tensor([float(record.is_valid) for record in reward_records], device=self.device)
         local_alert = torch.tensor([float(record.alert_hit) for record in reward_records], device=self.device)
@@ -958,7 +1025,13 @@ class PocketPrefixCpGRPOTrainer:
             )
 
         log_rows = []
-        for spec, pocket_entry, safe_string, record in zip(local_specs, local_pocket_entries, rollout.safe_strings, reward_records):
+        for spec, pocket_entry, safe_string, record, final_reward in zip(
+            local_specs,
+            local_pocket_entries,
+            rollout.safe_strings,
+            reward_records,
+            local_final_rewards.tolist(),
+        ):
             log_rows.append(
                 {
                     'mode': mode,
@@ -969,7 +1042,7 @@ class PocketPrefixCpGRPOTrainer:
                     'pocket_residue_count': int(pocket_entry['residue_count']),
                     'safe': safe_string,
                     'smiles': record.smiles,
-                    'reward': record.reward,
+                    'reward': float(final_reward),
                     'qed': record.qed,
                     'sa': record.sa,
                     'sa_score': record.sa_score,
@@ -1238,6 +1311,17 @@ class PocketPrefixCpGRPOTrainer:
             or 'diversity_regularizer/zero_std_ratio' in last_reward_metrics
         ):
             metrics['diversity_regularizer/zero_std_ratio'] = _reward_metric('diversity_regularizer/zero_std_ratio')
+        for name in (
+            'hbd/enabled',
+            'hbd/eligible_count',
+            'hbd/penalized_count',
+            'hbd/accepted_existing_count',
+            'hbd/created_bucket_count',
+            'hbd/bucket_count_before',
+            'hbd/bucket_count_after',
+        ):
+            if bucket[name] or name in last_reward_metrics:
+                metrics[name] = _reward_metric(name)
         metrics['reward_mean'] = metrics['reward']
         if bucket['kl']:
             metrics['kl'] = _aggregate_scalar_list(bucket['kl'])
@@ -1409,6 +1493,7 @@ class PocketPrefixCpGRPOTrainer:
                     'micro_step': self._step,
                     'generation_cycle_idx': self.generation_cycle_idx,
                     'last_metrics': self._last_train_metrics,
+                    'hbd_state': None if self._hbd_memory is None else self._hbd_memory.state_dict(),
                 },
                 handle,
                 sort_keys=True,
@@ -1438,6 +1523,14 @@ class PocketPrefixCpGRPOTrainer:
         self._step = int(trainer_state['micro_step'])
         self.generation_cycle_idx = int(trainer_state['generation_cycle_idx'])
         self._last_train_metrics = trainer_state.get('last_metrics')
+        hbd_state = trainer_state.get('hbd_state')
+        if self._hbd_memory is None:
+            if hbd_state is not None:
+                raise ValueError('checkpoint contains HBD state but current config has hbd disabled')
+        else:
+            if hbd_state is None:
+                raise ValueError('checkpoint is missing HBD state while current config has hbd enabled')
+            self._hbd_memory.load_state_dict(hbd_state)
         self._buffered_inputs = None
         self._buffer_metadata = None
 
@@ -1525,6 +1618,7 @@ class PocketPrefixCpGRPOTrainer:
                     'micro_step': self._step,
                     'generation_cycle_idx': self.generation_cycle_idx,
                     'last_metrics': self._last_train_metrics,
+                    'hbd_state': None if self._hbd_memory is None else self._hbd_memory.state_dict(),
                 },
                 handle,
                 sort_keys=True,
