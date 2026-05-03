@@ -180,7 +180,7 @@ TODO
 Training config:
 
 ```text
-configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd.yaml
+configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd_st09_sc04.yaml
 ```
 
 Launch Script:
@@ -198,14 +198,15 @@ Expected GPU Topology:
 Invocation:
 
 ```text
-CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd.yaml sbatch scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
+CONFIG_PATH=configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd_st09_sc04.yaml sbatch --exclude=server13 scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
 ```
 
 Notes:
 
-- This line matches `GRPO 2000-Step Variant` above except `hbd = true` and `save_total_limit = 0`.
-- The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
-- Submitted training job: `55719`
+- The original default HBD config `configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd.yaml` is superseded for current tracking because its bucket growth was too high.
+- The active tuned rerun keeps `hbd = true` and `save_total_limit = 0`, and additionally sets `hbd_score_threshold_for_memory = 0.9` and `hbd_similarity_cutoff = 0.4`.
+- The comparison checkpoint is not locked yet; this line tracks the active tuned HBD run until a verified checkpoint is selected.
+- Active tuned rerun submitted with `--exclude=server13`: `56215`
 
 ### GRPO + `qed = 0.8, sa_score = 0.2`
 
@@ -2140,7 +2141,7 @@ TODO
 Training config:
 
 ```text
-configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd.yaml
+configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd_st07_sc04.yaml
 ```
 
 Launch Script:
@@ -2158,15 +2159,17 @@ Expected GPU Topology:
 Invocation:
 
 ```text
-CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd.yaml sbatch scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
+CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd_st07_sc04.yaml sbatch --exclude=server13 scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_ng192_bs384_unidock_train.sbatch
 ```
 
 Notes:
 
-- This line matches `GRPO + UniDock` above except `hbd = true` and `save_total_limit = 0`.
-- The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
-- Initial submission `55720` failed on `server13` before GPU initialization completed (`Can't initialize NVML` / `CUDA unknown error`), so that run is excluded as a node-level failure.
-- Active resubmission excluding `server13`: `55752`
+- The original default HBD config `configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd.yaml` is superseded for current tracking because its bucket growth was too high.
+- The active tuned rerun keeps `hbd = true` and `save_total_limit = 0`, and additionally sets `hbd_score_threshold_for_memory = 0.7` and `hbd_similarity_cutoff = 0.4`.
+- The comparison checkpoint is not locked yet; this line tracks the active tuned HBD run until a verified checkpoint is selected.
+- Active tuned rerun submitted with `--exclude=server13`: `56216`
+- Additional stricter monitoring variant: `configs/cpgrpo_denovo_pocket_prefix_ng192_bs384_lr5e-5_beta5e-3_ni1_q03_sa02_unidock05_hbd_st075_sc04.yaml`
+- Additional stricter monitoring variant submitted with `--exclude=server13`: `56311`
 
 ### GRPO + UniDock 2000-Step Variant
 
