@@ -6,13 +6,13 @@
 #SBATCH --mem=128G
 #SBATCH -t 24:00:00
 #SBATCH -J p2dyncollect
-#SBATCH -o /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_eval/logs/progen2_dynamics_collect_%A_%a.out
-#SBATCH -e /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_eval/logs/progen2_dynamics_collect_%A_%a.err
+#SBATCH -o /public/home/xinwuye/progen2_dynamics_collect_%A_%a.out
+#SBATCH -e /public/home/xinwuye/progen2_dynamics_collect_%A_%a.err
 
 set -euo pipefail
 
 REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
-CONFIG_PATH=${CONFIG_PATH:-configs/progen2_dynamics_20260504.yaml}
+CONFIG_PATH=${CONFIG_PATH:-${REPO_DIR}/configs/progen2_dynamics_20260504.yaml}
 PYTHON_OVERLAY_DIR=${PYTHON_OVERLAY_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/python_overlay}
 PROTBERT_DIR=${PROTBERT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
@@ -23,6 +23,9 @@ source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 conda activate genmol
 export PATH=/opt/gridview/slurm/bin:$PATH
 export TOKENIZERS_PARALLELISM=false
+unset PYTHONHOME
+unset PYTHONPATH
+export PYTHONNOUSERSITE=1
 
 mkdir -p "${LOG_DIR}"
 
@@ -65,7 +68,16 @@ if ! compgen -G "${PYTHON_OVERLAY_DIR}/attn_core_inplace_cuda*.so" >/dev/null; t
   exit 1
 fi
 
-cd "${REPO_DIR}"
+cd /public/home/xinwuye
+
+python - <<'PY'
+import esm
+import numpy
+import torch
+import yaml
+
+print("python-preflight-ok")
+PY
 
 MODEL_ID=$(python - <<'PY' "${CONFIG_PATH}" "${TASK_INDEX}"
 import sys
@@ -82,6 +94,6 @@ print(models[task_index]["model_id"])
 PY
 )
 
-python vis-code/progen2_dynamics_collect.py \
+python "${REPO_DIR}/vis-code/progen2_dynamics_collect.py" \
   --config "${CONFIG_PATH}" \
   --model-id "${MODEL_ID}"
