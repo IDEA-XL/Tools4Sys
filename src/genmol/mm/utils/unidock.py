@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import multiprocessing as mp
 import os
 import re
 import shutil
@@ -12,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Empty as QueueEmpty
 
 import numpy as np
 import torch
@@ -69,6 +71,7 @@ class UniDockConfig:
     num_cpu: int = 0
     max_gpu_memory_mb: int = 0
     timeout_sec: int = 1800
+    prepare_timeout_sec: int = 300
     box_size: tuple[float, float, float] = DEFAULT_FIXED_BOX_SIZE
     score_cache_size: int = 4096
 
@@ -209,12 +212,63 @@ def _prepare_ligand_sdf(smiles: str, center: np.ndarray, output_path: Path) -> N
     _validate_written_ligand_sdf(output_path, smiles=smiles)
 
 
-def _prepare_ligand_sdf_task(smiles: str, center: np.ndarray, output_path: str) -> tuple[bool, str | None]:
+def _prepare_ligand_sdf_process_main(
+    smiles: str,
+    center: np.ndarray,
+    output_path: str,
+    result_queue,
+) -> None:
     try:
         _prepare_ligand_sdf(smiles, center, Path(output_path))
     except Exception as exc:  # noqa: BLE001
-        return False, f'{type(exc).__name__}: {exc}'
-    return True, None
+        result_queue.put((False, f'{type(exc).__name__}: {exc}'))
+        return
+    result_queue.put((True, None))
+
+
+def _prepare_ligand_sdf_task(
+    smiles: str,
+    center: np.ndarray,
+    output_path: str,
+    timeout_sec: int,
+) -> tuple[bool, str | None]:
+    normalized_timeout_sec = _ensure_positive_int(timeout_sec, 'unidock prepare_timeout_sec')
+    context = mp.get_context('spawn')
+    result_queue = context.Queue(maxsize=1)
+    process = context.Process(
+        target=_prepare_ligand_sdf_process_main,
+        args=(smiles, center, output_path, result_queue),
+        daemon=True,
+    )
+    process.start()
+    process.join(timeout=normalized_timeout_sec)
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        result_queue.close()
+        result_queue.join_thread()
+        return False, f'TimeoutError: ligand prepare exceeded {normalized_timeout_sec} seconds'
+
+    success = False
+    failure_detail = None
+    try:
+        success, failure_detail = result_queue.get(timeout=1.0)
+    except QueueEmpty:
+        if process.exitcode == 0:
+            failure_detail = 'RuntimeError: ligand prepare worker exited without returning a result'
+        else:
+            failure_detail = f'RuntimeError: ligand prepare worker exited with code {process.exitcode}'
+    finally:
+        result_queue.close()
+        result_queue.join_thread()
+
+    if process.exitcode not in (0, None) and success:
+        return False, f'RuntimeError: ligand prepare worker exited with code {process.exitcode}'
+    return bool(success), failure_detail
+
+
+def _is_prepare_timeout_failure(failure_detail: str | None) -> bool:
+    return isinstance(failure_detail, str) and failure_detail.startswith('TimeoutError:')
 
 
 def _parse_unidock_energy(output_path: Path) -> float:
@@ -407,6 +461,10 @@ class UniDockScorer:
         self.batch_size = _ensure_positive_int(config.batch_size, 'unidock batch_size')
         self.num_modes = _ensure_positive_int(config.num_modes, 'unidock num_modes')
         self.timeout_sec = _ensure_positive_int(config.timeout_sec, 'unidock timeout_sec')
+        self.prepare_timeout_sec = _ensure_positive_int(
+            config.prepare_timeout_sec,
+            'unidock prepare_timeout_sec',
+        )
         if int(config.score_cache_size) <= 0:
             raise ValueError(f'unidock score_cache_size must be positive, got {config.score_cache_size}')
         self.max_gpu_memory_mb = int(config.max_gpu_memory_mb)
@@ -454,6 +512,7 @@ class UniDockScorer:
             'unidock_prepare_worker_count': 0,
             'unidock_max_gpu_memory_mb': 0,
             'unidock_fail_prepare_count': 0,
+            'unidock_fail_prepare_timeout_count': 0,
             'unidock_fail_output_missing_count': 0,
             'unidock_fail_parse_count': 0,
             'unidock_fail_runtime_count': 0,
@@ -677,10 +736,16 @@ class UniDockScorer:
             if self._prepare_executor is None or len(smiles_chunk) == 1:
                 for ligand_idx, smiles in enumerate(smiles_chunk):
                     ligand_path = ligand_dir / f'lig_{ligand_idx:04d}_{_stable_key(smiles)}.sdf'
-                    try:
-                        _prepare_ligand_sdf(smiles, pocket_center, ligand_path)
-                    except Exception:
+                    success, failure_detail = _prepare_ligand_sdf_task(
+                        smiles,
+                        pocket_center.copy(),
+                        str(ligand_path),
+                        self.prepare_timeout_sec,
+                    )
+                    if not success:
                         self.last_score_stats['unidock_fail_prepare_count'] += 1
+                        if _is_prepare_timeout_failure(failure_detail):
+                            self.last_score_stats['unidock_fail_prepare_timeout_count'] += 1
                         ligand_input_paths.append(ligand_path)
                         continue
                     ligand_input_paths.append(ligand_path)
@@ -695,13 +760,16 @@ class UniDockScorer:
                         smiles,
                         pocket_center.copy(),
                         str(ligand_path),
+                        self.prepare_timeout_sec,
                     )
                     future_to_index[future] = ligand_idx
                 for future in as_completed(future_to_index):
                     ligand_idx = future_to_index[future]
-                    success, _failure_detail = future.result()
+                    success, failure_detail = future.result()
                     if not success:
                         self.last_score_stats['unidock_fail_prepare_count'] += 1
+                        if _is_prepare_timeout_failure(failure_detail):
+                            self.last_score_stats['unidock_fail_prepare_timeout_count'] += 1
                         continue
                     prepared_indices.append(ligand_idx)
                 prepared_indices.sort()

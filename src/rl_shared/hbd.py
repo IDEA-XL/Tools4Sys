@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -44,6 +45,12 @@ class _Bucket:
     index_value: str
     index_feature: object
     count: int
+
+
+@dataclass(frozen=True)
+class _MoleculeFeature:
+    fingerprint: object
+    bit_count: int
 
 
 @dataclass(frozen=True)
@@ -306,6 +313,7 @@ def build_molecule_hbd_memory(config):
         config,
         featurize=_morgan_fingerprint_from_smiles,
         similarity=_tanimoto_similarity,
+        batch_matcher=_build_molecule_batch_matcher(),
     )
 
 
@@ -335,13 +343,31 @@ def _morgan_fingerprint_from_smiles(smiles):
     mol = MolFromSmiles(normalized, sanitize=True)
     if mol is None:
         raise ValueError(f'Failed to parse HBD SMILES: {normalized!r}')
-    return _get_morgan_generator().GetFingerprint(mol)
+    fingerprint = _get_morgan_generator().GetFingerprint(mol)
+    return _MoleculeFeature(
+        fingerprint=fingerprint,
+        bit_count=int(fingerprint.GetNumOnBits()),
+    )
 
 
 def _tanimoto_similarity(left_fingerprint, right_fingerprint):
     from rdkit import DataStructs
 
-    return float(DataStructs.TanimotoSimilarity(left_fingerprint, right_fingerprint))
+    return float(DataStructs.TanimotoSimilarity(left_fingerprint.fingerprint, right_fingerprint.fingerprint))
+
+
+def _build_molecule_batch_matcher():
+    worker_count = _get_hbd_cpu_worker_count()
+
+    def _match(features, bucket_features, similarity_cutoff):
+        return _find_best_molecule_bucket_matches(
+            features,
+            bucket_features,
+            similarity_cutoff=similarity_cutoff,
+            worker_count=worker_count,
+        )
+
+    return _match
 
 
 def _normalize_sequence_feature(sequence):
@@ -364,6 +390,18 @@ def _build_sequence_batch_matcher():
         )
 
     return _match
+
+
+@lru_cache(maxsize=1)
+def _get_numpy_backend():
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise ImportError(
+            'Molecule HBD requires numpy for bulk similarity matching. '
+            'Install the project environment from genmol/env/requirements*.'
+        ) from exc
+    return np
 
 
 @lru_cache(maxsize=1)
@@ -399,6 +437,118 @@ def _get_hbd_cpu_worker_count():
     if cpu_count is None or cpu_count <= 0:
         raise RuntimeError('failed to determine available CPU worker count for sequence HBD')
     return int(cpu_count)
+
+
+def _find_best_molecule_bucket_matches(features, bucket_features, *, similarity_cutoff, worker_count):
+    if not features:
+        return []
+    if not bucket_features:
+        return [(None, float('-inf')) for _ in features]
+    if worker_count <= 0:
+        raise ValueError(f'molecule HBD worker_count must be positive, got {worker_count}')
+
+    bucket_bit_counts = [int(feature.bit_count) for feature in bucket_features]
+    grouped_queries: dict[int, list[tuple[int, _MoleculeFeature]]] = {}
+    for feature_idx, feature in enumerate(features):
+        grouped_queries.setdefault(int(feature.bit_count), []).append((feature_idx, feature))
+
+    candidate_cache: dict[int, tuple[tuple[int, ...], tuple[object, ...]]] = {}
+    work_items: list[tuple[list[tuple[int, _MoleculeFeature]], tuple[int, ...], tuple[object, ...]]] = []
+    for query_bit_count, query_group in grouped_queries.items():
+        candidate_indices = tuple(
+            bucket_idx
+            for bucket_idx, bucket_bit_count in enumerate(bucket_bit_counts)
+            if _molecule_bitcount_upper_bound(query_bit_count, bucket_bit_count) >= similarity_cutoff
+        )
+        if not candidate_indices:
+            continue
+        candidate_fingerprints = candidate_cache.get(query_bit_count)
+        if candidate_fingerprints is None:
+            candidate_fingerprints = (
+                candidate_indices,
+                tuple(bucket_features[bucket_idx].fingerprint for bucket_idx in candidate_indices),
+            )
+            candidate_cache[query_bit_count] = candidate_fingerprints
+        max_group_workers = min(worker_count, len(query_group))
+        chunk_size = max(1, math.ceil(len(query_group) / max_group_workers))
+        for start in range(0, len(query_group), chunk_size):
+            work_items.append(
+                (
+                    query_group[start:start + chunk_size],
+                    candidate_fingerprints[0],
+                    candidate_fingerprints[1],
+                )
+            )
+
+    match_results: list[tuple[int | None, float]] = [(None, float('-inf')) for _ in features]
+    if not work_items:
+        return match_results
+    if worker_count == 1 or len(work_items) == 1:
+        for query_chunk, candidate_indices, candidate_fingerprints in work_items:
+            for feature_idx, match_result in _match_molecule_query_chunk(
+                query_chunk,
+                candidate_indices,
+                candidate_fingerprints,
+                similarity_cutoff=similarity_cutoff,
+            ):
+                match_results[feature_idx] = match_result
+        return match_results
+
+    with ThreadPoolExecutor(
+        max_workers=min(worker_count, len(work_items)),
+        thread_name_prefix='hbd_molecule_match',
+    ) as executor:
+        futures = [
+            executor.submit(
+                _match_molecule_query_chunk,
+                query_chunk,
+                candidate_indices,
+                candidate_fingerprints,
+                similarity_cutoff=similarity_cutoff,
+            )
+            for query_chunk, candidate_indices, candidate_fingerprints in work_items
+        ]
+        for future in futures:
+            for feature_idx, match_result in future.result():
+                match_results[feature_idx] = match_result
+    return match_results
+
+
+def _match_molecule_query_chunk(query_chunk, candidate_indices, candidate_fingerprints, *, similarity_cutoff):
+    from rdkit import DataStructs
+
+    np = _get_numpy_backend()
+    results = []
+    for feature_idx, feature in query_chunk:
+        similarities = np.asarray(
+            DataStructs.BulkTanimotoSimilarity(feature.fingerprint, candidate_fingerprints),
+            dtype=np.float32,
+        )
+        if similarities.size == 0:
+            results.append((feature_idx, (None, float('-inf'))))
+            continue
+        best_column = int(similarities.argmax())
+        best_similarity = float(similarities[best_column])
+        if not 0.0 <= best_similarity <= 1.0:
+            raise ValueError(f'HBD similarity must be in [0, 1], got {best_similarity}')
+        if best_similarity >= similarity_cutoff:
+            results.append((feature_idx, (candidate_indices[best_column], best_similarity)))
+            continue
+        results.append((feature_idx, (None, float('-inf'))))
+    return results
+
+
+def _molecule_bitcount_upper_bound(left_bit_count, right_bit_count):
+    left = int(left_bit_count)
+    right = int(right_bit_count)
+    if left < 0 or right < 0:
+        raise ValueError(
+            f'Molecule HBD bit counts must be non-negative, got left={left} right={right}'
+        )
+    denominator = max(left, right)
+    if denominator == 0:
+        return 1.0
+    return float(min(left, right)) / float(denominator)
 
 
 def _find_best_sequence_bucket_matches(features, bucket_features, *, similarity_cutoff, worker_count):

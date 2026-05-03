@@ -255,6 +255,13 @@ def broadcast_specs(group_specs, num_generations, accelerator):
     return deserialize_specs(payload[0])
 
 
+def broadcast_object(payload, accelerator):
+    wrapped = [payload if accelerator.is_main_process else None]
+    if dist.is_available() and dist.is_initialized():
+        dist.broadcast_object_list(wrapped, src=0)
+    return wrapped[0]
+
+
 def write_jsonl(path, payload):
     with open(path, 'a') as handle:
         handle.write(json.dumps(payload, sort_keys=True) + '\n')
@@ -645,6 +652,45 @@ class GenMolCpGRPOTrainer:
             merged.extend(shard)
         return merged
 
+    def _apply_hbd(self, *, global_items, global_memory_scores, global_reward_values):
+        if self._hbd_memory is None:
+            raise RuntimeError('_apply_hbd called while HBD is disabled')
+        if global_memory_scores.dim() != 1:
+            raise ValueError(
+                f'global_memory_scores must be 1D for HBD, got shape={tuple(global_memory_scores.shape)}'
+            )
+        if global_reward_values.dim() != 1:
+            raise ValueError(
+                f'global_reward_values must be 1D for HBD, got shape={tuple(global_reward_values.shape)}'
+            )
+        if len(global_items) != global_memory_scores.numel():
+            raise ValueError(
+                'global item/memory-score length mismatch for HBD: '
+                f'{len(global_items)} vs {global_memory_scores.numel()}'
+            )
+        if len(global_items) != global_reward_values.numel():
+            raise ValueError(
+                'global item/reward length mismatch for HBD: '
+                f'{len(global_items)} vs {global_reward_values.numel()}'
+            )
+
+        hbd_update_payload = None
+        if self.accelerator.is_main_process:
+            planned_update = self._hbd_memory.plan_update(
+                global_items,
+                memory_scores=global_memory_scores.tolist(),
+                reward_values=global_reward_values.tolist(),
+            )
+            hbd_update_payload = planned_update.to_payload()
+        hbd_update_payload = broadcast_object(hbd_update_payload, self.accelerator)
+        self._hbd_memory.apply_update(hbd_update_payload)
+        adjusted_rewards = torch.tensor(
+            hbd_update_payload['final_rewards'],
+            device=self.device,
+            dtype=torch.float32,
+        )
+        return adjusted_rewards, hbd_update_payload['metrics']
+
     def _generate_and_score_completions(self, mode):
         cycle_seed = self.config.seed + self.generation_cycle_idx * 10000
         if self.accelerator.is_main_process:
@@ -708,12 +754,11 @@ class GenMolCpGRPOTrainer:
                     dtype=torch.float32,
                 )
                 global_soft_for_hbd = self.accelerator.gather(local_soft_for_hbd).detach()
-                adjusted_rewards, hbd_metrics = self._hbd_memory.apply(
-                    global_smiles,
-                    memory_scores=global_soft_for_hbd.tolist(),
-                    reward_values=global_rewards.tolist(),
+                global_rewards, hbd_metrics = self._apply_hbd(
+                    global_items=global_smiles,
+                    global_memory_scores=global_soft_for_hbd,
+                    global_reward_values=global_rewards,
                 )
-                global_rewards = torch.tensor(adjusted_rewards, device=self.device, dtype=torch.float32)
             group_diversities = []
             group_diversity_credits = []
             for group_start in range(0, len(global_smiles), self.config.num_generations):
