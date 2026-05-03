@@ -3282,15 +3282,15 @@ Key observations:
 
 Plots:
 
-![ProGen2 Naturalness vs Diversity](progen2/progen2_temperature_diversity_vs_naturalness_20260502.png)
+![ProGen2 Naturalness vs Diversity](progen2/progen2_temperature_diversity_vs_naturalness_20260503.png)
 
-![ProGen2 Foldability vs Diversity](progen2/progen2_temperature_diversity_vs_foldability_20260502.png)
+![ProGen2 Foldability vs Diversity](progen2/progen2_temperature_diversity_vs_foldability_20260503.png)
 
-![ProGen2 Stability vs Diversity](progen2/progen2_temperature_diversity_vs_stability_20260502.png)
+![ProGen2 Stability vs Diversity](progen2/progen2_temperature_diversity_vs_stability_20260503.png)
 
-![ProGen2 Developability vs Diversity](progen2/progen2_temperature_diversity_vs_developability_20260502.png)
+![ProGen2 Developability vs Diversity](progen2/progen2_temperature_diversity_vs_developability_20260503.png)
 
-![ProGen2 Soft Reward vs Diversity](progen2/progen2_temperature_diversity_vs_soft_reward_20260502.png)
+![ProGen2 Soft Reward vs Diversity](progen2/progen2_temperature_diversity_vs_soft_reward_20260503.png)
 
 ## Update Rule
 
