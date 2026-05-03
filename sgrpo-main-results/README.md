@@ -2746,12 +2746,12 @@ report_to = [wandb]
 
 ### GRPO + HBD
 
-Status: `Partial`
+Status: `Verified`
 
 Checkpoint:
 
 ```text
-TODO
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873/checkpoint-000100
 ```
 
 Training config:
@@ -2781,8 +2781,11 @@ CONFIG_PATH=configs/progen2_grpo_ng96_bs2_len256_rbs16_hbd.yaml sbatch scripts/s
 Notes:
 
 - This line matches `GRPO` above except `hbd = true`.
-- The comparison checkpoint is not locked yet; this line tracks the submitted HBD run until a verified checkpoint is selected.
-- Submitted training job: `55721`
+- Initial training job `55721` did not produce a usable comparison checkpoint.
+- Verified comparison checkpoint: `checkpoint-000100`
+- Run directory: `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873`
+- Completion evidence: the rerun directory contains `checkpoint-000100` and later checkpoints through `checkpoint-000200`; `metrics.jsonl` reaches `step = 200`.
+- The locked main-result comparison uses the user-requested `checkpoint-000100`.
 
 ### SGRPO
 
@@ -3138,13 +3141,25 @@ group_rewrad_credit_temperature = 1.0
 Point-task manifest:
 
 ```text
-sgrpo-main-results/progen2/progen2_temperature_sweep_tasks_20260502.tsv
+sgrpo-main-results/progen2/progen2_temperature_sweep_tasks_20260503.tsv
 ```
 
 Pipeline config:
 
 ```text
-configs/progen2_temperature_sweep_pipeline_20260502.yaml
+configs/progen2_temperature_sweep_pipeline_20260503.yaml
+```
+
+Incremental HBD-only task manifest:
+
+```text
+sgrpo-main-results/progen2/progen2_temperature_sweep_tasks_hbd_20260503.tsv
+```
+
+Incremental HBD-only pipeline config:
+
+```text
+configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml
 ```
 
 Generation launch script:
@@ -3156,21 +3171,21 @@ scripts/slurm/run_progen2_sweep_gpu.sbatch
 Generation invocation:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=generate-task sbatch --array=0-107 scripts/slurm/run_progen2_sweep_gpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml MODE=generate-task sbatch --array=108-119 scripts/slurm/run_progen2_sweep_gpu.sbatch
 ```
 
 Packed GPU reward invocations:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=score-packed-gpu-reward REWARD_NAME=naturalness sbatch scripts/slurm/run_progen2_sweep_gpu.sbatch
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=score-packed-gpu-reward REWARD_NAME=stability sbatch scripts/slurm/run_progen2_sweep_gpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml MODE=score-packed-gpu-reward REWARD_NAME=naturalness sbatch scripts/slurm/run_progen2_sweep_gpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml MODE=score-packed-gpu-reward REWARD_NAME=stability sbatch scripts/slurm/run_progen2_sweep_gpu.sbatch
 ```
 
 Per-point reward invocations:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml MODE=score-point-reward-task REWARD_NAME=foldability sbatch --array=0-107 scripts/slurm/run_progen2_sweep_gpu.sbatch
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch --array=0-107 scripts/slurm/run_progen2_sweep_developability_cpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml MODE=score-point-reward-task REWARD_NAME=foldability sbatch --array=108-119 scripts/slurm/run_progen2_sweep_gpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml sbatch --array=108-119 scripts/slurm/run_progen2_sweep_developability_cpu.sbatch
 ```
 
 Point-diversity launch script:
@@ -3182,7 +3197,7 @@ scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
 Point-diversity invocation:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch --array=0-107 scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_hbd_incremental_20260503.yaml sbatch --array=108-119 scripts/slurm/run_progen2_sweep_diversity_cpu.sbatch
 ```
 
 Aggregation launch script:
@@ -3194,7 +3209,7 @@ scripts/slurm/run_progen2_sweep_aggregate_cpu.sbatch
 Aggregation invocation:
 
 ```text
-CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260502.yaml sbatch scripts/slurm/run_progen2_sweep_aggregate_cpu.sbatch
+CONFIG_PATH=configs/progen2_temperature_sweep_pipeline_20260503.yaml sbatch scripts/slurm/run_progen2_sweep_aggregate_cpu.sbatch
 ```
 
 Current sweep policy for this pipeline:
@@ -3214,36 +3229,40 @@ developability.batch_size = 24
 
 - Unverified premise carried from the chosen sweep policy: `stability.batch_size = 8192` was adopted directly for throughput and not independently re-probed in this pass. It completed in the current sweep run without needing fallback.
 
-Completed sweep jobs:
+Completed incremental HBD-extension sweep jobs:
 
 ```text
-55162  generation array for task ids `96-107` (`sgrpo_ng8_bs3_rewardsum_loo_step100`)
-55163  packed naturalness scoring over the full `0-107` manifest
-55164  packed stability scoring over the full `0-107` manifest
-55165  foldability array for task ids `96-107`
-55166  developability array for task ids `96-107`
-55167  point-diversity array for task ids `96-107`
-55168  final aggregate
+56343  generation array for task ids `108-119` (`grpo_hbd_step100`)
+56344  packed naturalness scoring for the HBD extension
+56345  packed stability scoring for the HBD extension
+56346  foldability array for task ids `108-119`
+56347  developability array for task ids `108-119`
+56348  point-diversity array for task ids `108-119`
+56349  packed-row merge (`20260502` base + HBD extension -> `20260503`)
+56350  final aggregate
 ```
+
+- The prior `20260502` nine-model sweep remains the base snapshot for task ids `0-107`.
+- `20260503` extends that snapshot by adding `GRPO HBD 100` as task ids `108-119` and then re-aggregating the full ten-model comparison.
 
 Aggregated result files:
 
 ```text
-sgrpo-main-results/progen2/progen2_temperature_sweep_20260502.md
-sgrpo-main-results/progen2/progen2_temperature_sweep_20260502.json
-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/progen2_temperature_sweep_20260502.rows.jsonl
+sgrpo-main-results/progen2/progen2_temperature_sweep_20260503.md
+sgrpo-main-results/progen2/progen2_temperature_sweep_20260503.json
+/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_20260430/aggregate_20260503/progen2_temperature_sweep_20260503.rows.jsonl
 ```
 
-- `progen2_temperature_sweep_20260502.rows.jsonl` is retained on `pudong` for sample-level replotting and audit use; it is not synced into the local repo by default.
+- `progen2_temperature_sweep_20260503.rows.jsonl` is retained on `pudong` for sample-level replotting and audit use; it is not synced into the local repo by default.
 
 Plot files:
 
 ```text
-sgrpo-main-results/progen2/progen2_temperature_diversity_vs_naturalness_20260502.png
-sgrpo-main-results/progen2/progen2_temperature_diversity_vs_foldability_20260502.png
-sgrpo-main-results/progen2/progen2_temperature_diversity_vs_stability_20260502.png
-sgrpo-main-results/progen2/progen2_temperature_diversity_vs_developability_20260502.png
-sgrpo-main-results/progen2/progen2_temperature_diversity_vs_soft_reward_20260502.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_naturalness_20260503.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_foldability_20260503.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_stability_20260503.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_developability_20260503.png
+sgrpo-main-results/progen2/progen2_temperature_diversity_vs_soft_reward_20260503.png
 ```
 
 Metric definition notes:
@@ -3255,7 +3274,8 @@ Metric definition notes:
 
 Key observations:
 
-- `SGRPO RewardSum LOO 100` reaches the strongest peak `soft_reward_mean` in the full 9-model comparison at `temperature=0.4` (`0.8237`) while retaining moderate diversity (`0.3917`).
+- `SGRPO RewardSum LOO 100` remains the strongest peak `soft_reward_mean` in the full 10-model comparison at `temperature=0.4` (`0.8237`) while retaining moderate diversity (`0.3917`).
+- `GRPO HBD 100` raises the best-case `soft_reward_mean` over plain `GRPO 100` (`0.7387` at `temperature=0.2` vs `0.7289` at `temperature=0.5`), but it does so with near-collapsed diversity (`0.0132` vs `0.3665`).
 - `SGRPO gw0.8 RewardSum LOO 100` gives the strongest high-diversity frontier in this sweep extension: diversity reaches `0.8498` at `temperature=1.2` with `soft_reward_mean=0.4764`.
 - Among the altered `num_generations / per_device_prompt_batch_size` variants, `SGRPO RewardSum LOO ng4 bs6 100` remains the strongest overall frontier: it peaks at `soft_reward_mean=0.7969` (`temperature=0.6`) and still reaches diversity `0.8306` at `temperature=1.2`.
 - The newly completed `SGRPO RewardSum LOO ng8 bs3 100` is the sharpest low-temperature variant: it starts at `soft_reward_mean=0.7923`, `naturalness=0.9997`, `foldability=0.8171`, and `developability=0.7760` at `temperature=0.1`, but its diversity frontier tops out lower than `ng4 bs6` (`0.7372` at `temperature=1.1`).
