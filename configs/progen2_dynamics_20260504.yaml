@@ -1,0 +1,173 @@
+output_dir: /public/home/xinwuye/ai4s-tool-joint-train/genmol/figs/progen2-dynamics-20260504
+figure_output_dir: /public/home/xinwuye/ai4s-tool-joint-train/genmol/figs
+official_code_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official
+tokenizer_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/tokenizer.json
+prompt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/prompts_unconditional.txt
+
+seed: 42
+bf16: false
+device: cuda
+num_samples: 512
+generation_prompt_batch_size: 8
+num_return_sequences: 12
+max_new_tokens: 256
+top_p: 0.95
+temperature: 0.8
+reward_calibration_size: 256
+reward_calibration_prompt_batch_size: 8
+embedding_model_name: esm2_t33_650M_UR50D
+embedding_batch_size: 32
+
+reduction_pca_components: 50
+reduction_tsne_perplexity: 40
+reduction_tsne_n_iter: 2000
+reduction_umap_n_neighbors: 25
+reduction_umap_min_dist: 0.25
+
+rewards:
+  naturalness:
+    model_name: esm2_t33_650M_UR50D
+    device: cuda
+    batch_size: 256
+  foldability:
+    device: cuda
+    batch_size: 64
+  stability:
+    model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official
+    base_model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd
+    device: cuda
+    batch_size: 256
+  developability:
+    model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official
+    device: cuda
+    batch_size: 24
+
+models:
+  - model_id: grpo__original
+    row_id: grpo
+    row_title: GRPO
+    slot_index: 0
+    slot_label: Original
+    display_name: Original
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/checkpoints/progen2-small
+  - model_id: grpo__ckpt020
+    row_id: grpo
+    row_title: GRPO
+    slot_index: 1
+    slot_label: Ckpt 20
+    display_name: GRPO 20
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000020
+  - model_id: grpo__ckpt040
+    row_id: grpo
+    row_title: GRPO
+    slot_index: 2
+    slot_label: Ckpt 40
+    display_name: GRPO 40
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000040
+  - model_id: grpo__ckpt060
+    row_id: grpo
+    row_title: GRPO
+    slot_index: 3
+    slot_label: Ckpt 60
+    display_name: GRPO 60
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000060
+  - model_id: grpo__ckpt080
+    row_id: grpo
+    row_title: GRPO
+    slot_index: 4
+    slot_label: Ckpt 80
+    display_name: GRPO 80
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000080
+  - model_id: grpo__ckpt100
+    row_id: grpo
+    row_title: GRPO
+    slot_index: 5
+    slot_label: Ckpt 100
+    display_name: GRPO 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_slurm52245/checkpoint-000100
+
+  - model_id: grpo_hbd__original
+    row_id: grpo_hbd
+    row_title: Memory-Assisted GRPO
+    slot_index: 0
+    slot_label: Original
+    display_name: Original
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/checkpoints/progen2-small
+  - model_id: grpo_hbd__ckpt020
+    row_id: grpo_hbd
+    row_title: Memory-Assisted GRPO
+    slot_index: 1
+    slot_label: Ckpt 20
+    display_name: GRPO HBD 20
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873/checkpoint-000020
+  - model_id: grpo_hbd__ckpt040
+    row_id: grpo_hbd
+    row_title: Memory-Assisted GRPO
+    slot_index: 2
+    slot_label: Ckpt 40
+    display_name: GRPO HBD 40
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873/checkpoint-000040
+  - model_id: grpo_hbd__ckpt060
+    row_id: grpo_hbd
+    row_title: Memory-Assisted GRPO
+    slot_index: 3
+    slot_label: Ckpt 60
+    display_name: GRPO HBD 60
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873/checkpoint-000060
+  - model_id: grpo_hbd__ckpt080
+    row_id: grpo_hbd
+    row_title: Memory-Assisted GRPO
+    slot_index: 4
+    slot_label: Ckpt 80
+    display_name: GRPO HBD 80
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873/checkpoint-000080
+  - model_id: grpo_hbd__ckpt100
+    row_id: grpo_hbd
+    row_title: Memory-Assisted GRPO
+    slot_index: 5
+    slot_label: Ckpt 100
+    display_name: GRPO HBD 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_grpo_ng96_bs2_len256_rbs16_hbd_slurm55873/checkpoint-000100
+
+  - model_id: sgrpo_gw08_rewardsum_loo__original
+    row_id: sgrpo_gw08_rewardsum_loo
+    row_title: SGRPO
+    slot_index: 0
+    slot_label: Original
+    display_name: Original
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/checkpoints/progen2-small
+  - model_id: sgrpo_gw08_rewardsum_loo__ckpt020
+    row_id: sgrpo_gw08_rewardsum_loo
+    row_title: SGRPO
+    slot_index: 1
+    slot_label: Ckpt 20
+    display_name: SGRPO gw0.8 RewardSum LOO 20
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000020
+  - model_id: sgrpo_gw08_rewardsum_loo__ckpt040
+    row_id: sgrpo_gw08_rewardsum_loo
+    row_title: SGRPO
+    slot_index: 2
+    slot_label: Ckpt 40
+    display_name: SGRPO gw0.8 RewardSum LOO 40
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000040
+  - model_id: sgrpo_gw08_rewardsum_loo__ckpt060
+    row_id: sgrpo_gw08_rewardsum_loo
+    row_title: SGRPO
+    slot_index: 3
+    slot_label: Ckpt 60
+    display_name: SGRPO gw0.8 RewardSum LOO 60
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000060
+  - model_id: sgrpo_gw08_rewardsum_loo__ckpt080
+    row_id: sgrpo_gw08_rewardsum_loo
+    row_title: SGRPO
+    slot_index: 4
+    slot_label: Ckpt 80
+    display_name: SGRPO gw0.8 RewardSum LOO 80
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000080
+  - model_id: sgrpo_gw08_rewardsum_loo__ckpt100
+    row_id: sgrpo_gw08_rewardsum_loo
+    row_title: SGRPO
+    slot_index: 5
+    slot_label: Ckpt 100
+    display_name: SGRPO gw0.8 RewardSum LOO 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000100
