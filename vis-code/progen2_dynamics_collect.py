@@ -26,6 +26,10 @@ from progen2.rewards.common import iter_chunks
 from progen2_dynamics_common import DynamicsModelSpec, load_dynamics_config, model_output_dir
 
 
+def _log(message: str) -> None:
+    print(f"[progen2-dynamics] {message}", flush=True)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
@@ -249,7 +253,9 @@ def main() -> None:
     model = _load_model_spec(config, args.model_id)
     device = resolve_device(config.device)
     prompts = load_prompt_texts(config.prompt_path)
+    _log(f"start model_id={model.model_id} checkpoint_dir={model.checkpoint_dir}")
 
+    _log("loading policy")
     policy = ProGen2Policy(
         OfficialProGen2CausalLM(
             official_code_dir=config.official_code_dir,
@@ -262,21 +268,27 @@ def main() -> None:
         ),
         trainable=False,
     )
+    _log("loading reward model")
     reward_model = _build_reward_model(config, device)
+    _log("collecting calibration sequences")
     calibration_sequences = _collect_calibration_sequences(
         policy,
         prompts,
         config,
         seed=config.seed + (10000 * model.slot_index),
     )
+    _log(f"calibrating reward model on {len(calibration_sequences)} sequences")
     calibration = reward_model.calibrate(calibration_sequences)
+    _log("generating evaluation samples")
     rows = _generate_rows(
         policy,
         prompts,
         config,
         seed=config.seed + (1000 * model.slot_index),
     )
+    _log(f"scoring {len(rows)} rows")
     metrics = _score_rows(rows, reward_model)
+    _log("computing esm2 embeddings")
     embeddings = _embed_rows_with_esm2(rows, reward_model, batch_size=config.embedding_batch_size)
 
     output_dir = model_output_dir(config, model)
@@ -318,7 +330,7 @@ def main() -> None:
         **metrics,
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    print(summary_path)
+    _log(f"done summary={summary_path}")
 
 
 if __name__ == "__main__":
