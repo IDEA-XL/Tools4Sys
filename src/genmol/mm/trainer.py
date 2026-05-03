@@ -153,6 +153,9 @@ class TrainResult:
 def load_config(path):
     with open(path) as handle:
         raw = yaml.safe_load(handle)
+    legacy_rollout_reward_weights = raw.pop('rollout_reward_weights', None)
+    if legacy_rollout_reward_weights is not None and not isinstance(legacy_rollout_reward_weights, dict):
+        raise TypeError('rollout_reward_weights must be a mapping when present in a saved config')
     config = PocketPrefixTrainConfig(**raw)
     if config.model_variant != 'pocket_prefix_mm':
         raise ValueError(f"Expected model_variant='pocket_prefix_mm', got {config.model_variant!r}")
@@ -286,6 +289,11 @@ def load_config(path):
 def resolve_output_dir(config, config_path):
     if config.output_dir is not None:
         return config.output_dir
+
+    config_realpath = os.path.realpath(config_path)
+    config_dir = os.path.dirname(config_realpath)
+    if os.path.basename(config_realpath) == 'config.yaml' and find_last_checkpoint(config_dir) is not None:
+        return config_dir
 
     cluster_root = '/public/home/xinwuye/ai4s-tool-joint-train'
     if os.path.isdir(cluster_root):

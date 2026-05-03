@@ -212,6 +212,11 @@ def resolve_output_dir(config, config_path):
     if config.output_dir is not None:
         return config.output_dir
 
+    config_realpath = os.path.realpath(config_path)
+    config_dir = os.path.dirname(config_realpath)
+    if os.path.basename(config_realpath) == 'config.yaml' and find_last_checkpoint(config_dir) is not None:
+        return config_dir
+
     cluster_root = '/public/home/xinwuye/ai4s-tool-joint-train'
     if os.path.isdir(cluster_root):
         base_dir = os.path.join(cluster_root, 'runs', 'cpgrpo_denovo')
