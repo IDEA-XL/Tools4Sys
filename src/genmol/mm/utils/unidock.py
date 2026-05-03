@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import multiprocessing as mp
 import os
 import re
 import shutil
@@ -13,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from queue import Empty as QueueEmpty
+from threading import Thread
 
 import numpy as np
 import torch
@@ -212,20 +211,6 @@ def _prepare_ligand_sdf(smiles: str, center: np.ndarray, output_path: Path) -> N
     _validate_written_ligand_sdf(output_path, smiles=smiles)
 
 
-def _prepare_ligand_sdf_process_main(
-    smiles: str,
-    center: np.ndarray,
-    output_path: str,
-    result_queue,
-) -> None:
-    try:
-        _prepare_ligand_sdf(smiles, center, Path(output_path))
-    except Exception as exc:  # noqa: BLE001
-        result_queue.put((False, f'{type(exc).__name__}: {exc}'))
-        return
-    result_queue.put((True, None))
-
-
 def _prepare_ligand_sdf_task(
     smiles: str,
     center: np.ndarray,
@@ -233,38 +218,29 @@ def _prepare_ligand_sdf_task(
     timeout_sec: int,
 ) -> tuple[bool, str | None]:
     normalized_timeout_sec = _ensure_positive_int(timeout_sec, 'unidock prepare_timeout_sec')
-    context = mp.get_context('spawn')
-    result_queue = context.Queue(maxsize=1)
-    process = context.Process(
-        target=_prepare_ligand_sdf_process_main,
-        args=(smiles, center, output_path, result_queue),
+    result_holder = {
+        'success': False,
+        'failure_detail': None,
+    }
+
+    def _run_prepare():
+        try:
+            _prepare_ligand_sdf(smiles, center, Path(output_path))
+        except Exception as exc:  # noqa: BLE001
+            result_holder['failure_detail'] = f'{type(exc).__name__}: {exc}'
+            return
+        result_holder['success'] = True
+
+    worker = Thread(
+        target=_run_prepare,
+        name='unidock_prepare_one',
         daemon=True,
     )
-    process.start()
-    process.join(timeout=normalized_timeout_sec)
-    if process.is_alive():
-        process.terminate()
-        process.join()
-        result_queue.close()
-        result_queue.join_thread()
+    worker.start()
+    worker.join(timeout=normalized_timeout_sec)
+    if worker.is_alive():
         return False, f'TimeoutError: ligand prepare exceeded {normalized_timeout_sec} seconds'
-
-    success = False
-    failure_detail = None
-    try:
-        success, failure_detail = result_queue.get(timeout=1.0)
-    except QueueEmpty:
-        if process.exitcode == 0:
-            failure_detail = 'RuntimeError: ligand prepare worker exited without returning a result'
-        else:
-            failure_detail = f'RuntimeError: ligand prepare worker exited with code {process.exitcode}'
-    finally:
-        result_queue.close()
-        result_queue.join_thread()
-
-    if process.exitcode not in (0, None) and success:
-        return False, f'RuntimeError: ligand prepare worker exited with code {process.exitcode}'
-    return bool(success), failure_detail
+    return bool(result_holder['success']), result_holder['failure_detail']
 
 
 def _is_prepare_timeout_failure(failure_detail: str | None) -> bool:
