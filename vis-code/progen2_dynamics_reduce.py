@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
@@ -48,15 +49,24 @@ def main() -> None:
     for model in config.models:
         model_dir = model_output_dir(config, model)
         records_path = model_dir / "records.jsonl"
-        embeddings_path = model_dir / "embeddings.npy"
+        embeddings_pt_path = model_dir / "embeddings.pt"
+        embeddings_npy_path = model_dir / "embeddings.npy"
         if not records_path.is_file():
             raise FileNotFoundError(f"Missing records file: {records_path}")
-        if not embeddings_path.is_file():
-            raise FileNotFoundError(f"Missing embeddings file: {embeddings_path}")
+        if embeddings_pt_path.is_file():
+            embeddings = torch.load(embeddings_pt_path, map_location="cpu", weights_only=False)
+            if not torch.is_tensor(embeddings):
+                raise TypeError(f"Expected tensor embeddings in {embeddings_pt_path}")
+            embeddings = embeddings.detach().cpu().numpy()
+            source_path = embeddings_pt_path
+        elif embeddings_npy_path.is_file():
+            embeddings = np.load(embeddings_npy_path)
+            source_path = embeddings_npy_path
+        else:
+            raise FileNotFoundError(f"Missing embeddings file: {embeddings_pt_path} or {embeddings_npy_path}")
         rows = _load_model_records(records_path)
-        embeddings = np.load(embeddings_path)
         if embeddings.ndim != 2:
-            raise ValueError(f"Expected 2D embeddings in {embeddings_path}, got shape {embeddings.shape}")
+            raise ValueError(f"Expected 2D embeddings in {source_path}, got shape {embeddings.shape}")
         if embeddings.shape[0] != len(rows):
             raise ValueError(
                 f"Embedding row mismatch for {model.model_id}: {embeddings.shape[0]} vs {len(rows)}"

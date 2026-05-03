@@ -10,7 +10,6 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -191,7 +190,7 @@ def _embedding_sequence_from_row(row: dict) -> str:
 
 
 @torch.no_grad()
-def _embed_rows_with_esm2(rows: list[dict], reward_model: CompositeProteinReward, batch_size: int) -> np.ndarray:
+def _embed_rows_with_esm2(rows: list[dict], reward_model: CompositeProteinReward, batch_size: int) -> torch.Tensor:
     scorer = reward_model.naturalness
     if scorer is None:
         raise RuntimeError("Naturalness scorer is required for ESM-2 embedding extraction")
@@ -202,7 +201,7 @@ def _embed_rows_with_esm2(rows: list[dict], reward_model: CompositeProteinReward
     model = scorer.model
     batch_converter = scorer.batch_converter
     layer = int(getattr(model, "num_layers", 33))
-    all_embeddings: list[np.ndarray] = []
+    all_embeddings: list[torch.Tensor] = []
     for batch_start, batch_sequences in enumerate(iter_chunks(sequences, batch_size)):
         batch = [
             (str(batch_start * batch_size + row_idx), sequence)
@@ -218,11 +217,11 @@ def _embed_rows_with_esm2(rows: list[dict], reward_model: CompositeProteinReward
                 raise RuntimeError(
                     f"ESM-2 returned an empty representation for a non-empty sequence of length {len(sequence)}"
                 )
-            pooled = residue_repr.mean(dim=0).detach().cpu().numpy().astype(np.float32, copy=False)
+            pooled = residue_repr.mean(dim=0).detach().cpu().to(dtype=torch.float32)
             all_embeddings.append(pooled)
-    embeddings = np.stack(all_embeddings, axis=0)
-    if embeddings.shape[0] != len(rows):
-        raise RuntimeError(f"Embedded {embeddings.shape[0]} rows, expected {len(rows)}")
+    embeddings = torch.stack(all_embeddings, dim=0)
+    if embeddings.size(0) != len(rows):
+        raise RuntimeError(f"Embedded {embeddings.size(0)} rows, expected {len(rows)}")
     return embeddings
 
 
@@ -283,7 +282,7 @@ def main() -> None:
     output_dir = model_output_dir(config, model)
     output_dir.mkdir(parents=True, exist_ok=True)
     records_path = output_dir / "records.jsonl"
-    embeddings_path = output_dir / "embeddings.npy"
+    embeddings_path = output_dir / "embeddings.pt"
     summary_path = output_dir / "summary.json"
 
     _ensure_parent_dir(records_path)
@@ -304,7 +303,7 @@ def main() -> None:
                 **row,
             }
             handle.write(json.dumps(payload, sort_keys=True) + "\n")
-    np.save(embeddings_path, embeddings)
+    torch.save(embeddings, embeddings_path)
     summary = {
         "model_id": model.model_id,
         "row_id": model.row_id,
@@ -314,7 +313,7 @@ def main() -> None:
         "display_name": model.display_name,
         "checkpoint_dir": model.checkpoint_dir,
         "num_rows": len(rows),
-        "embedding_dim": int(embeddings.shape[1]),
+        "embedding_dim": int(embeddings.size(1)),
         "calibration": calibration,
         **metrics,
     }
