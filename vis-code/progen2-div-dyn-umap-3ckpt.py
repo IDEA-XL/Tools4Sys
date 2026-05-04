@@ -28,21 +28,19 @@ ROW_ORDER = (
     ("sgrpo_gw08_rewardsum_loo", "SGRPO"),
 )
 PAIR_COLUMNS = (
-    (0, 1, "Original + Ckpt 20"),
-    (1, 5, "Ckpt 20 + Ckpt 100"),
+    (0, 1, "Original \u2192 20 Steps"),
+    (1, 5, "20 Steps \u2192 Final"),
 )
-SLOT_LABELS = ("Original", "Ckpt 20", "Ckpt 100")
 SLOT_INDEX_TO_LABEL = {
     0: "Original",
-    1: "Ckpt 20",
-    5: "Ckpt 100",
+    1: "20 Steps",
+    5: "Final",
 }
 SLOT_INDEX_TO_COLOR = {
-    0: "#4E79A7",
-    1: "#F28E2B",
-    5: "#76B7B2",
+    0: "#2A9D8F",
+    1: "#D97706",
+    5: "#1F4E79",
 }
-UTILITY_THRESHOLD = 0.8
 
 
 def parse_args() -> argparse.Namespace:
@@ -141,30 +139,16 @@ def _plot_grid(rows: list[dict], output_path: Path) -> None:
             right_rows = row_index[(row_id, right_slot)]
             for slot_index, slot_rows in ((left_slot, left_rows), (right_slot, right_rows)):
                 color = SLOT_INDEX_TO_COLOR[slot_index]
-                circle_rows = [row for row in slot_rows if float(row["soft_reward"]) <= UTILITY_THRESHOLD]
-                triangle_rows = [row for row in slot_rows if float(row["soft_reward"]) > UTILITY_THRESHOLD]
-                if circle_rows:
-                    ax.scatter(
-                        [float(row["umap_x"]) for row in circle_rows],
-                        [float(row["umap_y"]) for row in circle_rows],
-                        s=20,
-                        c=color,
-                        marker="o",
-                        alpha=0.72,
-                        linewidths=0.0,
-                        rasterized=True,
-                    )
-                if triangle_rows:
-                    ax.scatter(
-                        [float(row["umap_x"]) for row in triangle_rows],
-                        [float(row["umap_y"]) for row in triangle_rows],
-                        s=30,
-                        c=color,
-                        marker="^",
-                        alpha=0.84,
-                        linewidths=0.0,
-                        rasterized=True,
-                    )
+                ax.scatter(
+                    [float(row["umap_x"]) for row in slot_rows],
+                    [float(row["umap_y"]) for row in slot_rows],
+                    s=22,
+                    c=color,
+                    marker="o",
+                    alpha=0.76,
+                    linewidths=0.0,
+                    rasterized=True,
+                )
             ax.set_xlim(x_min, x_max)
             ax.set_ylim(y_min, y_max)
 
@@ -172,27 +156,14 @@ def _plot_grid(rows: list[dict], output_path: Path) -> None:
         Line2D([0], [0], marker="o", color="none", markerfacecolor=SLOT_INDEX_TO_COLOR[slot_index], markersize=9, label=SLOT_INDEX_TO_LABEL[slot_index])
         for slot_index in (0, 1, 5)
     ]
-    shape_handles = [
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="#666666", markersize=8, label="Utility ≤ 0.8"),
-        Line2D([0], [0], marker="^", color="none", markerfacecolor="#666666", markersize=9, label="Utility > 0.8"),
-    ]
     fig.legend(
         handles=color_handles,
-        loc="upper center",
-        bbox_to_anchor=(0.50, 1.03),
+        loc="lower center",
+        bbox_to_anchor=(0.50, -0.02),
         ncol=3,
         frameon=False,
         columnspacing=1.6,
         handletextpad=0.5,
-    )
-    fig.legend(
-        handles=shape_handles,
-        loc="lower center",
-        bbox_to_anchor=(0.50, -0.02),
-        ncol=2,
-        frameon=False,
-        columnspacing=1.4,
-        handletextpad=0.6,
     )
     fig.subplots_adjust(left=0.018, right=0.995, top=0.77, bottom=0.14, wspace=0.06)
 
