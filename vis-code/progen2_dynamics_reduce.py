@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -16,12 +17,13 @@ from sklearn.manifold import TSNE
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(REPO_ROOT / "vis-code"))
 
-from progen2_dynamics_common import load_dynamics_config, model_output_dir, output_dir_path
+from progen2_dynamics_common import load_dynamics_config, output_dir_path
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
+    parser.add_argument("--output-dir", default=None)
     return parser.parse_args()
 
 
@@ -41,13 +43,13 @@ def _l2_normalize(matrix: np.ndarray) -> np.ndarray:
 def main() -> None:
     args = parse_args()
     config = load_dynamics_config(args.config)
-    base_dir = output_dir_path(config)
+    base_dir = Path(args.output_dir) if args.output_dir else output_dir_path(config)
     base_dir.mkdir(parents=True, exist_ok=True)
 
     all_rows: list[dict] = []
     all_embeddings: list[np.ndarray] = []
     for model in config.models:
-        model_dir = model_output_dir(config, model)
+        model_dir = base_dir / "per_model" / model.model_id
         records_path = model_dir / "records.jsonl"
         embeddings_pt_path = model_dir / "embeddings.pt"
         embeddings_npy_path = model_dir / "embeddings.npy"
@@ -102,16 +104,23 @@ def main() -> None:
     )
     umap_coords = umap_model.fit_transform(pca_embeddings)
 
-    tsne = TSNE(
-        n_components=2,
-        perplexity=float(config.reduction_tsne_perplexity),
-        init="pca",
-        learning_rate="auto",
-        n_iter=int(config.reduction_tsne_n_iter),
-        metric="euclidean",
-        random_state=int(config.seed),
-        verbose=1,
-    )
+    tsne_kwargs = {
+        "n_components": 2,
+        "perplexity": float(config.reduction_tsne_perplexity),
+        "init": "pca",
+        "learning_rate": "auto",
+        "metric": "euclidean",
+        "random_state": int(config.seed),
+        "verbose": 1,
+    }
+    tsne_signature = inspect.signature(TSNE)
+    if "max_iter" in tsne_signature.parameters:
+        tsne_kwargs["max_iter"] = int(config.reduction_tsne_n_iter)
+    elif "n_iter" in tsne_signature.parameters:
+        tsne_kwargs["n_iter"] = int(config.reduction_tsne_n_iter)
+    else:
+        raise RuntimeError("Unsupported sklearn.manifold.TSNE signature: missing max_iter/n_iter")
+    tsne = TSNE(**tsne_kwargs)
     tsne_coords = tsne.fit_transform(pca_embeddings)
 
     if umap_coords.shape != (len(all_rows), 2):

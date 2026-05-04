@@ -146,19 +146,6 @@ def _plot_grid(rows: list[dict], x_key: str, y_key: str, output_path: Path) -> N
             ax.grid(False)
             ax.spines["left"].set_color("#CCCCCC")
             ax.spines["bottom"].set_color("#CCCCCC")
-            if row_idx == 0:
-                left_label = SLOT_LABELS[left_slot].replace("Ckpt ", "")
-                right_label = SLOT_LABELS[right_slot].replace("Ckpt ", "")
-                ax.text(
-                    0.02,
-                    1.04,
-                    f"{left_label} vs {right_label}",
-                    transform=ax.transAxes,
-                    ha="left",
-                    va="bottom",
-                    fontsize=14,
-                    color="#444444",
-                )
             if col_idx == 0:
                 ax.text(
                     0.00,
