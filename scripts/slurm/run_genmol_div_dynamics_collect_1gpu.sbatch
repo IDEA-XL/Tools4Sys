@@ -22,6 +22,13 @@ unset PYTHONPATH
 export PYTHONNOUSERSITE=1
 export PYTHONPATH=${REPO_DIR}/src:${REPO_DIR}/vis-code
 export TOKENIZERS_PARALLELISM=false
+# Fail fast on reward-side process fan-out: this analysis job only needs
+# deterministic scoring, not multi-process TDC Oracle initialization storms.
+export GENMOL_REWARD_WORKERS=1
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 
 cd /public/home/xinwuye
 python "${REPO_DIR}/vis-code/genmol_div_dynamics_collect.py" --config "${CONFIG_PATH}" --model-index "${SLURM_ARRAY_TASK_ID}"
