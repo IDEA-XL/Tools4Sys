@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,13 +15,132 @@ sys.path.append(str(REPO_ROOT / "src"))
 sys.path.append(str(REPO_ROOT / "vis-code"))
 
 from genmol.rl.policy import GenMolCpGRPOPolicy
-from genmol.rl.reward import MolecularReward
+from genmol.rl.reward import (
+    RewardRecord,
+    _AlertFilter,
+    apply_reward_gate,
+    compute_soft_reward,
+    normalize_molecular_reward_weights,
+    sa_to_score,
+)
 from genmol.rl.specs import sample_group_specs
 from genmol_div_dynamics_common import load_dynamics_config, model_output_dir
+
+from rdkit import Chem
+from rdkit.Chem import QED, RDConfig
+
+sys.path.append(os.path.join(RDConfig.RDContribDir, "SA_Score"))
+import sascorer
 
 
 def _log(message: str) -> None:
     print(f"[genmol-div-dynamics] {message}", flush=True)
+
+
+class _FigureMolecularReward:
+    """Local figure-only scorer that matches GenMol reward semantics without TDC Oracle I/O."""
+
+    def __init__(self, reward_weights=None):
+        self.reward_weights = normalize_molecular_reward_weights(reward_weights)
+        self._filter = _AlertFilter()
+
+    def close(self) -> None:
+        return
+
+    def _safe_qed_score(self, mol):
+        try:
+            return float(QED.qed(mol))
+        except Exception:
+            return None
+
+    def _safe_sa_score(self, mol):
+        try:
+            return float(sascorer.calculateScore(mol))
+        except Exception:
+            return None
+
+    def _canonicalize(self, smiles):
+        if smiles is None:
+            return None, None
+        try:
+            mol = Chem.MolFromSmiles(smiles, sanitize=True)
+        except Exception:
+            return None, None
+        if mol is None:
+            return None, None
+        try:
+            canonical = Chem.MolToSmiles(mol)
+        except Exception:
+            return None, None
+        return canonical, mol
+
+    def score(self, smiles_list):
+        if not smiles_list:
+            return []
+
+        canonical_smiles = []
+        mols = []
+        valid_indices = []
+        records = [None] * len(smiles_list)
+
+        for idx, smiles in enumerate(smiles_list):
+            canonical, mol = self._canonicalize(smiles)
+            if canonical is None or mol is None:
+                records[idx] = RewardRecord(
+                    reward=-1.0,
+                    is_valid=False,
+                    alert_hit=False,
+                    qed=None,
+                    sa=None,
+                    sa_score=None,
+                    soft_reward=None,
+                    smiles=None,
+                )
+                continue
+            canonical_smiles.append(canonical)
+            mols.append(mol)
+            valid_indices.append(idx)
+
+        if valid_indices:
+            pass_smiles = set(self._filter(canonical_smiles))
+            qed_scores = [self._safe_qed_score(mol) for mol in mols]
+            sa_scores = [self._safe_sa_score(mol) for mol in mols]
+
+            for index, smiles, qed_score, sa_score in zip(valid_indices, canonical_smiles, qed_scores, sa_scores):
+                sa_score_value = None if sa_score is None else sa_to_score(sa_score)
+                if qed_score is None or sa_score_value is None:
+                    records[index] = RewardRecord(
+                        reward=-1.0,
+                        is_valid=False,
+                        alert_hit=False,
+                        qed=qed_score,
+                        sa=sa_score,
+                        sa_score=sa_score_value,
+                        soft_reward=None,
+                        smiles=smiles,
+                    )
+                    continue
+                alert_hit = smiles not in pass_smiles
+                soft_reward = compute_soft_reward(
+                    qed_score,
+                    sa_score_value,
+                    reward_weights=self.reward_weights,
+                )
+                records[index] = RewardRecord(
+                    reward=apply_reward_gate(soft_reward, is_valid=True, alert_hit=alert_hit),
+                    is_valid=True,
+                    alert_hit=alert_hit,
+                    qed=qed_score,
+                    sa=sa_score,
+                    sa_score=sa_score_value,
+                    soft_reward=soft_reward,
+                    smiles=smiles,
+                )
+
+        missing_indices = [idx for idx, record in enumerate(records) if record is None]
+        if missing_indices:
+            raise RuntimeError(f"Missing reward records for indices: {missing_indices[:10]}")
+        return records
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,10 +172,7 @@ def _build_rows(config, model) -> list[dict]:
         bf16=config.bf16,
         trainable=False,
     )
-    reward_model = MolecularReward(
-        reward_weights=config.reward_weights,
-        always_compute_metrics=True,
-    )
+    reward_model = _FigureMolecularReward(reward_weights=config.reward_weights)
     try:
         _log("sampling rollout specs")
         specs = sample_group_specs(
