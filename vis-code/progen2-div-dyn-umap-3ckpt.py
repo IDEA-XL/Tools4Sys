@@ -37,8 +37,8 @@ SLOT_INDEX_TO_LABEL = {
     5: "Final",
 }
 SLOT_INDEX_TO_COLOR = {
-    0: "#2A9D8F",
-    1: "#D97706",
+    0: "#4C9A8A",
+    1: "#C46E3B",
     5: "#1F4E79",
 }
 
