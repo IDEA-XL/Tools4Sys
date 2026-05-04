@@ -96,7 +96,18 @@ def _generate_rows(policy, prompts, config, seed: int) -> list[dict]:
     rows: list[dict] = []
     prompt_cursor = 0
     batch_index = 0
+    skipped_empty = 0
+    max_batches = max(
+        8,
+        math.ceil(config.num_samples / (config.generation_prompt_batch_size * config.num_return_sequences)) * 50,
+    )
     while len(rows) < config.num_samples:
+        if batch_index >= max_batches:
+            raise RuntimeError(
+                "Failed to collect enough non-empty generated samples before hitting the maximum "
+                f"attempt budget: collected={len(rows)} target={config.num_samples} "
+                f"skipped_empty={skipped_empty} max_batches={max_batches}"
+            )
         prompt_batch = _cycle_prompt_batch(prompts, config.generation_prompt_batch_size, prompt_cursor)
         prompt_cursor = (prompt_cursor + len(prompt_batch)) % len(prompts)
         rollout = policy.generate_rollouts(
@@ -112,6 +123,10 @@ def _generate_rows(policy, prompts, config, seed: int) -> list[dict]:
             rollout.decoded_texts,
             rollout.protein_sequences,
         ):
+            raw_sequence = str(raw_sequence).strip().upper()
+            if not raw_sequence:
+                skipped_empty += 1
+                continue
             classification = classify_protein_sequence(raw_sequence)
             rows.append(
                 {
@@ -129,6 +144,8 @@ def _generate_rows(policy, prompts, config, seed: int) -> list[dict]:
         batch_index += 1
     if len(rows) != config.num_samples:
         raise RuntimeError(f"Generated {len(rows)} rows, expected {config.num_samples}")
+    if skipped_empty:
+        _log(f"skipped_empty_raw_sequences={skipped_empty}")
     return rows
 
 
