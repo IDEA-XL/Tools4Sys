@@ -44,6 +44,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True)
     parser.add_argument("--points-jsonl", default=None)
     parser.add_argument("--figure-output-dir", default=None)
+    parser.add_argument("--umap-output-name", default="dyn-umap.pdf")
+    parser.add_argument("--tsne-output-name", default="dyn-tsne.pdf")
     return parser.parse_args()
 
 
@@ -146,18 +148,6 @@ def _plot_grid(rows: list[dict], x_key: str, y_key: str, output_path: Path) -> N
             ax.grid(False)
             ax.spines["left"].set_color("#CCCCCC")
             ax.spines["bottom"].set_color("#CCCCCC")
-            if col_idx == 0:
-                ax.text(
-                    0.00,
-                    1.14,
-                    row_title,
-                    transform=ax.transAxes,
-                    ha="left",
-                    va="bottom",
-                    fontsize=19,
-                    fontweight="semibold",
-                    color="#222222",
-                )
 
     color_handles = [
         Line2D([0], [0], marker="o", color="none", markerfacecolor=color, markersize=9, label=label)
@@ -187,6 +177,20 @@ def _plot_grid(rows: list[dict], x_key: str, y_key: str, output_path: Path) -> N
     )
     fig.subplots_adjust(left=0.035, right=0.995, top=0.90, bottom=0.08, wspace=0.06, hspace=0.20)
 
+    for row_idx, (_, row_title) in enumerate(ROW_ORDER):
+        first_ax = axes[row_idx, 0]
+        bbox = first_ax.get_position()
+        fig.text(
+            bbox.x0,
+            bbox.y1 + 0.028,
+            row_title,
+            ha="left",
+            va="bottom",
+            fontsize=18,
+            fontweight="semibold",
+            color="#222222",
+        )
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path)
     plt.close(fig)
@@ -199,10 +203,12 @@ def main() -> None:
     figure_dir = Path(args.figure_output_dir) if args.figure_output_dir else Path(config.figure_output_dir)
     points_path = Path(args.points_jsonl) if args.points_jsonl else data_dir / "combined_points.jsonl"
     rows = _load_points(points_path)
-    _plot_grid(rows, "umap_x", "umap_y", figure_dir / "dyn-umap.pdf")
-    _plot_grid(rows, "tsne_x", "tsne_y", figure_dir / "dyn-tsne.pdf")
-    print(figure_dir / "dyn-umap.pdf")
-    print(figure_dir / "dyn-tsne.pdf")
+    umap_output_path = figure_dir / str(args.umap_output_name)
+    tsne_output_path = figure_dir / str(args.tsne_output_name)
+    _plot_grid(rows, "umap_x", "umap_y", umap_output_path)
+    _plot_grid(rows, "tsne_x", "tsne_y", tsne_output_path)
+    print(umap_output_path)
+    print(tsne_output_path)
 
 
 if __name__ == "__main__":
