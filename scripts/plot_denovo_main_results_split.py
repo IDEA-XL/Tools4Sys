@@ -51,6 +51,7 @@ PLOT_GROUPS = (
         experiments=(
             'original_genmol_v2',
             'genmol_denovo_grpo_2000',
+            'genmol_denovo_grpo_hbd_2000',
             'genmol_denovo_grpo_q08_sa02_2000',
             'genmol_denovo_sgrpo_2000',
             'genmol_denovo_grpo_divreg005_2000',
@@ -98,6 +99,7 @@ LEGACY_SOFT_REWARD_PLOT_GROUPS = (
         experiments=(
             'original_genmol_v2',
             'genmol_denovo_grpo_2000',
+            'genmol_denovo_grpo_hbd_2000',
             'genmol_denovo_sgrpo_2000',
             'genmol_denovo_grpo_divreg005_2000',
             'genmol_denovo_sgrpo_thr_q085_sa072_2000',

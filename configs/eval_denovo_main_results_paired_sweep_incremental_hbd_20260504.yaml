@@ -1,0 +1,30 @@
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_main_results_hbd_incremental_20260504/denovo_main_results_paired_sweep_incremental_hbd_20260504.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_main_results_hbd_incremental_20260504/denovo_main_results_paired_sweep_incremental_hbd_20260504.json
+output_qed_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_main_results_hbd_incremental_20260504/qed_vs_diversity_paired_incremental_hbd_20260504.png
+output_sa_score_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_main_results_hbd_incremental_20260504/sa_score_vs_diversity_paired_incremental_hbd_20260504.png
+output_soft_reward_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_eval/denovo_main_results_hbd_incremental_20260504/soft_reward_vs_diversity_paired_incremental_hbd_20260504.png
+output_rows_path: null
+seed: 42
+bf16: true
+device: cuda
+num_samples: 1000
+generation_batch_size: 2048
+randomness_temperature_pairs:
+  - randomness: 0.1
+    generation_temperature: 0.5
+  - randomness: 0.3
+    generation_temperature: 0.8
+  - randomness: 0.5
+    generation_temperature: 1.1
+  - randomness: 0.7
+    generation_temperature: 1.4
+  - randomness: 0.9
+    generation_temperature: 1.7
+  - randomness: 1.0
+    generation_temperature: 2.0
+min_add_len: 60
+max_completion_length: null
+experiments:
+  - name: genmol_denovo_grpo_hbd_2000
+    display_name: GenMol De Novo GRPO HBD 2000
+    checkpoint_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni1_ms2000_hbd_st09_sc04_20260503_141949/checkpoint-002000/model.ckpt

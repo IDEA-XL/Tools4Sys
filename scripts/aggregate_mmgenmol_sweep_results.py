@@ -94,6 +94,7 @@ MODEL_REWARD_WEIGHTS = {
     'grpo_divreg005_1000': {'qed': 0.6, 'sa_score': 0.4, 'drugclip_score': 0.0, 'unidock_score': 0.0},
     'grpo_unidock_500': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
     'grpo_unidock_1000': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
+    'grpo_unidock_hbd_st07_sc04_1000': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
     'sgrpo_unidock_500': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
     'sgrpo_unidock_1000': {'qed': 0.3, 'sa_score': 0.2, 'drugclip_score': 0.0, 'unidock_score': 0.5},
     'sgrpo_unidock_rewardsum_loo_500': {
@@ -543,6 +544,7 @@ def _display_name(name):
         'grpo_divreg005_1000': 'GRPO DivReg 0.05 1000',
         'grpo_unidock_500': 'GRPO + UniDock 500',
         'grpo_unidock_1000': 'GRPO + UniDock 1000',
+        'grpo_unidock_hbd_st07_sc04_1000': 'GRPO + UniDock + HBD 1000',
         'sgrpo_unidock_500': 'SGRPO + UniDock 500',
         'sgrpo_unidock_1000': 'SGRPO + UniDock 1000',
         'sgrpo_unidock_rewardsum_loo_500': 'SGRPO + UniDock RewardSum LOO 500',
@@ -558,12 +560,13 @@ def _model_order(name):
         'grpo_divreg005_1000': 2,
         'grpo_unidock_500': 3,
         'grpo_unidock_1000': 4,
-        'sgrpo_1000': 5,
-        'sgrpo_unidock_500': 6,
-        'sgrpo_unidock_1000': 7,
-        'sgrpo_unidock_rewardsum_loo_500': 8,
-        'sgrpo_unidock_rewardsum_loo_1000': 9,
-        'grpo_drugclip_1000': 10,
+        'grpo_unidock_hbd_st07_sc04_1000': 5,
+        'sgrpo_1000': 6,
+        'sgrpo_unidock_500': 7,
+        'sgrpo_unidock_1000': 8,
+        'sgrpo_unidock_rewardsum_loo_500': 9,
+        'sgrpo_unidock_rewardsum_loo_1000': 10,
+        'grpo_drugclip_1000': 11,
     }
     return order.get(name, len(order))
 
