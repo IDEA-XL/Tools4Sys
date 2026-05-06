@@ -35,6 +35,8 @@ else
   conda activate "${CONDA_ENV_NAME}"
 fi
 
+# wandb==0.13.5 still imports pkg_resources via setuptools.
+python -m pip install "setuptools<81"
 pip install -r env/requirements.txt
 pip install -e .
 pip install scikit-learn==1.2.2

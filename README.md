@@ -18,7 +18,7 @@ This README is intentionally narrow. It only covers the canonical SGRPO experime
 - Many configs in this repo use absolute Pudong paths. If you clone elsewhere, update those paths before running.
 - The environment setup below is verified for the three paper-critical blocks above. It is not intended to be a universal environment for every historical script in this repo.
 - For mmGenMol, the reported docking metric in the paper result tables and JSON summaries is `vina_dock_mean`. The legacy field name `unidock_score_mean` is only a Vina-derived reward proxy retained for compatibility with training-time reward accounting.
-- Assumption: the OpenFold source tree required by `scripts/setup_openfold_extension.py` is available at `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/openfold_official`. This repo currently ships the extension builder, but not a downloader for that source tree.
+- Verified on Pudong: the OpenFold source tree required by `scripts/setup_openfold_extension.py` is present at `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/openfold_official`, with remote `https://github.com/aqlaboratory/openfold.git`.
 
 ## 1. Create a fresh environment
 
@@ -27,13 +27,16 @@ On Pudong:
 ```bash
 cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
 
+source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 export CONDA_ENV_NAME=genmol-paper-20260506
+export CONDA_PKGS_DIRS=/public/home/xinwuye/conda_pkgs/genmol-paper-20260506
 bash env/setup.sh
 ```
 
 What `env/setup.sh` does:
 
 - creates a fresh Python 3.10 conda environment
+- downgrades `setuptools` to `<81` so that `wandb==0.13.5` can still import `pkg_resources`
 - installs the base GenMol dependencies from `env/requirements.txt`
 - installs the repo in editable mode
 - installs the extra packages required by mmGenMol and ProGen2 reproduction:
@@ -46,11 +49,15 @@ What `env/setup.sh` does:
 If you prefer a conda prefix instead of a named env:
 
 ```bash
+source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
 export CONDA_ENV_PREFIX=/public/home/xinwuye/conda_envs/genmol-paper-20260506
+export CONDA_PKGS_DIRS=/public/home/xinwuye/conda_pkgs/genmol-paper-20260506
 bash env/setup.sh
 ```
 
 The Slurm launchers used below now accept either `CONDA_ENV_NAME` or `CONDA_ENV_PREFIX`.
+
+On Pudong, using a private `CONDA_PKGS_DIRS` avoids transient lock contention in the shared base conda package cache during fresh environment creation.
 
 ## 2. One-time assets
 
