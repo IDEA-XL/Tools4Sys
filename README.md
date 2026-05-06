@@ -432,23 +432,11 @@ Outputs are written under:
 sgrpo-main-results/protein_denovo/temperature_sweep/
 ```
 
-## Outputs and Plotting
+## Acknowledgements
 
-The three workflows above produce the aggregate artifacts consumed by the plotting code under `vis-code/`.
+This repository builds on ideas, code, and assets from the following upstream projects:
 
-- `scripts/eval_denovo_sgrpo.py` writes the de novo small-molecule paired-sweep aggregate
-- `scripts/aggregate_mmgenmol_sweep_results.py` writes the pocket-based paired-sweep aggregate
-- `scripts/progen2_sweep_pipeline.py aggregate` writes the protein temperature-sweep aggregate
-
-In particular:
-
-- `vis-code/plot_main_pareto.py` consumes the aggregate JSON files for the main Pareto figure
-- `vis-code/plot_denovo_ablation.py` consumes the de novo small-molecule aggregate JSON
-
-If you change output filenames or directory layouts, update the corresponding plotting inputs under `vis-code/`.
-
-## Notes
-
-- This README uses only repo-relative paths.
-- All commands are intended to be run from the repository root.
-- The repo is fail-fast by design. Missing assets, missing dependencies, or conflicting output directories should raise immediately rather than silently degrade.
+- [NVIDIA-Digital-Bio/genmol](https://github.com/NVIDIA-Digital-Bio/genmol)
+- [facebookresearch/esm](https://github.com/facebookresearch/esm/tree/main)
+- [enijkamp/progen2](https://github.com/enijkamp/progen2)
+- [apple/ml-diffucoder](https://github.com/apple/ml-diffucoder)
