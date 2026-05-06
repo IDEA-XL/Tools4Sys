@@ -41,6 +41,14 @@ SGRPO/
         test_set/
           ...
   runs/
+    cpgrpo_denovo/
+      sgrpo_denovo/
+        checkpoint-002000/
+          model.ckpt
+    cpgrpo_denovo_pocket_prefix/
+      sgrpo_pocket/
+        checkpoint-001000/
+          model.ckpt
     progen2_official/
     progen2_models/
       openfold_official/
@@ -48,6 +56,12 @@ SGRPO/
       prot_bert_bfd/
       proteinsol_official/
       temberture_official/
+    progen2_sgrpo/
+      sgrpo_protein/
+        checkpoint-000100/
+          config.json
+          generation_config.json
+          model.safetensors
   scripts/
     exps/
       lead/
@@ -94,16 +108,17 @@ conda activate "${CONDA_ENV_PREFIX}"
 
 ### 1. De novo small-molecule checkpoint
 
-The pretrained de novo initialization checkpoint is mirrored in the public Hugging Face model repository `XinwuYe/SGRPO`.
-
-Download it into the repo-relative path expected by the public config:
+The pretrained de novo initialization checkpoint is provided through the official NGC release:
 
 ```bash
-python -m pip install "huggingface_hub[cli]"
+ngc registry resource download-version "nvidia/clara/genmol_v2:1.0"
+```
 
-hf download XinwuYe/SGRPO checkpoints/genmol_v2_v1.0/model_v2.ckpt \
-  --repo-type model \
-  --local-dir .
+After the NGC download completes, copy `model_v2.ckpt` into the repo-relative path expected by the public config:
+
+```bash
+mkdir -p checkpoints/genmol_v2_v1.0
+cp /path/to/downloaded/model_v2.ckpt checkpoints/genmol_v2_v1.0/model_v2.ckpt
 ```
 
 This creates:
@@ -124,14 +139,23 @@ The pocket-based setup needs:
 - a working `unidock` executable on `PATH`
 - a Vina-compatible executable at `scripts/exps/lead/docking/qvina02`
 
-The pocket-based initialization checkpoint is mirrored in the same public Hugging Face model repository.
+The pocket-based initialization checkpoint is mirrored in the anonymous model browser:
 
-Download it into the repo-relative path expected by the public config:
+```text
+https://anonymous-hf.up.railway.app/a/5vre4umkd3wk/
+```
+
+In that anonymous browser, download:
+
+```text
+checkpoints/genmol_p_v1.0/5500.ckpt
+```
+
+Then place it into the repo-relative path expected by the public config:
 
 ```bash
-hf download XinwuYe/SGRPO checkpoints/genmol_p_v1.0/5500.ckpt \
-  --repo-type model \
-  --local-dir .
+mkdir -p checkpoints/genmol_p_v1.0
+mv /path/to/downloaded/5500.ckpt checkpoints/genmol_p_v1.0/5500.ckpt
 ```
 
 This creates:
@@ -351,6 +375,79 @@ For ProGen2 training and evaluation, the OpenFold overlay must be importable:
 
 ```bash
 export PYTHONPATH="$(pwd)/runs/progen2_models/python_overlay:$(pwd)/src:${PYTHONPATH:-}"
+```
+
+### 4. Canonical SGRPO evaluation checkpoints
+
+The public evaluation configs use fixed repo-relative checkpoint paths. If you want to reproduce the canonical SGRPO evaluation results without retraining, download the three released SGRPO checkpoints from the same anonymous model browser:
+
+```text
+https://anonymous-hf.up.railway.app/a/5vre4umkd3wk/
+```
+
+Download the following mirror paths from the anonymous browser and place them at the corresponding repo-relative evaluation paths:
+
+#### De novo small-molecule SGRPO checkpoint
+
+Anonymous mirror path:
+
+```text
+checkpoints/sgrpo_main/genmol_denovo_sgrpo_rewardsum_loo_2000/model.ckpt
+```
+
+Repo-relative destination:
+
+```bash
+mkdir -p runs/cpgrpo_denovo/sgrpo_denovo/checkpoint-002000
+mv /path/to/downloaded/model.ckpt \
+  runs/cpgrpo_denovo/sgrpo_denovo/checkpoint-002000/model.ckpt
+```
+
+#### Pocket-based small-molecule SGRPO checkpoint
+
+Anonymous mirror path:
+
+```text
+checkpoints/sgrpo_main/mmgenmol_sgrpo_unidock_rewardsum_loo_1000/model.ckpt
+```
+
+Repo-relative destination:
+
+```bash
+mkdir -p runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000
+mv /path/to/downloaded/model.ckpt \
+  runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt
+```
+
+#### De novo protein SGRPO checkpoint
+
+Anonymous mirror directory:
+
+```text
+checkpoints/sgrpo_main/progen2_sgrpo_gw08_rewardsum_loo_100/
+```
+
+Download the four files in that anonymous directory:
+
+```text
+config.json
+generation_config.json
+model.safetensors
+trainer_state.pt
+```
+
+Then place them at:
+
+```bash
+mkdir -p runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100
+mv /path/to/downloaded/config.json \
+  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/config.json
+mv /path/to/downloaded/generation_config.json \
+  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/generation_config.json
+mv /path/to/downloaded/model.safetensors \
+  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/model.safetensors
+mv /path/to/downloaded/trainer_state.pt \
+  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/trainer_state.pt
 ```
 
 ## Public Configs
