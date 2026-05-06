@@ -35,14 +35,5 @@ wandb/
 tmp_*
 tmp_probe_sync_placeholder/
 
-# Sweep intermediate artifacts
-sgrpo-main-results/**/*.rows.jsonl
-sgrpo-main-results/**/*incremental*.json
-sgrpo-main-results/**/*incremental*.md
-sgrpo-main-results/**/*incremental*.png
-
-# Local task manifests
-sgrpo-main-results/mmgenmol/generation_*.tsv
-
-# Retired mmgenmol DrugCLIP outputs
-sgrpo-main-results/mmgenmol/mmgenmol_drugclip_*
+# Experiment results
+sgrpo-main-results/

@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True)
     parser.add_argument("--points-jsonl", default=None)
     parser.add_argument("--figure-output-dir", default=None)
-    parser.add_argument("--output-name", default="progen2-div-dyn-umap-3ckpt.pdf")
+    parser.add_argument("--output-name", default="progen2-div-dyn-umap-3ckpt.svg")
     return parser.parse_args()
 
 
