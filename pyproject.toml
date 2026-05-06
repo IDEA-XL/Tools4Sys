@@ -8,7 +8,6 @@ readme = "README.md"
 description = "GenMol A Drug Discovery Generalist with Discrete Diffusion"
 authors = [{ name = "NVIDIA", email = "bionemofeedback@nvidia.com" }]
 requires-python = ">=3.10"
-license = { file = "LICENSE/license_code.txt" }
 dynamic = ["version"]
 dependencies = [
     # bionemo sub-packages
