@@ -118,7 +118,46 @@ Place the initialization checkpoint at:
 checkpoints/genmol_p_v1.0/5500.ckpt
 ```
 
-Place the processed CrossDocked files under `data/crossdocked/processed/`, then build the manifest:
+The remaining pocket-based assets are fetched from their official sources and are not mirrored by this repository.
+
+#### CrossDocked processed files and docking test set
+
+Official sources:
+
+- processed LMDB / split / `test_set.zip`: TargetDiff data folder `https://drive.google.com/drive/folders/1j21cc7-97TedKh_El5E34yI8o5ckI7eK?usp=share_link`
+- original CrossDocked release: `https://bits.csb.pitt.edu/files/crossdock2020/`
+
+The following commands download the official TargetDiff data folder to a temporary directory, copy the required files into the repo-relative paths expected by the public configs, and unpack the Vina docking test set:
+
+```bash
+python -m pip install gdown
+
+mkdir -p data/crossdocked/processed data/crossdocked/raw
+
+gdown --folder "https://drive.google.com/drive/folders/1j21cc7-97TedKh_El5E34yI8o5ckI7eK?usp=share_link" \
+  -O .cache/targetdiff_crossdocked
+
+cp "$(find .cache/targetdiff_crossdocked -name 'crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb' -print -quit)" \
+  data/crossdocked/processed/crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb
+
+cp "$(find .cache/targetdiff_crossdocked -name 'crossdocked_pocket10_pose_split.pt' -print -quit)" \
+  data/crossdocked/processed/crossdocked_pocket10_pose_split.pt
+
+cp "$(find .cache/targetdiff_crossdocked -name 'test_set.zip' -print -quit)" \
+  data/crossdocked/raw/test_set.zip
+
+unzip -q data/crossdocked/raw/test_set.zip -d data/crossdocked/raw
+```
+
+This should leave the public-config-required files at:
+
+```text
+data/crossdocked/processed/crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb
+data/crossdocked/processed/crossdocked_pocket10_pose_split.pt
+data/crossdocked/raw/test_set/
+```
+
+Then build the pocket-prefix manifest:
 
 ```bash
 python scripts/build_crossdocked_pocket_prefix_manifest.py \
@@ -127,10 +166,60 @@ python scripts/build_crossdocked_pocket_prefix_manifest.py \
   --output_path data/crossdocked/processed/crossdocked_pocket10_pocket_prefix_manifest.pt
 ```
 
-For evaluation, place the raw CrossDocked test-set tree at:
+This creates:
 
 ```text
-data/crossdocked/raw/test_set/
+data/crossdocked/processed/crossdocked_pocket10_pocket_prefix_manifest.pt
+```
+
+If you want to regenerate the processed files from the original CrossDocked release instead of using the official TargetDiff preprocessed artifacts, the official v1.1 archive is:
+
+```bash
+mkdir -p data/CrossDocked2020_v1.1
+
+curl -L https://bits.csb.pitt.edu/files/crossdock2020/v1.1/CrossDocked2020_v1.1.tgz \
+  -o data/CrossDocked2020_v1.1/CrossDocked2020_v1.1.tgz
+
+tar -xzf data/CrossDocked2020_v1.1/CrossDocked2020_v1.1.tgz \
+  -C data/CrossDocked2020_v1.1
+```
+
+The CrossDocked2020 data files published at `bits.csb.pitt.edu/files/crossdock2020/` are released under `CC0 1.0`.
+
+#### Uni-Dock
+
+Official source:
+
+- repository: `https://github.com/dptech-corp/Uni-Dock`
+
+Official installation path:
+
+```bash
+conda create -y -n unidock_env unidock -c conda-forge
+conda run -n unidock_env unidock --help
+export PATH="$(conda info --base)/envs/unidock_env/bin:${PATH}"
+```
+
+The public training config expects a `unidock` executable on `PATH` when you launch the pocket-based workflow.
+
+#### QuickVina 2
+
+Official sources:
+
+- repository: `https://github.com/QVina/qvina`
+- compile instructions: `https://qvina.github.io/compilingQvina2.html`
+
+The public evaluation command expects a `qvina02` executable at `scripts/exps/lead/docking/qvina02`.
+
+The quickest official route is to download the upstream binary and rename it in place:
+
+```bash
+mkdir -p scripts/exps/lead/docking
+
+curl -L https://raw.githubusercontent.com/QVina/qvina/master/bin/qvina2.1 \
+  -o scripts/exps/lead/docking/qvina02
+
+chmod +x scripts/exps/lead/docking/qvina02
 ```
 
 ### 3. De novo protein assets
