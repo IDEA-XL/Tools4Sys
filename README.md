@@ -1,18 +1,18 @@
 # SGRPO
 
-This repository contains the code for the NeurIPS paper on **Supergroup Relative Policy Optimization (SGRPO)**. It covers three biomolecular post-training settings:
+This repository contains the code for **Supergroup Relative Policy Optimization (SGRPO)** across three biomolecular post-training settings:
 
 - GenMol for de novo small-molecule design
 - GenMol-P for pocket-based small-molecule design
 - ProGen2 for de novo protein design
 
-This README is the paper-facing reproduction guide. It is intentionally scoped to the three **SGRPO** runs used in the paper's main results:
+This README is scoped to the three main **SGRPO** settings in this repository:
 
 - de novo small-molecule design
 - pocket-based small-molecule design
 - de novo protein design
 
-Historical scripts, configs, and cluster launchers are still present in the repo, but this README only documents the paper-critical entry points.
+Historical scripts, configs, and cluster launchers are still present in the repo, but this README only documents the main supported entry points.
 
 For pocket-based design, the paper reports **AutoDock Vina docking metrics** such as `vina_dock_mean`. The training-time reward code still uses `unidock_score` as the name of the Vina-derived high-is-better proxy that enters the scalar utility.
 
