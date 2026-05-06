@@ -1,0 +1,7 @@
+task_id	model_name	sweep_type	sweep_value	randomness	temperature	checkpoint_path	output_path
+0	sgrpo_unidock_rewardsum_loo_1000	paired	1	0.1	0.5	runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt	sgrpo-main-results/small_molecule_pocket/generation/paired_1.rows.jsonl
+1	sgrpo_unidock_rewardsum_loo_1000	paired	2	0.3	0.8	runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt	sgrpo-main-results/small_molecule_pocket/generation/paired_2.rows.jsonl
+2	sgrpo_unidock_rewardsum_loo_1000	paired	3	0.5	1.1	runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt	sgrpo-main-results/small_molecule_pocket/generation/paired_3.rows.jsonl
+3	sgrpo_unidock_rewardsum_loo_1000	paired	4	0.7	1.4	runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt	sgrpo-main-results/small_molecule_pocket/generation/paired_4.rows.jsonl
+4	sgrpo_unidock_rewardsum_loo_1000	paired	5	0.9	1.7	runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt	sgrpo-main-results/small_molecule_pocket/generation/paired_5.rows.jsonl
+5	sgrpo_unidock_rewardsum_loo_1000	paired	6	1.0	2.0	runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt	sgrpo-main-results/small_molecule_pocket/generation/paired_6.rows.jsonl

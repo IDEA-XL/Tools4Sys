@@ -1,0 +1,30 @@
+output_markdown_path: sgrpo-main-results/small_molecule_denovo/paired_sweep/aggregate/paired_sweep.md
+output_json_path: sgrpo-main-results/small_molecule_denovo/paired_sweep/aggregate/paired_sweep.json
+output_qed_diversity_plot_path: sgrpo-main-results/small_molecule_denovo/paired_sweep/aggregate/qed_vs_diversity.png
+output_sa_score_diversity_plot_path: sgrpo-main-results/small_molecule_denovo/paired_sweep/aggregate/sa_score_vs_diversity.png
+output_soft_reward_diversity_plot_path: sgrpo-main-results/small_molecule_denovo/paired_sweep/aggregate/soft_reward_vs_diversity.png
+output_rows_path: sgrpo-main-results/small_molecule_denovo/paired_sweep/aggregate/paired_sweep.rows.jsonl
+seed: 42
+bf16: true
+device: cuda
+num_samples: 1000
+generation_batch_size: 2048
+randomness_temperature_pairs:
+  - randomness: 0.1
+    generation_temperature: 0.5
+  - randomness: 0.3
+    generation_temperature: 0.8
+  - randomness: 0.5
+    generation_temperature: 1.1
+  - randomness: 0.7
+    generation_temperature: 1.4
+  - randomness: 0.9
+    generation_temperature: 1.7
+  - randomness: 1.0
+    generation_temperature: 2.0
+min_add_len: 60
+max_completion_length: null
+experiments:
+  - name: sgrpo
+    display_name: SGRPO
+    checkpoint_path: runs/cpgrpo_denovo/sgrpo_denovo/checkpoint-002000/model.ckpt

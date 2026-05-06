@@ -1,0 +1,73 @@
+tasks_path: sgrpo-main-results/protein_denovo/temperature_sweep/tasks.tsv
+generation_output_root: sgrpo-main-results/protein_denovo/temperature_sweep/generation
+foldability_output_root: sgrpo-main-results/protein_denovo/temperature_sweep/foldability
+developability_output_root: sgrpo-main-results/protein_denovo/temperature_sweep/developability
+diversity_output_root: sgrpo-main-results/protein_denovo/temperature_sweep/diversity
+packed_naturalness_scores_path: sgrpo-main-results/protein_denovo/temperature_sweep/naturalness/naturalness.rows.jsonl
+packed_stability_scores_path: sgrpo-main-results/protein_denovo/temperature_sweep/stability/stability.rows.jsonl
+
+output_markdown_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/temperature_sweep.md
+output_json_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/temperature_sweep.json
+output_rows_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/temperature_sweep.rows.jsonl
+output_naturalness_diversity_plot_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/naturalness_vs_diversity.png
+output_foldability_diversity_plot_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/foldability_vs_diversity.png
+output_stability_diversity_plot_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/stability_vs_diversity.png
+output_developability_diversity_plot_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/developability_vs_diversity.png
+output_soft_reward_diversity_plot_path: sgrpo-main-results/protein_denovo/temperature_sweep/aggregate/soft_reward_vs_diversity.png
+
+official_code_dir: runs/progen2_official
+tokenizer_path: runs/progen2_official/tokenizer.json
+prompt_path: runs/progen2_official/prompts_unconditional.txt
+
+seed: 42
+bf16: false
+device: cuda
+num_samples: 512
+generation_prompt_batch_size: 1
+num_return_sequences: 512
+max_new_tokens: 256
+top_p: 0.95
+temperature_values:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  - 1.0
+  - 1.1
+  - 1.2
+calibration_temperature: 0.8
+reward_calibration_size: 256
+reward_calibration_prompt_batch_size: 128
+
+rewards:
+  naturalness:
+    model_name: esm2_t33_650M_UR50D
+    device: cuda
+    batch_size: 4096
+  foldability:
+    device: cuda
+    batch_size: 64
+  stability:
+    model_name_or_path: runs/progen2_models/temberture_official
+    base_model_name_or_path: runs/progen2_models/prot_bert_bfd
+    device: cuda
+    batch_size: 8192
+  developability:
+    model_name_or_path: runs/progen2_models/proteinsol_official
+    device: cpu
+    batch_size: 24
+    num_workers: 64
+
+experiments:
+  - name: sgrpo
+    display_name: SGRPO
+    checkpoint_dir: runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100
+    naturalness: 0.25
+    foldability: 0.30
+    stability: 0.20
+    developability: 0.25
