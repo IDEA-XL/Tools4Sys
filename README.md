@@ -145,17 +145,13 @@ The pocket-based initialization checkpoint is mirrored in the anonymous model br
 https://anonymous-hf.up.railway.app/a/5vre4umkd3wk/
 ```
 
-In that anonymous browser, download:
-
-```text
-checkpoints/genmol_p_v1.0/5500.ckpt
-```
-
-Then place it into the repo-relative path expected by the public config:
+The anonymous mirror also exposes a direct file-download endpoint, so you can fetch the checkpoint from the command line:
 
 ```bash
 mkdir -p checkpoints/genmol_p_v1.0
-mv /path/to/downloaded/5500.ckpt checkpoints/genmol_p_v1.0/5500.ckpt
+curl -L \
+  'https://anonymous-hf.up.railway.app/api/a/5vre4umkd3wk/resolve/checkpoints/genmol_p_v1.0/5500.ckpt' \
+  -o checkpoints/genmol_p_v1.0/5500.ckpt
 ```
 
 This creates:
@@ -163,6 +159,8 @@ This creates:
 ```text
 checkpoints/genmol_p_v1.0/5500.ckpt
 ```
+
+Normal file downloads from this anonymous mirror have been verified. The mirror does not advertise range support, so resumable downloads are not assumed.
 
 The remaining pocket-based assets are fetched from their official sources and are not mirrored by this repository.
 
@@ -385,69 +383,39 @@ The public evaluation configs use fixed repo-relative checkpoint paths. If you w
 https://anonymous-hf.up.railway.app/a/5vre4umkd3wk/
 ```
 
-Download the following mirror paths from the anonymous browser and place them at the corresponding repo-relative evaluation paths:
+The same anonymous mirror also provides direct file-download endpoints, so the checkpoints can be fetched from the command line into the exact repo-relative paths used by the public evaluation configs:
 
 #### De novo small-molecule SGRPO checkpoint
 
-Anonymous mirror path:
-
-```text
-checkpoints/sgrpo_main/genmol_denovo_sgrpo_rewardsum_loo_2000/model.ckpt
-```
-
-Repo-relative destination:
-
 ```bash
 mkdir -p runs/cpgrpo_denovo/sgrpo_denovo/checkpoint-002000
-mv /path/to/downloaded/model.ckpt \
-  runs/cpgrpo_denovo/sgrpo_denovo/checkpoint-002000/model.ckpt
+curl -L \
+  'https://anonymous-hf.up.railway.app/api/a/5vre4umkd3wk/resolve/checkpoints/sgrpo_main/genmol_denovo_sgrpo_rewardsum_loo_2000/model.ckpt' \
+  -o runs/cpgrpo_denovo/sgrpo_denovo/checkpoint-002000/model.ckpt
 ```
 
 #### Pocket-based small-molecule SGRPO checkpoint
 
-Anonymous mirror path:
-
-```text
-checkpoints/sgrpo_main/mmgenmol_sgrpo_unidock_rewardsum_loo_1000/model.ckpt
-```
-
-Repo-relative destination:
-
 ```bash
 mkdir -p runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000
-mv /path/to/downloaded/model.ckpt \
-  runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt
+curl -L \
+  'https://anonymous-hf.up.railway.app/api/a/5vre4umkd3wk/resolve/checkpoints/sgrpo_main/mmgenmol_sgrpo_unidock_rewardsum_loo_1000/model.ckpt' \
+  -o runs/cpgrpo_denovo_pocket_prefix/sgrpo_pocket/checkpoint-001000/model.ckpt
 ```
 
 #### De novo protein SGRPO checkpoint
 
-Anonymous mirror directory:
-
-```text
-checkpoints/sgrpo_main/progen2_sgrpo_gw08_rewardsum_loo_100/
-```
-
-Download the four files in that anonymous directory:
-
-```text
-config.json
-generation_config.json
-model.safetensors
-trainer_state.pt
-```
-
-Then place them at:
-
 ```bash
 mkdir -p runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100
-mv /path/to/downloaded/config.json \
-  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/config.json
-mv /path/to/downloaded/generation_config.json \
-  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/generation_config.json
-mv /path/to/downloaded/model.safetensors \
-  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/model.safetensors
-mv /path/to/downloaded/trainer_state.pt \
-  runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/trainer_state.pt
+base='https://anonymous-hf.up.railway.app/api/a/5vre4umkd3wk/resolve/checkpoints/sgrpo_main/progen2_sgrpo_gw08_rewardsum_loo_100'
+curl -L "$base/config.json" \
+  -o runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/config.json
+curl -L "$base/generation_config.json" \
+  -o runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/generation_config.json
+curl -L "$base/model.safetensors" \
+  -o runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/model.safetensors
+curl -L "$base/trainer_state.pt" \
+  -o runs/progen2_sgrpo/sgrpo_protein/checkpoint-000100/trainer_state.pt
 ```
 
 ## Public Configs
