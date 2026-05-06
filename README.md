@@ -6,35 +6,15 @@ This repository contains the code for the NeurIPS paper on **Supergroup Relative
 - GenMol-P for pocket-based small-molecule design
 - ProGen2 for de novo protein design
 
-This README is the paper-facing reproduction guide. It is intentionally scoped to the **canonical SGRPO experiments** that produce the SGRPO curves in the paper's main Pareto figure:
+This README is the paper-facing reproduction guide. It is intentionally scoped to the three **SGRPO** runs used in the paper's main results:
 
-- `GenMol De Novo SGRPO RewardSum LOO 2000`
-- `SGRPO + UniDock RewardSum LOO 1000`
-- `ProGen2 SGRPO gw0.8 RewardSum LOO 100`
+- de novo small-molecule design
+- pocket-based small-molecule design
+- de novo protein design
 
 Historical scripts, configs, and cluster launchers are still present in the repo, but this README only documents the paper-critical entry points.
 
-## Terminology Map
-
-The paper and the codebase use slightly different names in a few places. Use the following mapping when reading configs or logs:
-
-| Paper term | Code term / location |
-| --- | --- |
-| SGRPO | `sgrpo` for ProGen2, `coupled_sgrpo` for the two GenMol tasks |
-| GRPO | `grpo` for ProGen2, `coupled_grpo` for the two GenMol tasks |
-| Memory-Assisted GRPO | `hbd: true` on a GRPO config |
-| Utility | `soft_reward` or `soft_reward_mean` |
-| Diversity | `diversity` |
-| GenMol-P | `pocket_prefix_mm` in configs and training code; `mmGenMol` in some analysis scripts |
-| Group size \(K\) | `num_generations` |
-| Number of groups per same-condition supergroup \(M\) | `supergroup_num_groups` |
-| Reward-Sum Hierarchy | `hierarchy: reward_sum` |
-| Leave-one-out group credit | `group_rewrad_credit: loo` |
-
-Two naming details matter for correct paper reproduction:
-
-- For the two small-molecule settings, the paper labels the RL baselines as **GRPO** and **SGRPO**, but the implemented algorithms are **coupled-GRPO** and **coupled-SGRPO** because the generator is a discrete diffusion model.
-- For pocket-based design, the paper reports **AutoDock Vina docking metrics** such as `vina_dock_mean`. The training-time field `unidock_score` is a **Vina-derived high-is-better reward proxy**, not the paper's reported docking metric.
+For pocket-based design, the paper reports **AutoDock Vina docking metrics** such as `vina_dock_mean`. The training-time reward code still uses `unidock_score` as the name of the Vina-derived high-is-better proxy that enters the scalar utility.
 
 ## Recommended Repo-Relative Layout
 
@@ -98,7 +78,7 @@ conda activate "${CONDA_ENV_PREFIX}"
 - creates a fresh Python 3.10 environment
 - installs the base repo requirements from `env/requirements.txt`
 - installs the repo in editable mode
-- installs the extra packages needed by the paper's mmGenMol and ProGen2 pipelines
+- installs the extra packages needed by the pocket-based and ProGen2 pipelines
 - pins `setuptools<81` so that the historical `wandb==0.13.5` dependency remains importable
 
 ## One-Time Assets
@@ -225,7 +205,7 @@ You can keep `output_dir: null` if you want the training scripts to use their de
 
 ### 1. GenMol de novo
 
-This run corresponds to the paper's **SGRPO** curve for de novo small-molecule design. In code, this is `coupled_sgrpo`.
+This run reproduces the paper's **SGRPO** result for de novo small-molecule design.
 
 ```bash
 accelerate launch \
@@ -238,7 +218,7 @@ accelerate launch \
 
 ### 2. GenMol-P / pocket-based design
 
-This run corresponds to the paper's **SGRPO** curve for pocket-based small-molecule design. In code, this is also `coupled_sgrpo`.
+This run reproduces the paper's **SGRPO** result for pocket-based small-molecule design.
 
 ```bash
 accelerate launch \
@@ -251,7 +231,7 @@ accelerate launch \
 
 ### 3. ProGen2
 
-This run corresponds to the paper's **SGRPO** curve for de novo protein design.
+This run reproduces the paper's **SGRPO** result for de novo protein design.
 
 ```bash
 export PYTHONPATH="$(pwd)/runs/progen2_models/python_overlay:$(pwd)/src:${PYTHONPATH:-}"
@@ -311,7 +291,7 @@ The pocket-based SGRPO curve is reproduced by:
 2. docking those generations with AutoDock Vina
 3. aggregating the six points into one JSON summary
 
-Create a local task manifest:
+Create a local task manifest. The `model_name` column is an internal identifier used by the aggregation script; if you want to reuse the aggregation code without modification, keep the value shown below.
 
 ```bash
 mkdir -p sgrpo-main-results/mmgenmol/generated
