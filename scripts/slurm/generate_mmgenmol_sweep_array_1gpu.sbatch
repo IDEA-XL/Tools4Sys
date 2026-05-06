@@ -16,7 +16,13 @@ REPO_DIR=/public/home/xinwuye/ai4s-tool-joint-train/genmol
 TASKS_PATH=${TASKS_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/generation_sweep_tasks_20260423.tsv}
 MANIFEST_PATH=${MANIFEST_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix/data/gdrive_exact_only/crossdocked_pocket10_pocket_prefix_manifest.pt}
 MEMLOG_DIR=${MEMLOG_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_generation_20260423/logs}
-CONDA_ENV=${CONDA_ENV:-genmol}
+CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-}
+
+if [[ -n "${CONDA_ENV_NAME}" && -n "${CONDA_ENV_PREFIX}" ]]; then
+  echo "Set at most one of CONDA_ENV_NAME and CONDA_ENV_PREFIX" >&2
+  exit 1
+fi
 
 if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
   echo "SLURM_ARRAY_TASK_ID is required" >&2
@@ -24,7 +30,15 @@ if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
 fi
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV}"
+if [[ -n "${CONDA_ENV_PREFIX}" ]]; then
+  if [[ ! -d "${CONDA_ENV_PREFIX}" ]]; then
+    echo "Conda env prefix not found: ${CONDA_ENV_PREFIX}" >&2
+    exit 1
+  fi
+  conda activate "${CONDA_ENV_PREFIX}"
+else
+  conda activate "${CONDA_ENV_NAME}"
+fi
 export PATH=/opt/gridview/slurm/bin:${PATH}
 export TOKENIZERS_PARALLELISM=false
 

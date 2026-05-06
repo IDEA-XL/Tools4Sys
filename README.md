@@ -1,273 +1,289 @@
-<h1 align="center">GenMol: A Drug Discovery Generalist with Discrete Diffusion</h1>
+# GenMol SGRPO Paper Reproduction
 
-This is the official code repository for the paper titled [GenMol: A Drug Discovery Generalist with Discrete Diffusion](https://arxiv.org/abs/2501.06158) (ICML 2025).
+This repository contains the training, evaluation, and plotting code used for the SGRPO experiments in our NeurIPS submission across three domains:
 
-<p align="center">
-    <img width="750" src="assets/concept.png"/>
-</p>
+- GenMol de novo molecule design
+- mmGenMol pocket-conditioned molecule design
+- ProGen2 de novo protein design
 
+This README is intentionally narrow. It only covers the canonical SGRPO experiments that appear in `figs/main-pareto.pdf`:
 
-## Contribution
-+ We introduce GenMol, a model for unified and versatile molecule generation by building masked discrete diffusion that generates SAFE molecular sequences.
-+ We propose fragment remasking, an effective strategy for exploring chemical space using molecular fragments as the unit of exploration.
-+ We propose molecular context guidance (MCG), a guidance scheme for GenMol to effectively utilize molecular context information.
-+ We validate the efficacy and versatility of GenMol on a wide range of drug discovery tasks.
+- `GenMol De Novo SGRPO RewardSum LOO 2000`
+- `SGRPO + UniDock RewardSum LOO 1000`
+- `ProGen2 SGRPO gw0.8 RewardSum LOO 100`
 
-## 🚀 News
+## Scope and assumptions
 
-#### 2025/10/15
-We introduce GenMol V2, trained with an extended SAFE syntax, demonstrating improved performance in *de novo* and fragment-constrained generation. Please refer to the section below: [GenMol V2: GenMol with Extended SAFE Syntax](#-genmol-v2-genmol-with-extended-safe-syntax).
+- The commands below assume the repo is cloned on Pudong at `/public/home/xinwuye/ai4s-tool-joint-train/genmol`.
+- Many configs in this repo use absolute Pudong paths. If you clone elsewhere, update those paths before running.
+- The environment setup below is verified for the three paper-critical blocks above. It is not intended to be a universal environment for every historical script in this repo.
+- For mmGenMol, the reported docking metric in the paper result tables and JSON summaries is `vina_dock_mean`. The legacy field name `unidock_score_mean` is only a Vina-derived reward proxy retained for compatibility with training-time reward accounting.
+- Assumption: the OpenFold source tree required by `scripts/setup_openfold_extension.py` is available at `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/openfold_official`. This repo currently ships the extension builder, but not a downloader for that source tree.
 
-## Table of Contents
-- [Installation](#installation)
-- [GenMol V1](#genmol-v1)
-  - [Training](#training)
-  - [Training with User-defined Dataset](#optional-training-with-user-defined-dataset)
-  - [*De Novo* Generation](#de-novo-generation)
-  - [Fragment-constrained Generation](#fragment-constrained-generation)
-  - [Goal-directed Hit Generation (PMO Benchmark)](#goal-directed-hit-generation-pmo-benchmark)
-  - [Goal-directed Lead Optimization](#goal-directed-lead-optimization)
-- [GenMol V2: GenMol with Extended SAFE Syntax](#-genmol-v2-genmol-with-extended-safe-syntax)
-  - [Summary](#summary)
-  - [Introduction](#introduction)
-  - [Benchmarks](#benchmarks)
-  - [Training](#training-1)
-  - [*De Novo* Generation](#de-novo-generation-1)
-  - [Fragment-constrained Generation](#fragment-constrained-generation-1)
-- [License](#license)
-- [Citation](#citation)
+## 1. Create a fresh environment
 
-## 📦 Installation
-Clone this repository:
+On Pudong:
+
 ```bash
-git clone https://github.com/NVIDIA-Digital-Bio/genmol.git
-cd genmol
-```
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
 
-Run the following command to install the dependencies:
-```bash
+export CONDA_ENV_NAME=genmol-paper-20260506
 bash env/setup.sh
 ```
 
-<details>
-<summary>Troubleshooting: ImportError: libXrender.so.1</summary>
+What `env/setup.sh` does:
 
-Run the following command:
+- creates a fresh Python 3.10 conda environment
+- installs the base GenMol dependencies from `env/requirements.txt`
+- installs the repo in editable mode
+- installs the extra packages required by mmGenMol and ProGen2 reproduction:
+  - `fair-esm`
+  - `lmdb`
+  - `biotite`
+  - `scipy`
+  - `requests`
+
+If you prefer a conda prefix instead of a named env:
+
 ```bash
-apt update && apt install -y libsm6 libxext6 && apt-get install -y libxrender-dev
+export CONDA_ENV_PREFIX=/public/home/xinwuye/conda_envs/genmol-paper-20260506
+bash env/setup.sh
 ```
-</details>
 
-<details>
-<summary>Troubleshooting: ImportError: cannot import name '_CONFIG_FOR_DOC' from 'transformers.models.gpt2.modeling_gpt2'</summary>
+The Slurm launchers used below now accept either `CONDA_ENV_NAME` or `CONDA_ENV_PREFIX`.
 
-Run the following command:
+## 2. One-time assets
+
+### GenMol de novo
+
+The de novo SGRPO training config initializes from the canonical GenMol v2 checkpoint:
+
+- `/public/home/xinwuye/ai4s-tool-joint-train/genmol/checkpoints/genmol_v2_v1.0/model_v2.ckpt`
+
+### mmGenMol
+
+The mmGenMol SGRPO training config expects:
+
+- the CrossDocked LMDB
+- the CrossDocked split file
+- the pocket-prefix manifest
+- Uni-Dock available on `PATH`
+
+These paths are already pinned inside:
+
+- `configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo.yaml`
+
+### ProGen2
+
+The ProGen2 training and sweep pipeline expect the following assets:
+
+- ProGen2 official tokenizer/checkpoint tree
+- a Python overlay containing pinned `transformers` and `adapters`
+- an OpenFold extension compiled into that overlay
+- ProtBERT
+- TemBERTure
+- Protein-Sol
+
+The repo provides a bundled setup launcher for the assets that it knows how to build or download:
+
 ```bash
-#!/bin/bash
-
-# Use CONDA_PREFIX which points to current active environment
-if [ -z "$CONDA_PREFIX" ]; then
-    echo "Error: No conda environment is currently active"
-    exit 1
-fi
-
-# Comment out all lines in the safe package __init__.py
-sed -i 's/^/# /' "$CONDA_PREFIX/lib/python3.10/site-packages/safe/__init__.py"
-
-# Import required packages
-echo "from .converter import SAFEConverter, decode, encode" >> "$CONDA_PREFIX/lib/python3.10/site-packages/safe/__init__.py"
-
-echo "Fixed safe package in environment: $CONDA_PREFIX"
+sbatch --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME} \
+  scripts/slurm/setup_progen2_assets_gpu.sbatch
 ```
-</details>
 
-## 🔬 GenMol V1
-### Training
-We provide the pretrained [checkpoint](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/resources/genmol_v1). Place `model.ckpt` in the checkpoints directory and set the correct information in ./configs/base.yaml.
+That launcher covers:
 
-(Optional) To train GenMol from scratch, run the following command:
+- `scripts/setup_progen2_python_overlay.py`
+- `scripts/setup_openfold_extension.py`
+- `scripts/setup_progen2_official.py`
+- `scripts/setup_temberture_official.py`
+- `scripts/setup_proteinsol_official.py`
+
+You still need the OpenFold source tree itself at:
+
+- `/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/openfold_official`
+
+## 3. Train the canonical SGRPO models
+
+### 3.1 GenMol de novo
+
+Training config:
+
+- `configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml`
+
+Launch:
+
 ```bash
-torchrun --nproc_per_node ${num_gpu} scripts/train.py hydra.run.dir=${save_dir} wandb.name=${exp_name}
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+sbatch --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME},CONFIG_PATH=configs/cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000.yaml \
+  scripts/slurm/cpgrpo_denovo_8gpu_ng512_bs1024_ni1.sbatch
 ```
-Other hyperparameters can be adjusted in `configs/base.yaml`.<br>
-The training used 8 NVIDIA A100 GPUs and took ~5 hours.
 
-We suggest the use of [SAFE dataset V2](https://huggingface.co/datasets/datamol-io/safe-drugs) to train GenMol (Note V2 removes some invalid molecules/corrupted SAFE strings. The original data that was used by GenMol is available here [SAFE dataset V1](https://huggingface.co/datasets/datamol-io/safe-gpt/tree/b83175cd7394).
+### 3.2 mmGenMol
 
-### (Optional) Training with User-defined Dataset
-To use your own training dataset, first convert your SMILES dataset into SAFE by running the following command:
+Training config:
+
+- `configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo.yaml`
+
+Launch:
+
 ```bash
-python scripts/preprocess_data.py ${input_path} ${data_path}
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+sbatch --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME},CONFIG_PATH=configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo.yaml \
+  scripts/slurm/cpgrpo_denovo_pocket_prefix_8gpu_sgrpo_ng24_sg8_bs384_unidock_train.sbatch
 ```
-`${input_path}` is the path to the dataset file with a SMILES in each row. For example,
-```
-CCS(=O)(=O)N1CC(CC#N)(n2cc(-c3ncnc4[nH]ccc34)cn2)C1
-NS(=O)(=O)c1cc2c(cc1Cl)NC(C1CC3C=CC1C3)NS2(=O)=O
-...
-```
-`${data_path}` is the path of the processed dataset.
 
-Then, set `data` in `base.yaml` to `${data_path}`.
+### 3.3 ProGen2
 
-### *De Novo* Generation
-Run the following command to perform *de novo* generation:
+Training config:
+
+- `configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo.yaml`
+
+Launch:
+
 ```bash
-python scripts/exps/denovo/run.py
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+sbatch --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME},CONFIG_PATH=configs/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo.yaml \
+  scripts/slurm/train_progen2_sgrpo_8gpu.sbatch
 ```
 
-<details>
-<summary>Troubleshooting: _pickle.UnpicklingError: invalid load key, '<'</summary>
+The paper figure uses `checkpoint-000100` for ProGen2, not the final checkpoint.
 
-If you see this error, it is likely coming from `/miniconda3/envs/genmol/lib/python3.10/site-packages/tdc/chem_utils/oracle/oracle.py`, line 347, in readFragmentScores `_fscores = pickle.load(f)`
+## 4. Reproduce the paper sweeps
 
-The root cause is a corrupted or incompletely downloaded pkl file for the SA score. The fix is simple: grab the correct files from the official RDKit repository:
-https://github.com/rdkit/rdkit/tree/master/Contrib/SA_Score/fpscores.pkl.gz
+### 4.1 GenMol de novo paired sweep
 
-Extract the downloaded file into the `genmol/oracle` directory.
-</details>
+This minimal config evaluates only the paper SGRPO 2000 checkpoint:
 
-The experiment in the paper used 1 NVIDIA A100 GPU.
+- `configs/readme_denovo_sgrpo_rewardsum_loo_2000_paired.yaml`
 
-### Fragment-constrained Generation
-Run the following command to perform fragment-constrained generation:
+Run it on a GPU node:
+
 ```bash
-python scripts/exps/frag/run.py
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV_NAME}"
+
+srun --partition=gpu --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=08:00:00 \
+  python scripts/eval_denovo_sgrpo.py \
+    --config configs/readme_denovo_sgrpo_rewardsum_loo_2000_paired.yaml
 ```
 
-The experiment in the paper used 1 NVIDIA A100 GPU.
+### 4.2 mmGenMol paired sweep
 
-### Goal-directed Hit Generation (PMO Benchmark)
+The committed task manifest below contains exactly the 6 paired sweep points for the paper SGRPO + UniDock RewardSum LOO 1000 checkpoint:
 
-We provide the fragment vocabularies in the folder `scripts/exps/pmo/vocab`.
+- `sgrpo-main-results/mmgenmol/readme_generation_paired_sgrpo_unidock_rewardsum_loo_1000.tsv`
 
-(Optional) Place [zinc250k.csv](https://www.kaggle.com/datasets/basu369victor/zinc250k) in the `data` folder, then run the following command to construct the fragment vocabularies and label the molecules with property labels:
+Step 1: generate molecules.
+
 ```bash
-python scripts/exps/pmo/get_vocab.py
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+sbatch --array=0-5 \
+  --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME},TASKS_PATH=/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/readme_generation_paired_sgrpo_unidock_rewardsum_loo_1000.tsv \
+  scripts/slurm/generate_mmgenmol_sweep_array_1gpu.sbatch
 ```
 
-Run the following command to perform goal-directed hit generation:
+Step 2: dock with Vina on CPU.
+
 ```bash
-python scripts/exps/pmo/run.py -o ${oracle_name}
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+sbatch --array=0-5 \
+  --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME},TASKS_PATH=/public/home/xinwuye/ai4s-tool-joint-train/genmol/sgrpo-main-results/mmgenmol/readme_generation_paired_sgrpo_unidock_rewardsum_loo_1000.tsv,OUTPUT_ROOT=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/readme_mmgenmol_paired_vina_dock \
+  scripts/slurm/dock_mmgenmol_sweep_vina_array_64cpu.sbatch
 ```
-The generated molecules will be saved in `scripts/exps/pmo/main/genmol/results`.
 
-Run the following command to evaluate the result:
+Step 3: aggregate the 6 sweep points into one JSON/Markdown report.
+
 ```bash
-python scripts/exps/pmo/eval.py ${file_name}
-# e.g., python scripts/exps/pmo/eval.py scripts/exps/pmo/main/genmol/results/albuterol_similarity_0.csv
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV_NAME}"
+
+python scripts/aggregate_mmgenmol_sweep_results.py \
+  --tasks_path sgrpo-main-results/mmgenmol/readme_generation_paired_sgrpo_unidock_rewardsum_loo_1000.tsv \
+  --docking_root /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/readme_mmgenmol_paired_vina_dock \
+  --output_dir /public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/readme_mmgenmol_paired_aggregate \
+  --output_prefix readme_mmgenmol_paired_sgrpo_unidock_rewardsum_loo_1000 \
+  --expected_num_tasks 6 \
+  --expected_rows_per_task 1600 \
+  --expected_num_pockets 100 \
+  --expected_samples_per_pocket 16 \
+  --docking_mode vina_dock \
+  --plot_name_prefix readme_mmgenmol \
+  --plot_title_prefix "mmGenMol" \
+  --qed_weight 0.3 \
+  --sa_score_weight 0.2 \
+  --drugclip_score_weight 0.0
 ```
 
-The experiment in the paper used 1 NVIDIA A100 GPU and took ~2-4 hours for each task.
+### 4.3 ProGen2 temperature sweep
 
-### Goal-directed Lead Optimization
-Run the following command to perform goal-directed lead optimization:
+This minimal config evaluates only the paper SGRPO gw0.8 RewardSum LOO step-100 checkpoint:
+
+- `configs/readme_progen2_temperature_sweep_sgrpo_gw08_rewardsum_loo_step100.yaml`
+
+Pipeline:
+
 ```bash
-python scripts/exps/lead/run.py -o ${oracle_name} -i ${start_mol_idx} -d ${sim_threshold}
-```
-The generated molecules will be saved in `scripts/exps/lead/results`.
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV_NAME}"
 
-Run the following command to evaluate the result:
+python scripts/progen2_sweep_pipeline.py build-tasks \
+  --config configs/readme_progen2_temperature_sweep_sgrpo_gw08_rewardsum_loo_step100.yaml
+```
+
+Then run the stages:
+
 ```bash
-python scripts/exps/lead/eval.py ${file_name}
-# e.g., python scripts/exps/lead/eval.py scripts/exps/lead/results/parp1_id0_thr0.4_0.csv
+sbatch --export=ALL,CONDA_ENV_NAME=${CONDA_ENV_NAME},CONFIG_PATH=configs/readme_progen2_temperature_sweep_sgrpo_gw08_rewardsum_loo_step100.yaml,MODE=generate-task,TASK_ID=0 \
+  scripts/slurm/run_progen2_sweep_gpu.sbatch
 ```
 
-The experiment in the paper used 1 NVIDIA A100 GPU and took ~10 min for each task.
+Use the same launcher for other task IDs and reward modes:
 
-## 🚀 GenMol V2: GenMol with Extended SAFE Syntax (Angle-Brackets for Inter-Fragment Attachment Points)
-### Summary: 
-GenMol V2 introduces Extended SAFE Syntax, which uses *angle-brackets* for Inter-Fragment Attachment Points. This change improves performance for specific tasks, particularly one-step linker design.
+- `MODE=generate-task`
+- `MODE=score-packed-gpu-reward` with `REWARD_NAME=naturalness` or `stability`
+- `MODE=score-point-reward-task` with `REWARD_NAME=foldability` or `developability`
 
-### Introduction:
-Following SAFE-GPT, GenMol performs two-step linker design in fragment-constrained generation, i.e., two molecules are respectively generated given each of two fragments and then combined later as a single molecule. However, users may prefer one-step generation that can condition the context of both fragments at the same time.
+Finally aggregate:
 
-While GenMol shows versatile performance on various tasks, it shows low validity in some tasks, especially in one-step linker design. We attribute this to the standard SAFE syntax, which considers the `intra-fragment` (linked atoms are in the same fragment) and `inter-fragment` (links between two fragments) attachment points are not easy to distinguish. 
-
-To this end, we propose an extended SAFE syntax that uses angle-brackets to distinguish intra-fragment attachment points from inter-fragment attachment points.
-
-For example, a SAFE string
-```
-X1XXX1X2.X2X3XXXX3X4.X5XX5X4
-```
-has 1, 3, 5 as its intra-fragment attachment points, while 2 and 4 are inter-fragment attachment points. With the extended syntax it becomes:
-```
-X1XXX1X<1>.X<1>X1XXXX1X<2>.X1XX1X<2>
-```
-In this way, the links within a fragment (i.e., 1, 2, ...) are independent to links crossing fragments (i.e., <1>, <2>, ...) and the model can learn how to complete a SAFE more efficiently.
-
-GenMol V2 trained with the extended SAFE syntax actually shows significantly improved performance on *de novo* and fragment-constrained generation! On goal-directed hit generation and lead optimization, GenMol V2 performs slightly worse than GenMol. This is because GenMol performs fragment remasking in these tasks, which changes only a small part of the entire molecular sequence, and therefore does not benefit from the extended SAFE syntax.
-
-### Benchmarks
-
-<h4 align="center">Table. De Novo Generation</h4>
-
-| Model | Validity (%) | Uniqueness (%) | Quality (%) | Diversity |
-| --- | --- | --- | --- | --- |
-| GenMol | 100.0 | 99.7 | 84.6 | 0.818 |
-| GenMol V2 | 100.0 | 97.8 | 89.7 | 0.830 |
-
-<h4 align="center">Table. Fragment-constrained Generation</h4>
-
-| Model | Task | Validity (%) | Uniqueness (%) | Quality (%) | Diversity | Distance |
-| --- | --- | --- | --- | --- | --- | --- |
-| GenMol | Linker design (1-step) | 16.7 | 93.9 | 4.3 | 0.529 | 0.573 |
-| | Linker design | 100.0 | 83.7 | 21.9 | 0.547 | 0.563 |
-| | Motif extension | 82.9 | 77.5 | 30.1 | 0.617 | 0.682 |
-| | Scaffold decoration | 96.6 | 82.7 | 31.8 | 0.591 | 0.651 |
-| | Superstructure generation | 97.5 | 83.6 | 34.8 | 0.599 | 0.762 |
-| GenMol V2 | Linker design (1-step) | 81.8 | 87.1 | 28.6 | 0.566 | 0.545 |
-| | Linker design | 100.0 | 76.6 | 18.4 | 0.512 | 0.539 |
-| | Motif extension | 99.4 | 84.5 | 49.0 | 0.626 | 0.659 |
-| | Scaffold decoration | 99.2 | 90.5 | 39.7 | 0.571 | 0.604 |
-| | Superstructure generation | 99.7 | 89.8 | 39.0 | 0.551 | 0.769 |
-
-<h4 align="center">Table. Goal-directed Hit Generation</h4>
-
-| Model | PMO Sum Score |
-| --- | --- |
-| GenMol | 18.362 |
-| GenMol V2 | 17.943 |
-
-<h4 align="center">Table. Goal-directed Lead Optimization</h4>
-
-| Model | Success rate (%) |
-| --- | --- |
-| GenMol | 86.7 |
-| GenMol V2 | 80.0 |
-
-### Training
-We provide the trained GenMol V2 [checkpoint](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/resources/genmol_v2?version=1.0). Place `model_v2.ckpt` in the checkpoints directory and set the correct information in ./configs/base.yaml.
-
-(Optional) To train GenMol V2 from scratch, run the following command:
 ```bash
-torchrun --nproc_per_node ${num_gpu} scripts/train.py hydra.run.dir=${save_dir} wandb.name=${exp_name} loader.global_batch_size=1024 training.use_bracket_safe=true
-```
-The training used 8 NVIDIA A100 GPUs.
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV_NAME}"
 
-### *De Novo* Generation
-Run the following command to perform *de novo* generation using GenMol V2:
+python scripts/progen2_sweep_pipeline.py aggregate \
+  --config configs/readme_progen2_temperature_sweep_sgrpo_gw08_rewardsum_loo_step100.yaml
+```
+
+## 5. Paper figure inputs
+
+The committed JSON files used by `vis-code/plot_main_pareto.py` are:
+
+- `sgrpo-main-results/genmol-denovo/denovo_main_results_paired_sweep_20260504.json`
+- `sgrpo-main-results/mmgenmol/mmgenmol_paired_main_results_20260504.json`
+- `sgrpo-main-results/progen2/progen2_temperature_sweep_20260503.json`
+
+To regenerate the PDF after those JSON files are in place:
+
 ```bash
-python scripts/exps/denovo/run.py -c scripts/exps/frag/hparams_v2.yaml
+cd /public/home/xinwuye/ai4s-tool-joint-train/genmol
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV_NAME}"
+
+python vis-code/plot_main_pareto.py
 ```
 
-### Fragment-constrained Generation
-Run the following command to perform fragment-constrained generation using GenMol V2:
-```bash
-python scripts/exps/frag/run.py -c scripts/exps/frag/hparams_v2.yaml
-```
+This writes:
 
-## License
-Copyright @ 2025, NVIDIA Corporation. All rights reserved.<br>
-The source code is made available under Apache-2.0.<br>
-The model weights are made available under the [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/).
+- `figs/main-pareto.pdf`
 
-## 📝 Citation
-If you find this repository and our paper useful, we kindly request to cite our work.
-```BibTex
-@article{lee2025genmol,
-  title     = {GenMol: A Drug Discovery Generalist with Discrete Diffusion},
-  author    = {Lee, Seul and Kreis, Karsten and Veccham, Srimukh Prasad and Liu, Meng and Reidenbach, Danny and Peng, Yuxing and Paliwal, Saee and Nie, Weili and Vahdat, Arash},
-  journal   = {International Conference on Machine Learning},
-  year      = {2025}
-}
-```
+## 6. Canonical output checkpoints
+
+The three paper-critical checkpoints are:
+
+- de novo: `.../cpgrpo_denovo_sgrpo_ng64_sg8_bs1024_lr5e-5_beta5e-3_gw09_rewardsum_loo_ms2000_20260426_115639/checkpoint-002000/model.ckpt`
+- mmGenMol: `.../cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05_rewardsum_loo_20260501_160306/checkpoint-001000/model.ckpt`
+- ProGen2: `.../progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000100`

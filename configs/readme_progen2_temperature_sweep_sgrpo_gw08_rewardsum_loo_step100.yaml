@@ -1,0 +1,73 @@
+tasks_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/tasks.tsv
+generation_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/generation
+foldability_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/foldability
+developability_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/developability
+diversity_output_root: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/diversity
+packed_naturalness_scores_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/naturalness/naturalness.rows.jsonl
+packed_stability_scores_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/stability/stability.rows.jsonl
+
+output_markdown_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_sweep.md
+output_json_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_sweep.json
+output_rows_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_sweep.rows.jsonl
+output_naturalness_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_diversity_vs_naturalness.png
+output_foldability_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_diversity_vs_foldability.png
+output_stability_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_diversity_vs_stability.png
+output_developability_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_diversity_vs_developability.png
+output_soft_reward_diversity_plot_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sweep_readme/sgrpo_gw08_rewardsum_loo_step100/aggregate/progen2_temperature_diversity_vs_soft_reward.png
+
+official_code_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official
+tokenizer_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/tokenizer.json
+prompt_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_official/prompts_unconditional.txt
+
+seed: 42
+bf16: false
+device: cuda
+num_samples: 512
+generation_prompt_batch_size: 1
+num_return_sequences: 512
+max_new_tokens: 256
+top_p: 0.95
+temperature_values:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  - 1.0
+  - 1.1
+  - 1.2
+calibration_temperature: 0.8
+reward_calibration_size: 256
+reward_calibration_prompt_batch_size: 128
+
+rewards:
+  naturalness:
+    model_name: esm2_t33_650M_UR50D
+    device: cuda
+    batch_size: 4096
+  foldability:
+    device: cuda
+    batch_size: 64
+  stability:
+    model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/temberture_official
+    base_model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/prot_bert_bfd
+    device: cuda
+    batch_size: 8192
+  developability:
+    model_name_or_path: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/proteinsol_official
+    device: cpu
+    batch_size: 24
+    num_workers: 64
+
+experiments:
+  - name: sgrpo_gw08_rewardsum_loo_step100
+    display_name: SGRPO gw0.8 RewardSum LOO 100
+    checkpoint_dir: /public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_sgrpo/progen2_sgrpo_ng12_sg8_bs2_len256_rbs16_gw08_rewardsum_loo_slurm53602/checkpoint-000100
+    naturalness: 0.25
+    foldability: 0.30
+    stability: 0.20
+    developability: 0.25

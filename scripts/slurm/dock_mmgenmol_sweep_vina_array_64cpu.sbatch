@@ -18,7 +18,17 @@ CROSSDOCKED_ROOT=${CROSSDOCKED_ROOT:-/public/home/xinwuye/ai4s-tool-joint-train/
 QVINA_PATH=${QVINA_PATH:-/public/home/xinwuye/ai4s-tool-joint-train/genmol/scripts/exps/lead/docking/qvina02}
 DOCKING_CACHE_DIR=${DOCKING_CACHE_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/pocket_prefix_crossdocked_5500ckpt/docking_cache}
 OUTPUT_ROOT=${OUTPUT_ROOT:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/mmgenmol_sweep_vina_dock_20260423}
-EVAL_CONDA_PREFIX=${EVAL_CONDA_PREFIX:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/conda_env}
+DEFAULT_EVAL_CONDA_PREFIX=/public/home/xinwuye/ai4s-tool-joint-train/runs/pocket_prefix_eval/conda_env
+CONDA_ENV_NAME=${CONDA_ENV_NAME:-}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-}
+
+if [[ -n "${CONDA_ENV_NAME}" && -n "${CONDA_ENV_PREFIX}" ]]; then
+  echo "Set at most one of CONDA_ENV_NAME and CONDA_ENV_PREFIX" >&2
+  exit 1
+fi
+if [[ -z "${CONDA_ENV_NAME}" && -z "${CONDA_ENV_PREFIX}" ]]; then
+  CONDA_ENV_PREFIX=${DEFAULT_EVAL_CONDA_PREFIX}
+fi
 
 if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
   echo "SLURM_ARRAY_TASK_ID is required" >&2
@@ -26,11 +36,15 @@ if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
 fi
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-if [[ ! -d "${EVAL_CONDA_PREFIX}" ]]; then
-  echo "Missing evaluation conda env: ${EVAL_CONDA_PREFIX}" >&2
-  exit 1
+if [[ -n "${CONDA_ENV_PREFIX}" ]]; then
+  if [[ ! -d "${CONDA_ENV_PREFIX}" ]]; then
+    echo "Conda env prefix not found: ${CONDA_ENV_PREFIX}" >&2
+    exit 1
+  fi
+  conda activate "${CONDA_ENV_PREFIX}"
+else
+  conda activate "${CONDA_ENV_NAME}"
 fi
-conda activate "${EVAL_CONDA_PREFIX}"
 export PATH=/opt/gridview/slurm/bin:${PATH}
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1

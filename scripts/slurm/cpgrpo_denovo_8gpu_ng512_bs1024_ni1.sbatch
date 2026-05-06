@@ -16,6 +16,13 @@ CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_ng512_bs1024_lr5e-5_beta5e-3_ni
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/cpgrpo_denovo/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 WANDB_NETRC_PATH="${WANDB_NETRC_PATH:-$HOME/.netrc}"
+CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-}
+
+if [[ -n "${CONDA_ENV_NAME}" && -n "${CONDA_ENV_PREFIX}" ]]; then
+  echo "Set at most one of CONDA_ENV_NAME and CONDA_ENV_PREFIX" >&2
+  exit 1
+fi
 
 if [[ -z "${WANDB_API_KEY:-}" && ! -f "${WANDB_NETRC_PATH}" ]]; then
   echo "Either WANDB_API_KEY or ~/.netrc is required for wandb auth" >&2
@@ -26,7 +33,15 @@ export WANDB_PROJECT="${WANDB_PROJECT:-tools4sys}"
 export WANDB_NAME="${WANDB_NAME:-cpgrpo-8g-ng512-bs1024-ni1}"
 
 source ~/miniconda/etc/profile.d/conda.sh
-conda activate genmol
+if [[ -n "${CONDA_ENV_PREFIX}" ]]; then
+  if [[ ! -d "${CONDA_ENV_PREFIX}" ]]; then
+    echo "Conda env prefix not found: ${CONDA_ENV_PREFIX}" >&2
+    exit 1
+  fi
+  conda activate "${CONDA_ENV_PREFIX}"
+else
+  conda activate "${CONDA_ENV_NAME}"
+fi
 export PATH=/opt/gridview/slurm/bin:$PATH
 
 cd "${REPO_DIR}"

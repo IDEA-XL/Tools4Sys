@@ -19,6 +19,13 @@ PROTBERT_DIR=${PROTBERT_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/pro
 CUDA_TOOLCHAIN_DIR=${CUDA_TOOLCHAIN_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_models/cuda_toolchain_cu124}
 MIHOMO_DIR=/public/home/xinwuye/mihomo
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/progen2_train/logs
+CONDA_ENV_NAME=${CONDA_ENV_NAME:-genmol}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-}
+
+if [[ -n "${CONDA_ENV_NAME}" && -n "${CONDA_ENV_PREFIX}" ]]; then
+  echo "Set at most one of CONDA_ENV_NAME and CONDA_ENV_PREFIX" >&2
+  exit 1
+fi
 
 export WANDB_PROJECT="${WANDB_PROJECT:-progen2}"
 export WANDB_NAME="${WANDB_NAME:-progen2-sgrpo-8gpu}"
@@ -26,7 +33,15 @@ export PYTHON_OVERLAY_DIR
 export PROTBERT_DIR
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-conda activate genmol
+if [[ -n "${CONDA_ENV_PREFIX}" ]]; then
+  if [[ ! -d "${CONDA_ENV_PREFIX}" ]]; then
+    echo "Conda env prefix not found: ${CONDA_ENV_PREFIX}" >&2
+    exit 1
+  fi
+  conda activate "${CONDA_ENV_PREFIX}"
+else
+  conda activate "${CONDA_ENV_NAME}"
+fi
 export PATH=/opt/gridview/slurm/bin:$PATH
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"

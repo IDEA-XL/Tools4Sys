@@ -13,11 +13,21 @@ set -euo pipefail
 
 REPO_DIR=${REPO_DIR:-/public/home/xinwuye/ai4s-tool-joint-train/genmol}
 CONFIG_PATH=${CONFIG_PATH:-configs/cpgrpo_denovo_pocket_prefix_sgrpo_ng24_sg8_bs384_lr5e-5_beta5e-3_gw09_q03_sa02_unidock05.yaml}
-CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-/public/home/xinwuye/ai4s-tool-joint-train/runs/unidock_official/conda_env}
+DEFAULT_CONDA_ENV_PREFIX=/public/home/xinwuye/ai4s-tool-joint-train/runs/unidock_official/conda_env
+CONDA_ENV_NAME=${CONDA_ENV_NAME:-}
+CONDA_ENV_PREFIX=${CONDA_ENV_PREFIX:-}
 GENMOL_REWARD_WORKERS=${GENMOL_REWARD_WORKERS:-7}
 WANDB_NETRC_PATH=${WANDB_NETRC_PATH:-${HOME}/.netrc}
 LOG_DIR=/public/home/xinwuye/ai4s-tool-joint-train/runs/unidock_official/logs
 MIHOMO_DIR=/public/home/xinwuye/mihomo
+
+if [[ -n "${CONDA_ENV_NAME}" && -n "${CONDA_ENV_PREFIX}" ]]; then
+  echo "Set at most one of CONDA_ENV_NAME and CONDA_ENV_PREFIX" >&2
+  exit 1
+fi
+if [[ -z "${CONDA_ENV_NAME}" && -z "${CONDA_ENV_PREFIX}" ]]; then
+  CONDA_ENV_PREFIX=${DEFAULT_CONDA_ENV_PREFIX}
+fi
 
 if [[ -z "${WANDB_API_KEY:-}" && ! -f "${WANDB_NETRC_PATH}" ]]; then
   echo "Either WANDB_API_KEY or ~/.netrc is required for wandb auth" >&2
@@ -28,7 +38,15 @@ export WANDB_PROJECT="${WANDB_PROJECT:-tools4sys}"
 export WANDB_NAME="${WANDB_NAME:-cpgrpo-denovo-pocket-prefix-8gpu-sgrpo-ng24-sg8-bs384-unidock}"
 
 source /public/home/xinwuye/miniconda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV_PREFIX}"
+if [[ -n "${CONDA_ENV_PREFIX}" ]]; then
+  if [[ ! -d "${CONDA_ENV_PREFIX}" ]]; then
+    echo "Conda env prefix not found: ${CONDA_ENV_PREFIX}" >&2
+    exit 1
+  fi
+  conda activate "${CONDA_ENV_PREFIX}"
+else
+  conda activate "${CONDA_ENV_NAME}"
+fi
 export PATH=/opt/gridview/slurm/bin:$PATH
 
 cd "${REPO_DIR}"
