@@ -94,7 +94,19 @@ conda activate "${CONDA_ENV_PREFIX}"
 
 ### 1. De novo small-molecule checkpoint
 
-Place the pretrained GenMol v2 checkpoint at:
+The pretrained de novo initialization checkpoint is mirrored in the public Hugging Face model repository `XinwuYe/SGRPO`.
+
+Download it into the repo-relative path expected by the public config:
+
+```bash
+python -m pip install "huggingface_hub[cli]"
+
+hf download XinwuYe/SGRPO checkpoints/genmol_v2_v1.0/model_v2.ckpt \
+  --repo-type model \
+  --local-dir .
+```
+
+This creates:
 
 ```text
 checkpoints/genmol_v2_v1.0/model_v2.ckpt
@@ -112,7 +124,17 @@ The pocket-based setup needs:
 - a working `unidock` executable on `PATH`
 - a Vina-compatible executable at `scripts/exps/lead/docking/qvina02`
 
-Place the initialization checkpoint at:
+The pocket-based initialization checkpoint is mirrored in the same public Hugging Face model repository.
+
+Download it into the repo-relative path expected by the public config:
+
+```bash
+hf download XinwuYe/SGRPO checkpoints/genmol_p_v1.0/5500.ckpt \
+  --repo-type model \
+  --local-dir .
+```
+
+This creates:
 
 ```text
 checkpoints/genmol_p_v1.0/5500.ckpt

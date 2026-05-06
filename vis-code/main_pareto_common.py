@@ -52,6 +52,12 @@ PROGEN2_TEMPERATURE_ORDER_HIGH_TO_LOW = (
     0.1,
 )
 
+MMGENMOL_WITH_UNIDOCK_PLOT_REWARD_WEIGHTS = {
+    "qed": 0.3,
+    "sa_score": 0.2,
+    "unidock_score": 0.5,
+}
+
 COLOR_ORIGINAL = "#7A9E3A"
 COLOR_GRPO = "#2A9D8F"
 COLOR_SGRPO = "#1F4E79"
@@ -129,6 +135,32 @@ def validate_finite(value: float, name: str, row: dict[str, Any]) -> float:
     return value
 
 
+def unidock_affinity_to_score(unidock_affinity: float) -> float:
+    return max(0.0, min((-float(unidock_affinity)) / 10.0, 1.0))
+
+
+def mmgenmol_uses_unidock_reward(model_name: str) -> bool:
+    return model_name in {
+        "grpo_unidock_500",
+        "grpo_unidock_1000",
+        "grpo_unidock_hbd_st07_sc04_1000",
+        "sgrpo_unidock_500",
+        "sgrpo_unidock_1000",
+        "sgrpo_unidock_rewardsum_loo_500",
+        "sgrpo_unidock_rewardsum_loo_1000",
+    }
+
+
+def mmgenmol_with_unidock_baseline_utility(row: dict[str, Any]) -> float:
+    vina_dock_mean = validate_finite(float(row["vina_dock_mean"]), "vina_dock_mean", row)
+    unidock_score = unidock_affinity_to_score(vina_dock_mean)
+    return (
+        MMGENMOL_WITH_UNIDOCK_PLOT_REWARD_WEIGHTS["qed"] * float(row["qed_mean"])
+        + MMGENMOL_WITH_UNIDOCK_PLOT_REWARD_WEIGHTS["sa_score"] * float(row["sa_score_mean"])
+        + MMGENMOL_WITH_UNIDOCK_PLOT_REWARD_WEIGHTS["unidock_score"] * unidock_score
+    )
+
+
 def build_denovo_series(rows: list[dict[str, Any]], model: ModelSpec) -> list[PanelPoint]:
     subset = [row for row in rows if row["experiment"] == model.source_id]
     if not subset:
@@ -165,9 +197,14 @@ def build_mmgenmol_series(rows: list[dict[str, Any]], model: ModelSpec) -> list[
     points: list[PanelPoint] = []
     for rank, label in enumerate(PAIRED_SWEEP_ORDER_HIGH_TO_LOW):
         row = row_by_label[label]
+        utility = (
+            validate_finite(float(row["soft_reward_mean"]), "soft_reward_mean", row)
+            if mmgenmol_uses_unidock_reward(model.source_id)
+            else mmgenmol_with_unidock_baseline_utility(row)
+        )
         points.append(
             PanelPoint(
-                x=validate_finite(float(row["soft_reward_mean"]), "soft_reward_mean", row),
+                x=utility,
                 y=validate_finite(float(row["diversity"]), "diversity", row),
                 model=model,
                 sweep_rank=rank,

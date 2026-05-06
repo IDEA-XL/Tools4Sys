@@ -10,6 +10,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 
@@ -29,6 +30,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_PATH = REPO_ROOT / "figs" / "main-pareto.pdf"
 NON_PARETO_ALPHA = 0.25
 SHADE_ALPHA = 0.10
+UNIFORM_FONT_SIZE = 21
+APTOS_DISPLAY_FONT_PATH = (
+    Path.home()
+    / "Library"
+    / "Group Containers"
+    / "UBF8T346G9.Office"
+    / "FontCache"
+    / "4"
+    / "CloudFonts"
+    / "Aptos Display"
+    / "32677218994.ttf"
+)
 
 
 @dataclass
@@ -48,15 +61,20 @@ class PlotSegment:
 
 
 def configure_style() -> None:
+    font_family = "DejaVu Sans"
+    if APTOS_DISPLAY_FONT_PATH.exists():
+        font_manager.fontManager.addfont(str(APTOS_DISPLAY_FONT_PATH))
+        font_family = "Aptos"
+    print(f"Using font family: {font_family}")
     plt.rcParams.update(
         {
-            "font.family": "DejaVu Sans",
-            "font.size": 16,
-            "axes.labelsize": 21,
-            "axes.titlesize": 20,
-            "xtick.labelsize": 16,
-            "ytick.labelsize": 16,
-            "legend.fontsize": 16,
+            "font.family": font_family,
+            "font.size": UNIFORM_FONT_SIZE,
+            "axes.labelsize": UNIFORM_FONT_SIZE,
+            "axes.titlesize": UNIFORM_FONT_SIZE,
+            "xtick.labelsize": UNIFORM_FONT_SIZE,
+            "ytick.labelsize": UNIFORM_FONT_SIZE,
+            "legend.fontsize": UNIFORM_FONT_SIZE,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
             "axes.spines.top": False,
@@ -311,8 +329,8 @@ def plot() -> Path:
     for ax, panel_spec in zip(axes, PANEL_SPECS):
         draw_panel(ax, panel_spec)
 
-    fig.supxlabel("Utility", y=0.07, fontsize=22)
-    fig.supylabel("Diversity", x=0.03, fontsize=22)
+    fig.supxlabel("Utility", y=0.095, fontsize=UNIFORM_FONT_SIZE)
+    fig.supylabel("Diversity", x=0.03, fontsize=UNIFORM_FONT_SIZE)
     fig.legend(
         handles=build_legend_handles(),
         loc="lower center",
