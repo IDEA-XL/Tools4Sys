@@ -144,31 +144,96 @@ The ProGen2 setup needs:
 - TemBERTure
 - Protein-Sol
 
-Create them under repo-relative paths:
+These assets are fetched from their official sources and are not mirrored by this repository. The commands below download each asset into its expected repo-relative location with the expected on-disk name.
+
+#### ProGen2 official release
+
+Official source:
+
+- repository: `https://github.com/enijkamp/progen2`
+- checkpoints: `https://storage.googleapis.com/sfr-progen-research/checkpoints/`
 
 ```bash
 python scripts/setup_progen2_official.py \
   --output-dir runs/progen2_official \
   --model progen2-small
+```
+
+This creates:
+
+```text
+runs/progen2_official/tokenizer.json
+runs/progen2_official/prompts_unconditional.txt
+runs/progen2_official/checkpoints/progen2-small/
+```
+
+#### OpenFold
+
+Official source:
+
+- repository: `https://github.com/aqlaboratory/openfold`
+
+```bash
+git clone https://github.com/aqlaboratory/openfold.git \
+  runs/progen2_models/openfold_official
 
 python scripts/setup_progen2_python_overlay.py \
   --overlay-dir runs/progen2_models/python_overlay
 
-git clone https://github.com/aqlaboratory/openfold.git \
-  runs/progen2_models/openfold_official
-
 python scripts/setup_openfold_extension.py \
   --source-dir runs/progen2_models/openfold_official \
   --overlay-dir runs/progen2_models/python_overlay
+```
 
+#### TemBERTure
+
+Official source:
+
+- repository: `https://github.com/ibmm-unibe-ch/TemBERTure`
+
+```bash
 python scripts/setup_temberture_official.py \
   --output-dir runs/progen2_models/temberture_official
+```
 
+This populates:
+
+```text
+runs/progen2_models/temberture_official/
+```
+
+#### Protein-Sol
+
+Official source:
+
+- download endpoint: `https://protein-sol.manchester.ac.uk/cgi-bin/utilities/download_sequence_code.php`
+
+```bash
 python scripts/setup_proteinsol_official.py \
   --output-dir runs/progen2_models/proteinsol_official
+```
 
+This downloads the official zip bundle and extracts it to:
+
+```text
+runs/progen2_models/proteinsol_official/protein-sol-sequence-prediction-software/
+```
+
+#### ProtBERT-BFD
+
+Official source:
+
+- model card: `https://huggingface.co/Rostlab/prot_bert_bfd`
+
+```bash
 huggingface-cli download Rostlab/prot_bert_bfd \
   --local-dir runs/progen2_models/prot_bert_bfd
+```
+
+This downloads the official Hugging Face snapshot to:
+
+```text
+runs/progen2_models/prot_bert_bfd/
 ```
 
 For ProGen2 training and evaluation, the OpenFold overlay must be importable:
